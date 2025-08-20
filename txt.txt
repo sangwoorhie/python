@@ -8,3 +8,6 @@ graph TD
     E --> F[관리자 검토 및 승인]
     F --> G[bible_inquiry 테이블에 최종 답변 저장]
     G --> H[고객에게 답변 전송]
+
+파이썬 배포 방법
+    https://grok.com/share/bGVnYWN5_e655b71a-6768-4553-83a1-20e9c9d91a8f

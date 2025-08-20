@@ -1,2 +1,7 @@
 .env
 venv/
+
+# 로그 파일
+logs/
+*.log
+nohup.out
