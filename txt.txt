@@ -1,0 +1,10 @@
+API key generated : pcsk_3Jz6m1_GBgsBfu8yqJuyyQqewLGJGuQw91NCWWVr9kEqfxjNg2r47EjeUmCnYE6ehX9m9u
+
+graph TD
+    A[고객 문의 MSSQL 저장] --> B[6_mssql_integration.py 실행]
+    B --> C[AI 답변 생성]
+    C --> D[ai_generated_answers 임시 테이블 저장]
+    D --> E[7_admin_dashboard.py 웹 관리자 화면]
+    E --> F[관리자 검토 및 승인]
+    F --> G[bible_inquiry 테이블에 최종 답변 저장]
+    G --> H[고객에게 답변 전송]
