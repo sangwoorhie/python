@@ -153,4 +153,7 @@ def generate_answer():
         return jsonify({"success": False, "error": str(e)}), 500
 
 if __name__ == "__main__":
-    app.run(host='0.0.0.0', port=5000)
+    port = int(os.getenv('FLASK_PORT', 8000))
+
+    print(f"Flask API starting on port {port}")
+    app.run(host='0.0.0.0', port=port, debug=False)
