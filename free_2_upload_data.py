@@ -458,7 +458,7 @@ def upload_bible_data(batch_size: int = DEFAULT_BATCH_SIZE, max_items: Optional[
                       f"예상 남은 시간: {estimated_remaining/60:.1f}분")
         
         # 질문 벡터화 (sentence-transformers 사용)
-        embedding = create_embedding(row['contents'])
+        embedding = create_embedding(row['contents'], model)  # model 파라미터 추가
         
         if embedding is None:
             failed_count += 1
