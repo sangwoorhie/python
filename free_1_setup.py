@@ -28,7 +28,7 @@ INDEX_NAME = "bible-app-support-768-free"
 EMBEDDING_DIMENSION = 768
 # Pinecone 클라우드 설정
 CLOUD_PROVIDER = "aws"
-CLOUD_REGION = "us-east-1" # "ap-northeast-2"  # 서울 리전으로 변경해야함
+CLOUD_REGION = "us-east-1" 
 
 # 1. 환경변수 로드
 def load_environment_variables() -> None:

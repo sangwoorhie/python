@@ -35,7 +35,7 @@ MODEL_NAME = 'sentence-transformers/paraphrase-multilingual-mpnet-base-v2'
 # Pinecone 인덱스 이름
 INDEX_NAME = "bible-app-support-768-free"
 # 데이터 파일명
-DATA_FILE = "data_100.csv"
+DATA_FILE = "data_2025.csv"
 # 임베딩 벡터 차원
 EMBEDDING_DIMENSION = 768
 # 기본 배치 크기
@@ -382,8 +382,8 @@ def upload_bible_data(batch_size: int = DEFAULT_BATCH_SIZE, max_items: Optional[
     print(f"💰 무료 모델 사용 - API 비용 없음!")
     print("=" * 60)
     
-    # 데이터 읽기 - data_100.csv로 변경
-    print("\n📖 'data_100.csv' 파일 읽는 중...")
+    # 데이터 읽기 - data_2025.csv로 변경
+    print("\n📖 'data_2025.csv' 파일 읽는 중...")
     try:
         # 여러 인코딩 시도
         encodings = ['utf-8', 'utf-8-sig', 'cp949', 'euc-kr']
@@ -391,14 +391,14 @@ def upload_bible_data(batch_size: int = DEFAULT_BATCH_SIZE, max_items: Optional[
         
         for encoding in encodings:
             try:
-                df = pd.read_csv('data_100.csv', encoding=encoding)
+                df = pd.read_csv('data_2025.csv', encoding=encoding)
                 print(f"✓ 인코딩 '{encoding}'으로 파일 읽기 성공")
                 break
             except:
                 continue
         
         if df is None:
-            raise Exception("data_100.csv 파일을 읽을 수 없습니다. 파일이 존재하는지 확인해주세요.")
+            raise Exception("data_2025.csv 파일을 읽을 수 없습니다. 파일이 존재하는지 확인해주세요.")
             
     except Exception as e:
         print(f"❌ 파일 읽기 오류: {e}")
@@ -473,7 +473,7 @@ def upload_bible_data(batch_size: int = DEFAULT_BATCH_SIZE, max_items: Optional[
             "question": row['contents'][:1000],  # 메타데이터 크기 제한
             "answer": row['reply_contents'][:1000],  # 메타데이터 크기 제한
             "category": category,
-            "source": "data_100_sample_free"
+            "source": "data_2025_sample_free"
         }
         
         # 고유 ID 생성 (seq 사용)
@@ -524,7 +524,7 @@ def upload_bible_data(batch_size: int = DEFAULT_BATCH_SIZE, max_items: Optional[
     stats = index.describe_index_stats()
     print(f"총 벡터 수: {stats['total_vector_count']}")
     
-    print("\n✅ data_100.csv 업로드가 완료되었습니다!")
+    print("\n✅ data_2025.csv 업로드가 완료되었습니다!")
     print("💰 무료 sentence-transformers 모델 사용으로 API 비용 없음!")
 
 ### 7. 메인 실행 함수
