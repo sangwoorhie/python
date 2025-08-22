@@ -17,9 +17,11 @@ from pinecone import Pinecone
 from sentence_transformers import SentenceTransformer
 from transformers import T5ForConditionalGeneration, T5Tokenizer
 from dotenv import load_dotenv
+from flask_cors import CORS 
 
 # Flask 앱 초기화
 app = Flask(__name__)
+CORS(app) # CORS 설정
 
 # 로깅 설정
 logging.basicConfig(
