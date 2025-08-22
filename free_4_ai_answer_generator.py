@@ -10,6 +10,7 @@ AI Answer Generator Flask API for ASP Classic Integration
 # 필수 라이브러리 임포트
 import os # 파일 경로 처리 및 환경변수 접근
 import json # JSON 데이터 처리 및 직렬화
+import json as json_module # 표준 json 모듈 별칭으로 임포트 (이스케이프 처리용)
 import re # 정규식을 이용한 텍스트 패턴 매칭 및 치환
 import html # HTML 엔티티 디코딩 (&amp; → &)
 import logging # 애플리케이션 로그 기록 및 디버깅
@@ -72,6 +73,19 @@ class AIAnswerGenerator:
         text = re.sub(r'<[^>]+>', '', text) # HTML 태그 제거 (<div>, <p> 등)
         text = re.sub(r'\s+', ' ', text).strip() # 연속 공백을 단일 공백으로 변환 후 양끝 공백 제거
         return text
+
+    def escape_json_string(self, text: str) -> str:
+        """
+        JSON 문자열을 위한 안전한 이스케이프 처리
+        목적: ASP Classic에서 JSON 파싱 오류를 방지하기 위한 특수문자 처리
+        """
+        if not text:
+            return ""
+        
+        # Python의 json 모듈을 사용하여 안전하게 이스케이프
+        # dumps로 JSON 문자열로 만든 후, 양쪽 따옴표 제거
+        escaped = json_module.dumps(text, ensure_ascii=False)
+        return escaped[1:-1]  # 앞뒤 따옴표 제거
 
     def create_embedding(self, text: str) -> list:
         """
@@ -190,10 +204,17 @@ class AIAnswerGenerator:
             # 3단계: AI 답변 생성
             ai_answer = self.generate_ai_answer(processed_question, similar_answers, lang)
             
-            # 4단계: 결과 구조화
+            # 4단계: 답변 텍스트 안전하게 처리 (JSON 파싱 오류 방지)
+            # 문제가 되는 문자들 제거 또는 치환
+            ai_answer = ai_answer.replace('"', '"').replace('"', '"')  # 스마트 따옴표를 일반 따옴표로
+            ai_answer = ai_answer.replace(''', "'").replace(''', "'")  # 스마트 작은따옴표를 일반 작은따옴표로
+            ai_answer = ai_answer.replace('\\', '/')  # 백슬래시를 슬래시로 (경로가 아닌 경우)
+            ai_answer = ai_answer.replace('\r\n', '\n').replace('\r', '\n')  # 줄바꿈 정규화
+            
+            # 5단계: 결과 구조화
             result = {
                 "success": True,
-                "answer": ai_answer, # 생성된 답변
+                "answer": ai_answer,  # 이미 안전한 텍스트
                 "similar_count": len(similar_answers), # 찾은 유사 답변 개수
                 "embedding_model": "sentence-transformers/paraphrase-multilingual-mpnet-base-v2", # 사용된 임베딩 모델
                 "generation_model": "google/flan-t5-base" # 사용된 생성 모델
@@ -233,8 +254,10 @@ def generate_answer():
         # AI 답변 생성 처리
         result = generator.process(seq, question, lang)
         
-        # JSON 응답 반환
-        return jsonify(result)
+        # Flask jsonify가 자동으로 이스케이프 처리
+        response = jsonify(result)
+        response.headers['Content-Type'] = 'application/json; charset=utf-8'
+        return response
         
     except Exception as e:
         # API 레벨 예외 처리
