@@ -1,7 +1,7 @@
 """
-Bible AI 애플리케이션 초기 설정 스크립트 (무료 모델 버전)
+바이블 애플 AI 애플리케이션 초기 설정 스크립트 (무료 모델 버전)
 
-이 스크립트는 Bible AI 애플리케이션에서 사용할 Pinecone 벡터 데이터베이스와
+이 스크립트는 바이블 애플 AI 애플리케이션에서 사용할 Pinecone 벡터 데이터베이스와
 sentence-transformers 무료 모델을 초기화합니다.
 
 주요 기능:
@@ -12,12 +12,12 @@ sentence-transformers 무료 모델을 초기화합니다.
 
 """
 
-import os
-import sys
-from typing import Optional
-from dotenv import load_dotenv
-from pinecone import Pinecone
-from sentence_transformers import SentenceTransformer
+import os # 파일 경로 처리 파이썬 모듈
+import sys # 시스템 관련 작업 파이썬 모듈
+from typing import Optional # 타입 힌트 파이썬 모듈
+from dotenv import load_dotenv # 환경변수 처리 파이썬 모듈
+from pinecone import Pinecone # Pinecone 파이썬 모듈
+from sentence_transformers import SentenceTransformer # 임베딩 모델 파이썬 모듈
 
 # ====== 설정 상수 ======
 # 사용할 임베딩 모델 이름 (다국어 지원, 768차원 출력)
@@ -28,8 +28,9 @@ INDEX_NAME = "bible-app-support-768-free"
 EMBEDDING_DIMENSION = 768
 # Pinecone 클라우드 설정
 CLOUD_PROVIDER = "aws"
-CLOUD_REGION = "us-east-1"
+CLOUD_REGION = "us-east-1" # "ap-northeast-2"  # 서울 리전으로 변경해야함
 
+# 1. 환경변수 로드
 def load_environment_variables() -> None:
     """
     .env 파일에서 환경변수를 로드합니다.
@@ -48,6 +49,7 @@ def load_environment_variables() -> None:
     
     print("✓ 환경변수 로드 완료!")
 
+# 2. Pinecone 클라이언트 초기화
 def initialize_pinecone() -> Pinecone:
     """
     Pinecone 클라이언트를 초기화합니다.
@@ -65,6 +67,7 @@ def initialize_pinecone() -> Pinecone:
         print("💡 API 키가 올바른지 확인하세요.")
         sys.exit(1)
 
+# 3. 벡터 임베딩 모델 로드 및 테스트
 def load_and_test_model() -> SentenceTransformer:
     """
     sentence-transformers 모델을 로드하고 테스트합니다.
@@ -103,6 +106,7 @@ def load_and_test_model() -> SentenceTransformer:
         print("💡 인터넷 연결을 확인하고 다시 시도하세요.")
         sys.exit(1)
 
+# 4. Pinecone 인덱스 생성 또는 연결
 def create_or_get_index(pc: Pinecone) -> None:
     """
     Pinecone 인덱스를 생성하거나 기존 인덱스에 연결합니다.
@@ -142,6 +146,7 @@ def create_or_get_index(pc: Pinecone) -> None:
         print("💡 Pinecone 대시보드에서 인덱스 상태를 확인하세요.")
         sys.exit(1)
 
+# 5. 인덱스 연결 테스트
 def test_index_connection(pc: Pinecone) -> None:
     """
     생성된 인덱스에 연결하고 상태를 확인합니다.
@@ -174,7 +179,7 @@ def main() -> None:
     메인 실행 함수: 전체 설정 프로세스를 순차적으로 실행합니다.
     """
     print("=" * 60)
-    print("🚀 Bible AI 애플리케이션 초기 설정 시작")
+    print("🚀 바이블 애플 AI 애플리케이션 초기 설정 시작")
     print("📱 무료 sentence-transformers 모델 버전 (768차원)")
     print("=" * 60)
     
@@ -196,7 +201,7 @@ def main() -> None:
         
         # 설정 완료 메시지
         print("\n" + "=" * 60)
-        print("🎉 Bible AI 애플리케이션 설정 완료!")
+        print("🎉 바이블 애플 AI 애플리케이션 설정 완료!")
         print("💰 OpenAI API 비용 없이 무료로 사용 가능합니다.")
         print("📚 이제 성경 데이터를 업로드하고 검색 기능을 테스트할 수 있습니다.")
         print("=" * 60)

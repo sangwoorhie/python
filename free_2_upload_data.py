@@ -15,23 +15,19 @@ sentence-transformers 무료 모델을 사용하여 API 비용 없이 임베딩�
 - seq: 고유 식별자
 - contents: 질문 내용 
 - reply_contents: 답변 내용
-
-작성자: Bible AI Team
-버전: 1.0
-마지막 수정: 2024
 """
 
-import os
-import sys
-import pandas as pd
-from dotenv import load_dotenv
-from pinecone import Pinecone
-import time
-import re
-from datetime import datetime
-from sentence_transformers import SentenceTransformer
-import html
-from typing import Optional, List, Dict, Any
+import os # 파일 경로 처리 파이썬 모듈
+import sys # 시스템 관련 작업 파이썬 모듈
+import pandas as pd # 데이터 처리 파이썬 모듈
+from dotenv import load_dotenv # 환경변수 처리 파이썬 모듈
+from pinecone import Pinecone # Pinecone 클라이언트 파이썬 모듈
+import time # 진행 상황 모니터링
+import re # 정규식 검사 파이썬 모듈
+from datetime import datetime # 진행 상황 모니터링
+from sentence_transformers import SentenceTransformer # 임베딩 모델 파이썬 모듈
+import html # HTML 태그 처리 파이썬 모듈
+from typing import Optional, List, Dict, Any # 타입 힌트 파이썬 모듈
 
 # ====== 설정 상수 ======
 # 사용할 임베딩 모델 이름 (다국어 지원, 768차원 출력)
@@ -49,6 +45,10 @@ MAX_TEXT_LENGTH = 8000
 # 메타데이터 텍스트 최대 길이
 MAX_METADATA_LENGTH = 1000
 
+# ====== 모듈화된 함수들 ======
+
+### 1. 서비스 초기화
+# Pinecone 클라이언트 연결 및 sentence-transformers 모델 로드
 def initialize_services() -> tuple[Pinecone, Any, Any]:
     """
     필요한 서비스들을 초기화합니다.
@@ -94,6 +94,8 @@ def initialize_services() -> tuple[Pinecone, Any, Any]:
     
     return pc, index, model
 
+### 2. 텍스트 전처리
+# HTML 태그 제거 및 텍스트 정리
 def clean_html_text(text: str) -> str:
     """
     HTML 태그와 엔티티를 제거하고 깨끗한 텍스트로 변환합니다.
@@ -151,6 +153,7 @@ def clean_html_text(text: str) -> str:
     
     return text.strip()
 
+# 임베딩 생성을 위한 텍스트 전처리
 def preprocess_text(text: str) -> str:
     """
     임베딩 생성을 위한 텍스트 전처리를 수행합니다.
@@ -190,6 +193,8 @@ def preprocess_text(text: str) -> str:
     
     return text
 
+### 3. 임베딩 생성
+# sentence-transformers 모델로 텍스트를 768차원 벡터로 변환
 def create_embedding(text: str, model: Any, retry_count: int = 3) -> Optional[List[float]]:
     """
     텍스트를 임베딩 벡터로 변환합니다.
@@ -237,19 +242,21 @@ def create_embedding(text: str, model: Any, retry_count: int = 3) -> Optional[Li
                 print("  모든 재시도가 실패했습니다.")
                 return None
 
+### 4. 질문 카테고리 분류
+# 키워드 매칭을 통한 자동 카테고리 분류 (bible_inquiry_cate_list 기준)
 def categorize_question(question: str) -> str:
     """
     질문 내용을 분석하여 자동으로 카테고리를 분류합니다.
     
-    키워드 매칭을 통해 질문을 8개 주요 카테고리로 분류합니다:
-    - 오디오: 음성, 소리 관련 질문
-    - 검색: 검색 기능 관련 질문  
-    - 계정: 로그인, 회원가입 관련 질문
-    - 구독: 결제, 구독 관련 질문
-    - 오류: 버그, 에러 관련 질문
-    - 설정: 앱 설정, 알림 관련 질문
-    - 성경: 성경 읽기, 통독 관련 질문
-    - 일반: 기타 질문
+    bible_inquiry_cate_list 테이블의 카테고리에 맞게 분류합니다:
+    - 후원/해지: 후원, 결제, 구독, 해지 관련 질문
+    - 성경 통독(읽기,듣기,녹음): 성경 읽기, 듣기, 녹음, 통독 관련 질문
+    - 성경낭독 레이스: 성경낭독 레이스, 경쟁, 참여 관련 질문
+    - 개선/제안: 개선사항, 제안, 기능 요청 관련 질문
+    - 오류/장애: 버그, 에러, 오류, 장애 관련 질문
+    - 사용 문의(기타): 일반적인 사용법, 기타 문의
+    - 불만: 불만, 불편사항 관련 질문
+    - 오탈자제보: 오탈자, 번역오류, 내용오류 제보
     
     Args:
         question (str): 분류할 질문 텍스트
@@ -259,30 +266,57 @@ def categorize_question(question: str) -> str:
     """
     # 빈 질문 처리
     if not question or not question.strip():
-        return '일반'
+        return '사용 문의(기타)'
     
     # 대소문자 구분 없이 키워드 매칭을 위해 소문자로 변환
     question_lower = question.lower()
     
     # 카테고리별 키워드 정의 (우선순위대로 배치)
     category_keywords = {
-        '오디오': ['오디오', '음성', '소리', '들리', '녹음', '재생', '볼륨', '스피커'],
-        '검색': ['검색', '찾기', '찾을', '찾는', '검색어', '키워드'],
-        '계정': ['로그인', '비밀번호', '아이디', '계정', '가입', '회원', '프로필'],
-        '구독': ['구독', '결제', '요금', '환불', '유료', '프리미엄', '결제수단'],
-        '오류': ['오류', '에러', '버그', '종료', '멈춤', '느려', '문제', '작동안함'],
-        '설정': ['설정', '알림', '푸시', '환경설정', '옵션', '구성'],
-        '성경': ['통독', '읽기', '성경', '말씀', '구절', '장절', '독서계획']
+        '후원/해지': [
+            '후원', '기부', '결제', '구독', '해지', '취소', '환불', '요금', '유료', 
+            '프리미엄', '정기결제', '자동결제', '결제수단', '카드', '계좌', '송금'
+        ],
+        '성경 통독(읽기,듣기,녹음)': [
+            '통독', '읽기', '듣기', '녹음', '성경읽기', '말씀듣기', '음성', '오디오',
+            '낭독', '독서', '성경공부', '묵상', '큐티', 'qt', '음성녹음', '재생',
+            '독서계획', '성경전체', '구약', '신약', '성경듣기'
+        ],
+        '성경낭독 레이스': [
+            '레이스', '경쟁', '대회', '참여', '순위', '랭킹', '경주', '도전',
+            '성경낭독레이스', '낭독대회', '낭독경쟁', '성경암송'
+        ],
+        '개선/제안': [
+            '개선', '제안', '건의', '요청', '바람', '기능추가', '새기능', '업데이트',
+            '개발', '추가해주세요', '만들어주세요', '넣어주세요', '개선해주세요',
+            '더좋게', '편리하게', '업그레이드'
+        ],
+        '오류/장애': [
+            '오류', '에러', '버그', '문제', '고장', '장애', '안됨', '안되요', 
+            '작동안함', '실행안됨', '멈춤', '종료', '느림', '느려', '끊김',
+            '로딩', '접속불가', '연결안됨', '다운', '크래시', '튕김'
+        ],
+        '불만': [
+            '불만', '불편', '짜증', '화남', '싫어', '마음에안듬', '별로',
+            '실망', '불쾌', '기분나쁨', '서비스나쁨', '답답', '속상'
+        ],
+        '오탈자제보': [
+            '오탈자', '오타', '오역', '번역오류', '번역틀림', '틀렸', '잘못',
+            '내용오류', '성경오류', '구절틀림', '본문틀림', '수정', '정정',
+            '잘못된내용', '오류제보', '내용잘못'
+        ]
     }
     
-    # 각 카테고리별로 키워드 매칭 검사
+    # 각 카테고리별로 키워드 매칭 검사 (우선순위대로)
     for category, keywords in category_keywords.items():
         if any(keyword in question_lower for keyword in keywords):
             return category
     
-    # 매칭되는 키워드가 없으면 일반 카테고리로 분류
-    return '일반'
+    # 매칭되는 키워드가 없으면 사용 문의(기타) 카테고리로 분류
+    return '사용 문의(기타)'
 
+### 5. CSV 데이터 로드
+# 다양한 인코딩 시도를 통한 안전한 CSV 파일 읽기
 def load_csv_data(file_path: str) -> pd.DataFrame:
     """
     CSV 파일을 다양한 인코딩으로 시도하여 안전하게 로드합니다.
@@ -319,6 +353,8 @@ def load_csv_data(file_path: str) -> pd.DataFrame:
     # 모든 인코딩 시도가 실패한 경우
     raise Exception(f"'{file_path}' 파일을 읽을 수 없습니다. 파일이 존재하고 올바른 CSV 형식인지 확인해주세요.")
 
+### 6. 메인 데이터 처리 및 업로드
+# CSV 파일 읽기부터 Pinecone 업로드까지 전체 프로세스 관리
 def upload_bible_data(batch_size: int = DEFAULT_BATCH_SIZE, max_items: Optional[int] = None) -> None:
     """
     CSV 파일의 Q&A 데이터를 Pinecone 벡터 데이터베이스에 업로드합니다.
@@ -491,6 +527,8 @@ def upload_bible_data(batch_size: int = DEFAULT_BATCH_SIZE, max_items: Optional[
     print("\n✅ data_100.csv 업로드가 완료되었습니다!")
     print("💰 무료 sentence-transformers 모델 사용으로 API 비용 없음!")
 
+### 7. 메인 실행 함수
+# 사용자 확인 후 전체 업로드 프로세스 실행
 def main() -> None:
     """
     메인 실행 함수: 사용자 확인 후 데이터 업로드를 실행합니다.
