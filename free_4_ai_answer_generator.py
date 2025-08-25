@@ -5,6 +5,7 @@ AI Answer Generator Flask API for ASP Classic Integration
 파일명: free_4_ai_answer_generator.py
 설명: Flask API로 ASP Classic에서 호출
 모델: google/flan-t5-base
+개선사항: 한글 자모 분리 해결, 스마트 따옴표 정리, 성경 구절 정규화
 """
 
 # 필수 라이브러리 임포트
@@ -13,6 +14,7 @@ import json # JSON 데이터 처리 및 직렬화
 import json as json_module # 표준 json 모듈 별칭으로 임포트 (이스케이프 처리용)
 import re # 정규식을 이용한 텍스트 패턴 매칭 및 치환
 import html # HTML 엔티티 디코딩 (&amp; → &)
+import unicodedata # 유니코드 문자 처리
 import logging # 애플리케이션 로그 기록 및 디버깅
 from flask import Flask, request, jsonify # 웹 서버 프레임워크 및 HTTP 요청/응답 처리
 from pinecone import Pinecone # 벡터 데이터베이스 연결 및 유사도 검색
