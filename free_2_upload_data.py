@@ -28,27 +28,62 @@ from datetime import datetime # 진행 상황 모니터링
 from sentence_transformers import SentenceTransformer # 임베딩 모델 파이썬 모듈
 import html # HTML 태그 처리 파이썬 모듈
 from typing import Optional, List, Dict, Any # 타입 힌트 파이썬 모듈
+import unicodedata # 유니코드 문자 처리
+import logging # 로그 기록 파이썬 모듈
 
 # ====== 설정 상수 ======
-# 사용할 임베딩 모델 이름 (다국어 지원, 768차원 출력)
 MODEL_NAME = 'sentence-transformers/paraphrase-multilingual-mpnet-base-v2'
-# Pinecone 인덱스 이름
 INDEX_NAME = "bible-app-support-768-free"
-# 데이터 파일명
 DATA_FILE = "data_2025.csv"
-# 임베딩 벡터 차원
 EMBEDDING_DIMENSION = 768
-# 기본 배치 크기
 DEFAULT_BATCH_SIZE = 20
-# 텍스트 최대 길이
 MAX_TEXT_LENGTH = 8000
-# 메타데이터 텍스트 최대 길이
 MAX_METADATA_LENGTH = 1000
 
-# ====== 모듈화된 함수들 ======
+# 도메인 특화 중요 키워드 (가중치를 높일 단어들)
+DOMAIN_KEYWORDS = set([
+    '성경', '찬송가', '구절', '말씀', '기도', '예배', '찬양', '묵상', '큐티',
+    '오류', '오타', '버그', '에러', '문제', '수정', '개선', '요청',
+    '결제', '구독', '후원', '환불', '취소', '해지',
+    '다운로드', '설치', '업데이트', '버전', '앱'
+])
 
-### 1. 서비스 초기화
-# Pinecone 클라이언트 연결 및 sentence-transformers 모델 로드
+# 카테고리별 키워드 정의
+CATEGORY_KEYWORDS = {
+    '후원/해지': [
+        '후원', '기부', '결제', '구독', '해지', '취소', '환불', '요금', '유료', 
+        '프리미엄', '정기결제', '자동결제', '결제수단', '카드', '계좌', '송금'
+    ],
+    '성경 통독(읽기,듣기,녹음)': [
+        '통독', '읽기', '듣기', '녹음', '성경읽기', '말씀듣기', '음성', '오디오',
+        '낭독', '독서', '성경공부', '묵상', '큐티', 'qt', '음성녹음', '재생',
+        '독서계획', '성경전체', '구약', '신약', '성경듣기'
+    ],
+    '성경낭독 레이스': [
+        '레이스', '경쟁', '대회', '참여', '순위', '랭킹', '경주', '도전',
+        '성경낭독레이스', '낭독대회', '낭독경쟁', '성경암송'
+    ],
+    '개선/제안': [
+        '개선', '제안', '건의', '요청', '바람', '기능추가', '새기능', '업데이트',
+        '개발', '추가해주세요', '만들어주세요', '넣어주세요', '개선해주세요',
+        '더좋게', '편리하게', '업그레이드'
+    ],
+    '오류/장애': [
+        '오류', '에러', '버그', '문제', '고장', '장애', '안됨', '안되요', 
+        '작동안함', '실행안됨', '멈춤', '종료', '느림', '느려', '끊김',
+        '로딩', '접속불가', '연결안됨', '다운', '크래시', '튕김'
+    ],
+    '불만': [
+        '불만', '불편', '짜증', '화남', '싫어', '마음에안듬', '별로',
+        '실망', '불쾌', '기분나쁨', '서비스나쁨', '답답', '속상'
+    ],
+    '오탈자제보': [
+        '오탈자', '오타', '오역', '번역오류', '번역틀림', '틀렸', '잘못',
+        '내용오류', '성경오류', '구절틀림', '본문틀림', '수정', '정정',
+        '잘못된내용', '오류제보', '내용잘못'
+    ]
+}
+
 def initialize_services() -> tuple[Pinecone, Any, Any]:
     """
     필요한 서비스들을 초기화합니다.
@@ -94,134 +129,125 @@ def initialize_services() -> tuple[Pinecone, Any, Any]:
     
     return pc, index, model
 
-### 2. 텍스트 전처리
-# HTML 태그 제거 및 텍스트 정리
-def clean_html_text(text: str) -> str:
+def preprocess_text(text: str, for_metadata: bool = False) -> str:
     """
-    HTML 태그와 엔티티를 제거하고 깨끗한 텍스트로 변환합니다.
-    
-    이 함수는 다음과 같은 HTML 요소들을 처리합니다:
-    - HTML 엔티티 디코딩 (&nbsp;, &lt; 등)
-    - 구조적 태그를 적절한 텍스트로 변환 (<br> → 줄바꿈, <li> → 리스트 항목)
-    - 강조 태그를 마크다운 형식으로 변환 (<strong> → **)
-    - 불필요한 공백과 줄바꿈 정리
-    
-    Args:
-        text (str): 정리할 HTML 텍스트
-        
-    Returns:
-        str: 정리된 순수 텍스트
-    """
-    # 빈 값 처리
-    if not text or pd.isna(text):
-        return ""
-    
-    # 문자열로 안전하게 변환
-    text = str(text)
-    
-    # 1. HTML 엔티티 디코딩 (&nbsp; → 공백, &lt; → <, &amp; → & 등)
-    text = html.unescape(text)
-    
-    # 2. 구조적 태그를 의미 있는 텍스트로 변환
-    # <br>, <p> 태그를 줄바꿈으로 변환
-    text = re.sub(r'<br\s*/?>', '\n', text, flags=re.IGNORECASE)
-    text = re.sub(r'</p>', '\n', text, flags=re.IGNORECASE)
-    text = re.sub(r'<p[^>]*>', '\n', text, flags=re.IGNORECASE)
-    
-    # <li> 태그는 리스트 항목으로 변환 (앞에 "- " 추가)
-    text = re.sub(r'<li[^>]*>', '\n- ', text, flags=re.IGNORECASE)
-    text = re.sub(r'</li>', '', text, flags=re.IGNORECASE)
-    
-    # 3. 강조 태그를 마크다운 형식으로 변환
-    # <strong>, <b> 태그는 ** 로 변환 (강조 표시 유지)
-    text = re.sub(r'<(strong|b)[^>]*>', '**', text, flags=re.IGNORECASE)
-    text = re.sub(r'</(strong|b)>', '**', text, flags=re.IGNORECASE)
-    
-    # 4. 기타 모든 HTML 태그 제거
-    text = re.sub(r'<[^>]+>', '', text)
-    
-    # 5. 공백과 줄바꿈 정리
-    # 연속된 줄바꿈을 정리 (3개 이상 → 2개)
-    text = re.sub(r'\n{3,}', '\n\n', text)
-    
-    # 연속된 공백을 하나로 통합
-    text = re.sub(r'[ \t]+', ' ', text)
-    
-    # 6. 각 줄의 앞뒤 공백 제거 및 빈 줄 제거
-    lines = [line.strip() for line in text.split('\n')]
-    text = '\n'.join(line for line in lines if line)
-    
-    return text.strip()
-
-# 임베딩 생성을 위한 텍스트 전처리
-def preprocess_text(text: str) -> str:
-    """
-    임베딩 생성을 위한 텍스트 전처리를 수행합니다.
-    
-    이 함수는 다음과 같은 전처리 과정을 거칩니다:
-    1. HTML 태그 제거 및 정리
-    2. 줄바꿈을 공백으로 변환 (임베딩 모델을 위해)
-    3. 연속된 공백 정리
-    4. 텍스트 길이 제한 (모델 입력 제한 고려)
+    통합 텍스트 전처리 함수
     
     Args:
         text (str): 전처리할 원본 텍스트
+        for_metadata (bool): 메타데이터용 전처리 여부
         
     Returns:
         str: 전처리된 텍스트
     """
-    # 빈 값 처리
-    if pd.isna(text) or not text:
+    if not text or pd.isna(text):
         return ""
     
-    # 문자열로 안전하게 변환
+    # 1. 기본 전처리
     text = str(text)
+    text = html.unescape(text)
     
-    # 1. HTML 태그 제거 및 정리
-    text = clean_html_text(text)
+    # 2. HTML 태그 제거
+    text = re.sub(r'<br\s*/?>', '\n', text, flags=re.IGNORECASE)
+    text = re.sub(r'</p>', '\n', text, flags=re.IGNORECASE)
+    text = re.sub(r'<p[^>]*>', '\n', text, flags=re.IGNORECASE)
+    text = re.sub(r'<li[^>]*>', '\n- ', text, flags=re.IGNORECASE)
+    text = re.sub(r'</li>', '', text, flags=re.IGNORECASE)
+    text = re.sub(r'<(strong|b)[^>]*>', '**', text, flags=re.IGNORECASE)
+    text = re.sub(r'</(strong|b)>', '**', text, flags=re.IGNORECASE)
+    text = re.sub(r'<[^>]+>', '', text)
     
-    # 2. 줄바꿈을 공백으로 변환 (임베딩 모델에서 더 나은 성능을 위해)
-    text = text.replace('\n', ' ')
+    # 3. 유니코드 정규화
+    text = unicodedata.normalize('NFC', text)
+    text = re.sub(r'[\u00A0\u2000-\u200B\u202F\u205F\u3000\uFEFF]', ' ', text)
     
-    # 3. 연속된 공백을 하나로 통합
-    text = re.sub(r'\s+', ' ', text).strip()
+    # 4. 노이즈 제거
+    text = re.sub(r'([!?.]){2,}', r'\1', text)
+    text = re.sub(r'([ㄱ-ㅎㅏ-ㅣ])\1{3,}', r'\1\1', text)
+    text = re.sub(r'https?://\S+|www\.\S+', '[URL]', text)
+    text = re.sub(r'\S+@\S+\.\S+', '[EMAIL]', text)
+    text = re.sub(r'\d{2,4}-\d{3,4}-\d{4}', '[PHONE]', text)
     
-    # 4. 최대 길이 제한 (토큰 제한 고려)
-    if len(text) > MAX_TEXT_LENGTH:
-        text = text[:MAX_TEXT_LENGTH]
-        print(f"⚠️ 텍스트가 {MAX_TEXT_LENGTH}자로 잘렸습니다.")
+    # 5. 공백 정리
+    if for_metadata:
+        # 메타데이터용: 줄바꿈 유지
+        text = re.sub(r'\r\n|\r', '\n', text)
+        text = re.sub(r'\n{3,}', '\n\n', text)
+        text = re.sub(r'[ \t]+', ' ', text)
+        lines = [line.strip() for line in text.split('\n')]
+        text = '\n'.join(line for line in lines if line)
+    else:
+        # 임베딩용: 줄바꿈을 공백으로
+        text = re.sub(r'\r\n|\r|\n', ' ', text)
+        text = text.replace('\t', ' ')
+        text = re.sub(r'\s+', ' ', text)
+        text = re.sub(r'\s+([.,!?;:])', r'\1', text)
+        text = re.sub(r'([.,!?;:])\s+', r'\1 ', text)
+        text = re.sub(r'\(\s+', '(', text)
+        text = re.sub(r'\s+\)', ')', text)
+    
+    text = text.strip()
+    
+    # 6. 길이 제한
+    max_length = MAX_METADATA_LENGTH if for_metadata else MAX_TEXT_LENGTH
+    if len(text) > max_length:
+        if for_metadata:
+            text = text[:max_length-3] + "..."
+        else:
+            front_len = int(max_length * 0.6)
+            back_len = max_length - front_len
+            text = text[:front_len] + " ... " + text[-back_len:]
+            print(f"⚠️ 텍스트가 {max_length}자로 조정되었습니다.")
     
     return text
 
-### 3. 임베딩 생성
-# sentence-transformers 모델로 텍스트를 768차원 벡터로 변환
+def extract_keywords(text: str) -> List[str]:
+    """
+    도메인 특화 키워드 추출
+    """
+    keywords = []
+    
+    # 성경 구절 패턴 추출
+    bible_verses = re.findall(r'[가-힣]+[서복음기록상하전후편]+\s*\d+[장절:]+\s*\d*', text)
+    keywords.extend(bible_verses)
+    
+    # 찬송가 번호 추출
+    hymn_numbers = re.findall(r'찬송가?\s*\d+장?', text)
+    keywords.extend(hymn_numbers)
+    
+    # 도메인 키워드 추출
+    for keyword in DOMAIN_KEYWORDS:
+        if keyword in text:
+            keywords.append(keyword)
+    
+    return keywords
+
 def create_embedding(text: str, model: Any, retry_count: int = 3) -> Optional[List[float]]:
     """
     텍스트를 임베딩 벡터로 변환합니다.
     
-    sentence-transformers 모델을 사용하여 텍스트를 768차원 벡터로 변환합니다.
-    네트워크 오류나 일시적 장애에 대비하여 재시도 로직을 포함합니다.
-    
     Args:
         text (str): 임베딩으로 변환할 텍스트
         model (Any): sentence-transformers 모델 인스턴스
-        retry_count (int): 최대 재시도 횟수 (기본값: 3)
+        retry_count (int): 최대 재시도 횟수
         
     Returns:
         Optional[List[float]]: 성공 시 768차원 임베딩 벡터, 실패 시 None
     """
-    # 빈 텍스트 처리
     if not text or not text.strip():
         print("⚠️ 빈 텍스트로 인해 임베딩 생성을 건너뜁니다.")
         return None
     
+    # 키워드 강조 처리
+    keywords = extract_keywords(text)
+    if keywords:
+        keyword_str = ' '.join(keywords[:3])
+        text = f"{keyword_str} {text}"
+    
     # 재시도 로직을 포함한 임베딩 생성
     for attempt in range(retry_count):
         try:
-            # sentence-transformers 모델 사용 (768차원 벡터 생성)
             embedding = model.encode(text, convert_to_tensor=False)
-            
-            # numpy array를 Python list로 변환
             embedding_list = embedding.tolist()
             
             # 차원 검증
@@ -233,30 +259,17 @@ def create_embedding(text: str, model: Any, retry_count: int = 3) -> Optional[Li
         except Exception as e:
             print(f"  임베딩 생성 실패 (시도 {attempt + 1}/{retry_count}): {e}")
             
-            # 마지막 시도가 아니면 대기 후 재시도
             if attempt < retry_count - 1:
-                wait_time = 2 ** attempt  # 지수적 백오프 (1초, 2초, 4초...)
+                wait_time = 2 ** attempt
                 print(f"  {wait_time}초 후 재시도...")
                 time.sleep(wait_time)
             else:
                 print("  모든 재시도가 실패했습니다.")
                 return None
 
-### 4. 질문 카테고리 분류
-# 키워드 매칭을 통한 자동 카테고리 분류 (bible_inquiry_cate_list 기준)
 def categorize_question(question: str) -> str:
     """
     질문 내용을 분석하여 자동으로 카테고리를 분류합니다.
-    
-    bible_inquiry_cate_list 테이블의 카테고리에 맞게 분류합니다:
-    - 후원/해지: 후원, 결제, 구독, 해지 관련 질문
-    - 성경 통독(읽기,듣기,녹음): 성경 읽기, 듣기, 녹음, 통독 관련 질문
-    - 성경낭독 레이스: 성경낭독 레이스, 경쟁, 참여 관련 질문
-    - 개선/제안: 개선사항, 제안, 기능 요청 관련 질문
-    - 오류/장애: 버그, 에러, 오류, 장애 관련 질문
-    - 사용 문의(기타): 일반적인 사용법, 기타 문의
-    - 불만: 불만, 불편사항 관련 질문
-    - 오탈자제보: 오탈자, 번역오류, 내용오류 제보
     
     Args:
         question (str): 분류할 질문 텍스트
@@ -264,59 +277,18 @@ def categorize_question(question: str) -> str:
     Returns:
         str: 분류된 카테고리명
     """
-    # 빈 질문 처리
     if not question or not question.strip():
         return '사용 문의(기타)'
     
-    # 대소문자 구분 없이 키워드 매칭을 위해 소문자로 변환
     question_lower = question.lower()
     
-    # 카테고리별 키워드 정의 (우선순위대로 배치)
-    category_keywords = {
-        '후원/해지': [
-            '후원', '기부', '결제', '구독', '해지', '취소', '환불', '요금', '유료', 
-            '프리미엄', '정기결제', '자동결제', '결제수단', '카드', '계좌', '송금'
-        ],
-        '성경 통독(읽기,듣기,녹음)': [
-            '통독', '읽기', '듣기', '녹음', '성경읽기', '말씀듣기', '음성', '오디오',
-            '낭독', '독서', '성경공부', '묵상', '큐티', 'qt', '음성녹음', '재생',
-            '독서계획', '성경전체', '구약', '신약', '성경듣기'
-        ],
-        '성경낭독 레이스': [
-            '레이스', '경쟁', '대회', '참여', '순위', '랭킹', '경주', '도전',
-            '성경낭독레이스', '낭독대회', '낭독경쟁', '성경암송'
-        ],
-        '개선/제안': [
-            '개선', '제안', '건의', '요청', '바람', '기능추가', '새기능', '업데이트',
-            '개발', '추가해주세요', '만들어주세요', '넣어주세요', '개선해주세요',
-            '더좋게', '편리하게', '업그레이드'
-        ],
-        '오류/장애': [
-            '오류', '에러', '버그', '문제', '고장', '장애', '안됨', '안되요', 
-            '작동안함', '실행안됨', '멈춤', '종료', '느림', '느려', '끊김',
-            '로딩', '접속불가', '연결안됨', '다운', '크래시', '튕김'
-        ],
-        '불만': [
-            '불만', '불편', '짜증', '화남', '싫어', '마음에안듬', '별로',
-            '실망', '불쾌', '기분나쁨', '서비스나쁨', '답답', '속상'
-        ],
-        '오탈자제보': [
-            '오탈자', '오타', '오역', '번역오류', '번역틀림', '틀렸', '잘못',
-            '내용오류', '성경오류', '구절틀림', '본문틀림', '수정', '정정',
-            '잘못된내용', '오류제보', '내용잘못'
-        ]
-    }
-    
-    # 각 카테고리별로 키워드 매칭 검사 (우선순위대로)
-    for category, keywords in category_keywords.items():
+    # 각 카테고리별로 키워드 매칭 검사
+    for category, keywords in CATEGORY_KEYWORDS.items():
         if any(keyword in question_lower for keyword in keywords):
             return category
     
-    # 매칭되는 키워드가 없으면 사용 문의(기타) 카테고리로 분류
     return '사용 문의(기타)'
 
-### 5. CSV 데이터 로드
-# 다양한 인코딩 시도를 통한 안전한 CSV 파일 읽기
 def load_csv_data(file_path: str) -> pd.DataFrame:
     """
     CSV 파일을 다양한 인코딩으로 시도하여 안전하게 로드합니다.
@@ -332,7 +304,6 @@ def load_csv_data(file_path: str) -> pd.DataFrame:
     """
     print(f"\n📖 '{file_path}' 파일 읽는 중...")
     
-    # 시도할 인코딩 목록 (한국어 환경에서 일반적인 인코딩)
     encodings = ['utf-8', 'utf-8-sig', 'cp949', 'euc-kr', 'latin1']
     
     for encoding in encodings:
@@ -350,26 +321,15 @@ def load_csv_data(file_path: str) -> pd.DataFrame:
             print(f"  인코딩 '{encoding}' 오류: {e}")
             continue
     
-    # 모든 인코딩 시도가 실패한 경우
     raise Exception(f"'{file_path}' 파일을 읽을 수 없습니다. 파일이 존재하고 올바른 CSV 형식인지 확인해주세요.")
 
-### 6. 메인 데이터 처리 및 업로드
-# CSV 파일 읽기부터 Pinecone 업로드까지 전체 프로세스 관리
 def upload_bible_data(batch_size: int = DEFAULT_BATCH_SIZE, max_items: Optional[int] = None) -> None:
     """
     CSV 파일의 Q&A 데이터를 Pinecone 벡터 데이터베이스에 업로드합니다.
     
-    이 함수는 다음과 같은 과정을 거쳐 데이터를 처리합니다:
-    1. CSV 파일 읽기 (다양한 인코딩 시도)
-    2. HTML 태그 제거 및 텍스트 전처리
-    3. sentence-transformers 모델로 임베딩 생성
-    4. 질문 자동 카테고리 분류
-    5. Pinecone에 배치 업로드
-    6. 진행 상황 모니터링 및 통계 제공
-    
     Args:
-        batch_size (int): 한 번에 업로드할 벡터 수 (기본값: 20)
-        max_items (Optional[int]): 테스트용 최대 아이템 수 제한 (기본값: None, 모든 데이터)
+        batch_size (int): 한 번에 업로드할 벡터 수
+        max_items (Optional[int]): 테스트용 최대 아이템 수 제한
     """
     # 서비스 초기화
     pc, index, model = initialize_services()
@@ -382,45 +342,24 @@ def upload_bible_data(batch_size: int = DEFAULT_BATCH_SIZE, max_items: Optional[
     print(f"💰 무료 모델 사용 - API 비용 없음!")
     print("=" * 60)
     
-    # 데이터 읽기 - data_2025.csv로 변경
-    print("\n📖 'data_2025.csv' 파일 읽는 중...")
+    # 데이터 읽기
     try:
-        # 여러 인코딩 시도
-        encodings = ['utf-8', 'utf-8-sig', 'cp949', 'euc-kr']
-        df = None
-        
-        for encoding in encodings:
-            try:
-                df = pd.read_csv('data_2025.csv', encoding=encoding)
-                print(f"✓ 인코딩 '{encoding}'으로 파일 읽기 성공")
-                break
-            except:
-                continue
-        
-        if df is None:
-            raise Exception("data_2025.csv 파일을 읽을 수 없습니다. 파일이 존재하는지 확인해주세요.")
-            
+        df = load_csv_data(DATA_FILE)
     except Exception as e:
         print(f"❌ 파일 읽기 오류: {e}")
         return
     
-    print(f"✓ 총 {len(df)}개 데이터 발견")
-    
-    # 컬럼명 확인
-    print(f"✓ 컬럼: {df.columns.tolist()}")
-    
     # 데이터 전처리
-    print("\n🔧 데이터 전처리 중 (HTML 태그 제거)...")
+    print("\n🔧 데이터 전처리 중...")
     
-    # 전처리 전 샘플 출력
     if not df.empty:
         print("\n📝 전처리 전 샘플:")
         sample_reply = df['reply_contents'].iloc[0]
         print(f"원본: {sample_reply[:150]}...")
         
         # 전처리 적용
-        df['contents'] = df['contents'].apply(preprocess_text)
-        df['reply_contents'] = df['reply_contents'].apply(preprocess_text)
+        df['contents'] = df['contents'].apply(lambda x: preprocess_text(x, for_metadata=False))
+        df['reply_contents'] = df['reply_contents'].apply(lambda x: preprocess_text(x, for_metadata=False))
         
         print("\n📝 전처리 후 샘플:")
         cleaned_reply = df['reply_contents'].iloc[0]
@@ -429,7 +368,7 @@ def upload_bible_data(batch_size: int = DEFAULT_BATCH_SIZE, max_items: Optional[
     # 빈 값 제거
     df = df[(df['contents'] != '') & (df['reply_contents'] != '')]
     
-    # 테스트를 위해 데이터 제한
+    # 테스트용 데이터 제한
     if max_items and len(df) > max_items:
         df = df.head(max_items)
         print(f"✓ 테스트를 위해 {max_items}개로 제한")
@@ -457,8 +396,8 @@ def upload_bible_data(batch_size: int = DEFAULT_BATCH_SIZE, max_items: Optional[
                       f"성공: {success_count} | 실패: {failed_count} | "
                       f"예상 남은 시간: {estimated_remaining/60:.1f}분")
         
-        # 질문 벡터화 (sentence-transformers 사용)
-        embedding = create_embedding(row['contents'], model)  # model 파라미터 추가
+        # 질문 벡터화
+        embedding = create_embedding(row['contents'], model)
         
         if embedding is None:
             failed_count += 1
@@ -467,16 +406,16 @@ def upload_bible_data(batch_size: int = DEFAULT_BATCH_SIZE, max_items: Optional[
         # 카테고리 자동 분류
         category = categorize_question(row['contents'])
         
-        # 메타데이터 구성
+        # 메타데이터 구성 (메타데이터용 전처리 적용)
         metadata = {
             "seq": int(row['seq']),
-            "question": row['contents'][:1000],  # 메타데이터 크기 제한
-            "answer": row['reply_contents'][:1000],  # 메타데이터 크기 제한
+            "question": preprocess_text(row['contents'], for_metadata=True),
+            "answer": preprocess_text(row['reply_contents'], for_metadata=True),
             "category": category,
             "source": "data_2025_sample_free"
         }
         
-        # 고유 ID 생성 (seq 사용)
+        # 고유 ID 생성
         unique_id = f"qa_free_{row['seq']}"
         
         # 벡터 데이터 구성
@@ -517,18 +456,21 @@ def upload_bible_data(batch_size: int = DEFAULT_BATCH_SIZE, max_items: Optional[
     print(f"✓ 성공: {success_count}개")
     print(f"✗ 실패: {failed_count}개")
     print(f"⏱ 총 소요 시간: {total_time/60:.1f}분")
-    print(f"💾 평균 처리 속도: {success_count/(total_time/60):.1f}개/분")
+    
+    if total_time > 0:
+        print(f"💾 평균 처리 속도: {success_count/(total_time/60):.1f}개/분")
     
     # Pinecone 인덱스 통계
-    print("\n📈 Pinecone 인덱스 상태:")
-    stats = index.describe_index_stats()
-    print(f"총 벡터 수: {stats['total_vector_count']}")
+    try:
+        print("\n📈 Pinecone 인덱스 상태:")
+        stats = index.describe_index_stats()
+        print(f"총 벡터 수: {stats['total_vector_count']}")
+    except Exception as e:
+        print(f"📈 인덱스 상태 조회 실패: {e}")
     
-    print("\n✅ data_2025.csv 업로드가 완료되었습니다!")
+    print(f"\n✅ {DATA_FILE} 업로드가 완료되었습니다!")
     print("💰 무료 sentence-transformers 모델 사용으로 API 비용 없음!")
 
-### 7. 메인 실행 함수
-# 사용자 확인 후 전체 업로드 프로세스 실행
 def main() -> None:
     """
     메인 실행 함수: 사용자 확인 후 데이터 업로드를 실행합니다.
@@ -559,6 +501,5 @@ def main() -> None:
         print(f"\n❌ 예상치 못한 오류가 발생했습니다: {e}")
         print("💡 로그를 확인하고 다시 시도하세요.")
 
-# 스크립트가 직접 실행될 때만 main 함수 호출
 if __name__ == "__main__":
     main()

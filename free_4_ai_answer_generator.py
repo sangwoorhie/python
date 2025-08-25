@@ -72,8 +72,30 @@ class AIAnswerGenerator:
         
         text = str(text) # 문자열 타입 강제 변환
         text = html.unescape(text) # HTML 엔티티 디코딩 (&amp; → &, &lt; → <)
-        text = re.sub(r'<[^>]+>', '', text) # HTML 태그 제거 (<div>, <p> 등)
-        text = re.sub(r'\s+', ' ', text).strip() # 연속 공백을 단일 공백으로 변환 후 양끝 공백 제거
+        
+        # HTML 태그를 적절한 구분자로 변환
+        text = re.sub(r'<br\s*/?>', '\n', text, flags=re.IGNORECASE) # <br> → 줄바꿈
+        text = re.sub(r'</p>', '\n\n', text, flags=re.IGNORECASE) # </p> → 문단 구분
+        text = re.sub(r'<p[^>]*>', '\n', text, flags=re.IGNORECASE) # <p> → 줄바꿈
+        text = re.sub(r'<li[^>]*>', '\n• ', text, flags=re.IGNORECASE) # <li> → 리스트
+        text = re.sub(r'</li>', '', text, flags=re.IGNORECASE)
+        
+        # 강조 태그 제거 (** 문제 해결)
+        text = re.sub(r'<(strong|b)[^>]*>', '', text, flags=re.IGNORECASE)
+        text = re.sub(r'</(strong|b)>', '', text, flags=re.IGNORECASE)
+        
+        # 나머지 HTML 태그 제거
+        text = re.sub(r'<[^>]+>', '', text)
+        
+        # ** 마크다운 강조 제거
+        text = re.sub(r'\*\*([^*]+)\*\*', r'\1', text)
+        text = re.sub(r'\*([^*]+)\*', r'\1', text)
+        
+        # 연속된 줄바꿈 정리
+        text = re.sub(r'\n{3,}', '\n\n', text)
+        text = re.sub(r'\s+', ' ', text) # 연속 공백을 단일 공백으로
+        text = text.strip()
+        
         return text
 
     def escape_json_string(self, text: str) -> str:
@@ -133,6 +155,48 @@ class AIAnswerGenerator:
             logging.error(f"Pinecone 검색 실패: {str(e)}")
             return [] # 검색 실패 시 빈 리스트 반환
 
+    def clean_answer_text(self, text: str) -> str:
+        """
+        답변 텍스트 정리 함수
+        목적: 중복 인사말, 특수문자, 포맷팅 문제 해결
+        """
+        if not text:
+            return ""
+        
+        # ** 마크다운 강조 제거
+        text = re.sub(r'\*\*([^*]+)\*\*', r'\1', text)
+        text = re.sub(r'\*([^*]+)\*', r'\1', text)
+        
+        # 중복된 인사말 제거
+        greetings = ['안녕하세요', '안녕하세요.', '안녕하세요,']
+        closings = ['감사합니다', '감사합니다.', '감사드립니다', '감사드립니다.']
+        
+        # 중복 인사말 처리
+        for greeting in greetings:
+            # 같은 인사말이 연속으로 나오는 경우 하나만 남김
+            pattern = rf'({re.escape(greeting)}[,\s]*)+{re.escape(greeting)}'
+            text = re.sub(pattern, greeting, text, flags=re.IGNORECASE)
+        
+        # 중복 마무리 인사 처리
+        for closing in closings:
+            # 같은 마무리 인사가 연속으로 나오는 경우 하나만 남김
+            pattern = rf'({re.escape(closing)}[,\s]*)+{re.escape(closing)}'
+            text = re.sub(pattern, closing, text, flags=re.IGNORECASE)
+        
+        # 연속된 구두점 정리
+        text = re.sub(r'[,\s]*,[,\s]*', ', ', text)
+        text = re.sub(r'[.\s]*\.[.\s]*', '. ', text)
+        
+        # 연속된 공백과 줄바꿈 정리
+        text = re.sub(r'\s+', ' ', text)
+        text = re.sub(r'\n\s*\n\s*\n+', '\n\n', text)
+        
+        # 문장 부호 앞뒤 공백 정리
+        text = re.sub(r'\s+([,.!?])', r'\1', text)
+        text = re.sub(r'([,.!?])\s+', r'\1 ', text)
+        
+        return text.strip()
+
     def generate_ai_answer(self, query: str, similar_answers: list, lang: str) -> str:
         """
         T5 모델을 사용한 AI 답변 생성 함수
@@ -143,47 +207,38 @@ class AIAnswerGenerator:
             return "문의해주신 내용에 대해 정확한 답변을 드리기 위해 더 자세한 정보가 필요합니다. 고객센터로 문의해주시면 신속하게 도움을 드리겠습니다."
         
         try:
-            # 상위 3개 유사 답변을 컨텍스트로 구성
-            context = ""
-            for i, ans in enumerate(similar_answers[:3], 1):
-                context += f"참고 {i}: {ans['answer'][:200]} " # 답변을 200자로 제한
+            # 첫 번째 유사 답변을 정리하여 사용 (T5 모델 대신)
+            base_answer = similar_answers[0]['answer']
             
-            # T5 모델용 프롬프트 구성
-            prompt = f"Question in {lang}: {query}\nContext: {context}\nProvide a helpful answer in {lang}:"
+            # 답변 텍스트 정리
+            cleaned_answer = self.clean_answer_text(base_answer)
             
-            # 텍스트를 토큰으로 변환 (최대 512토큰)
-            inputs = text_tokenizer(prompt, return_tensors="pt", max_length=512, truncation=True)
+            # 기존 인사말이 있는지 확인
+            has_greeting = any(greeting in cleaned_answer.lower() for greeting in ['안녕하세요', '안녕'])
+            has_closing = any(closing in cleaned_answer.lower() for closing in ['감사합니다', '감사드립니다'])
             
-            # T5 모델로 답변 생성
-            outputs = text_model.generate(
-                inputs.input_ids, # 입력 토큰 ID
-                max_length=200, # 생성할 최대 토큰 수
-                num_beams=4, # 빔 서치: 4개 후보 중 최적 선택
-                temperature=0.7, # 창의성 조절 (0.0=결정적, 1.0=창의적)
-                do_sample=True, # 확률적 샘플링 활성화
-                early_stopping=True, # 완전한 답변 생성 시 조기 종료
-                no_repeat_ngram_size=3, # 3단어 이상 반복 방지
-                length_penalty=1.0 # 길이에 대한 페널티 (1.0=중립)
-            )
+            # 적절한 형태로 답변 구성
+            final_answer = ""
             
-            # 생성된 토큰을 텍스트로 디코딩
-            generated_text = text_tokenizer.decode(outputs[0], skip_special_tokens=True)
+            if not has_greeting:
+                final_answer += "안녕하세요.\n\n"
             
-            # 생성된 답변의 품질 검사 및 포맷팅
-            if generated_text.strip():
-                if len(generated_text) < 20: # 너무 짧은 답변인 경우
-                    return f"안녕하세요.\n\n{similar_answers[0]['answer']}\n\n추가 문의사항이 있으시면 언제든 연락해주세요. 감사합니다."
-                # 정상적인 답변에 인사말 추가
-                return f"안녕하세요.\n\n{generated_text}\n\n추가 문의사항이 있으시면 언제든 연락해주세요. 감사합니다."
+            final_answer += cleaned_answer
             
-            # 생성 실패 시 첫 번째 유사 답변 사용
-            return f"안녕하세요.\n\n{similar_answers[0]['answer']}\n\n감사합니다."
+            if not has_closing:
+                final_answer += "\n\n추가 문의사항이 있으시면 언제든 연락해주세요. 감사합니다."
+            
+            # 최종 정리
+            final_answer = self.clean_answer_text(final_answer)
+            
+            return final_answer
             
         except Exception as e:
-            logging.error(f"T5 모델 답변 생성 실패: {e}")
+            logging.error(f"답변 생성 실패: {e}")
             # 모델 실패 시 폴백 전략
             if similar_answers:
-                return f"안녕하세요.\n\n{similar_answers[0]['answer']}\n\n감사합니다."
+                base_answer = self.clean_answer_text(similar_answers[0]['answer'])
+                return f"안녕하세요.\n\n{base_answer}\n\n감사합니다."
             return "죄송합니다. 현재 답변을 생성할 수 없습니다. 고객센터로 문의해주세요."
 
     def process(self, seq: int, question: str, lang: str) -> dict:
@@ -206,12 +261,14 @@ class AIAnswerGenerator:
             # 3단계: AI 답변 생성
             ai_answer = self.generate_ai_answer(processed_question, similar_answers, lang)
             
-            # 4단계: 답변 텍스트 안전하게 처리 (JSON 파싱 오류 방지)
-            # 문제가 되는 문자들 제거 또는 치환
-            ai_answer = ai_answer.replace('"', '"').replace('"', '"')  # 스마트 따옴표를 일반 따옴표로
-            ai_answer = ai_answer.replace(''', "'").replace(''', "'")  # 스마트 작은따옴표를 일반 작은따옴표로
-            ai_answer = ai_answer.replace('\\', '/')  # 백슬래시를 슬래시로 (경로가 아닌 경우)
-            ai_answer = ai_answer.replace('\r\n', '\n').replace('\r', '\n')  # 줄바꿈 정규화
+            # 4단계: 답변 텍스트 최종 정리 (JSON 파싱 오류 방지)
+            # 스마트 따옴표 정규화
+            ai_answer = ai_answer.replace('"', '"').replace('"', '"')
+            ai_answer = ai_answer.replace(''', "'").replace(''', "'")
+            # 줄바꿈 정규화
+            ai_answer = ai_answer.replace('\r\n', '\n').replace('\r', '\n')
+            # 최종 텍스트 정리
+            ai_answer = self.clean_answer_text(ai_answer)
             
             # 5단계: 결과 구조화
             result = {
