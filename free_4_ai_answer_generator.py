@@ -91,9 +91,12 @@ class AIAnswerGenerator:
         text = re.sub(r'\*\*([^*]+)\*\*', r'\1', text)
         text = re.sub(r'\*([^*]+)\*', r'\1', text)
         
-        # 연속된 줄바꿈 정리
+        # 연속된 줄바꿈 정리 (단, 기존 문단 구조는 유지)
         text = re.sub(r'\n{3,}', '\n\n', text)
-        text = re.sub(r'\s+', ' ', text) # 연속 공백을 단일 공백으로
+        
+        # 줄바꿈이 아닌 연속 공백만 정리
+        text = re.sub(r'[ \t]+', ' ', text)
+        
         text = text.strip()
         
         return text
@@ -158,7 +161,7 @@ class AIAnswerGenerator:
     def clean_answer_text(self, text: str) -> str:
         """
         답변 텍스트 정리 함수
-        목적: 중복 인사말, 특수문자, 포맷팅 문제 해결
+        목적: 중복 인사말, 특수문자, 포맷팅 문제 해결 및 적절한 문단 나누기
         """
         if not text:
             return ""
@@ -173,13 +176,11 @@ class AIAnswerGenerator:
         
         # 중복 인사말 처리
         for greeting in greetings:
-            # 같은 인사말이 연속으로 나오는 경우 하나만 남김
             pattern = rf'({re.escape(greeting)}[,\s]*)+{re.escape(greeting)}'
             text = re.sub(pattern, greeting, text, flags=re.IGNORECASE)
         
         # 중복 마무리 인사 처리
         for closing in closings:
-            # 같은 마무리 인사가 연속으로 나오는 경우 하나만 남김
             pattern = rf'({re.escape(closing)}[,\s]*)+{re.escape(closing)}'
             text = re.sub(pattern, closing, text, flags=re.IGNORECASE)
         
@@ -187,13 +188,53 @@ class AIAnswerGenerator:
         text = re.sub(r'[,\s]*,[,\s]*', ', ', text)
         text = re.sub(r'[.\s]*\.[.\s]*', '. ', text)
         
-        # 연속된 공백과 줄바꿈 정리
-        text = re.sub(r'\s+', ' ', text)
-        text = re.sub(r'\n\s*\n\s*\n+', '\n\n', text)
+        # 적절한 위치에서 문단 나누기
+        # 1. 문장 끝에서 자연스러운 문단 나누기 포인트 찾기
+        paragraph_break_patterns = [
+            r'(\. )([A-Z가-힣]+[^.]*?(?:입니다|습니다|드립니다|하겠습니다|됩니다|있습니다)\.)',  # 정중한 문장 끝
+            r'(\. )(그래서|따라서|현재|특히|불편하시겠지만|성경)',  # 접속어나 새로운 주제 시작
+            r'(\. )(바이블 애플|GOODTV|대한성서공회)',  # 회사/기관명으로 시작하는 문장
+            r'(\. )(또|그리고|하지만|그러나|그런데)',  # 접속 부사
+            r'(습니다\. )(성도님|고객님|이용자님)',  # 호칭으로 시작하는 새 문장
+            r'(니다\. )([가-힣]+이|[가-힣]+을|[가-힣]+는)',  # 새로운 주제 시작
+        ]
+        
+        for pattern in paragraph_break_patterns:
+            text = re.sub(pattern, r'\1\n\n\2', text)
+        
+        # 특정 키워드 후에 문단 나누기
+        keyword_breaks = [
+            '감사드립니다.',
+            '확인하였습니다.',
+            '부탁드립니다.',
+            '어렵습니다.',
+            '있습니다.',
+            '하겠습니다.',
+            '됩니다.',
+            '보입니다.',
+        ]
+        
+        for keyword in keyword_breaks:
+            # 키워드 다음에 공백과 한글 대문자가 오는 경우 문단 나누기
+            pattern = rf'({re.escape(keyword)}) ([가-힣A-Z][^.]*)'
+            text = re.sub(pattern, rf'\1\n\n\2', text)
+        
+        # 연속된 공백을 하나로 통합 (문단 구분은 유지)
+        text = re.sub(r'[ \t]+', ' ', text)
+        
+        # 연속된 줄바꿈 정리 (최대 2개까지만)
+        text = re.sub(r'\n{3,}', '\n\n', text)
         
         # 문장 부호 앞뒤 공백 정리
         text = re.sub(r'\s+([,.!?])', r'\1', text)
         text = re.sub(r'([,.!?])\s+', r'\1 ', text)
+        
+        # 각 줄의 시작과 끝 공백 제거
+        lines = []
+        for line in text.split('\n'):
+            lines.append(line.strip())
+        
+        text = '\n'.join(lines)
         
         return text.strip()
 
