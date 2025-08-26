@@ -160,7 +160,7 @@ class AIAnswerGenerator:
 
     def clean_answer_text(self, text: str) -> str:
         """
-        답변 텍스트 정리 함수
+        답변 텍스트 정리 함수 (개선된 문단 나누기 및 들여쓰기 포함)
         목적: 중복 인사말, 특수문자, 포맷팅 문제 해결 및 적절한 문단 나누기
         """
         if not text:
@@ -188,21 +188,23 @@ class AIAnswerGenerator:
         text = re.sub(r'[,\s]*,[,\s]*', ', ', text)
         text = re.sub(r'[.\s]*\.[.\s]*', '. ', text)
         
-        # 적절한 위치에서 문단 나누기
-        # 1. 문장 끝에서 자연스러운 문단 나누기 포인트 찾기
-        paragraph_break_patterns = [
-            r'(\. )([A-Z가-힣]+[^.]*?(?:입니다|습니다|드립니다|하겠습니다|됩니다|있습니다)\.)',  # 정중한 문장 끝
-            r'(\. )(그래서|따라서|현재|특히|불편하시겠지만|성경)',  # 접속어나 새로운 주제 시작
-            r'(\. )(바이블 애플|GOODTV|대한성서공회)',  # 회사/기관명으로 시작하는 문장
-            r'(\. )(또|그리고|하지만|그러나|그런데)',  # 접속 부사
-            r'(습니다\. )(성도님|고객님|이용자님)',  # 호칭으로 시작하는 새 문장
-            r'(니다\. )([가-힣]+이|[가-힣]+을|[가-힣]+는)',  # 새로운 주제 시작
+        # 강화된 문단 나누기 - 문장 종료 후 자동 문단 구분
+        # 1. 문장 끝(.으로 끝남) 다음에 오는 새로운 문장 시작점에서 문단 나누기
+        sentence_break_patterns = [
+            # 일반적인 문장 종료 후 새 문장 시작
+            r'(\. )([가-힣A-Z][^.]*?(?:입니다|습니다|드립니다|하겠습니다|됩니다|있습니다|보입니다)\.)',
+            # 특정 키워드로 시작하는 새 문장
+            r'(\. )(그래서|따라서|현재|특히|불편하시겠지만|성경|바이블 애플|GOODTV|대한성서공회)',
+            r'(\. )(또|그리고|하지만|그러나|그런데|이|이것은|해당|말씀|공동번역|개역한글)',
+            # 호칭이나 지칭으로 시작하는 문장
+            r'(습니다\. )(성도님|고객님|이용자님|모두가)',
+            r'(니다\. )([가-힣]+이|[가-힣]+을|[가-힣]+는|[가-힣]+에서)',
         ]
         
-        for pattern in paragraph_break_patterns:
-            text = re.sub(pattern, r'\1\n\n\2', text)
+        for pattern in sentence_break_patterns:
+            text = re.sub(pattern, r'\1\n\n    \2', text)  # 들여쓰기 4칸 추가
         
-        # 특정 키워드 후에 문단 나누기
+        # 특정 키워드 후에 강제 문단 나누기 (더 포괄적)
         keyword_breaks = [
             '감사드립니다.',
             '확인하였습니다.',
@@ -212,12 +214,38 @@ class AIAnswerGenerator:
             '하겠습니다.',
             '됩니다.',
             '보입니다.',
+            '특징입니다.',
+            '차이입니다.',
+            '문제입니다.',
+            '방법입니다.',
+            '어려워,',  # 쉼표로 끝나는 경우도 포함
+            '어렵습니다,',
+            '다르기 때문에',
+            '생기는',
+            '이해해주시길',
+            '되어 있습니다.',
+            '어렵습니다.',
+            '보입니다.',
+            '있으시면',
+            '주세요,',
+            '하겠습니다',
         ]
         
         for keyword in keyword_breaks:
-            # 키워드 다음에 공백과 한글 대문자가 오는 경우 문단 나누기
+            # 키워드 다음에 공백과 한글/영문이 오는 경우 문단 나누기
             pattern = rf'({re.escape(keyword)}) ([가-힣A-Z][^.]*)'
-            text = re.sub(pattern, rf'\1\n\n\2', text)
+            text = re.sub(pattern, rf'\1\n\n    \2', text)  # 들여쓰기 4칸 추가
+        
+        # 문장 부호 뒤 강제 문단 나누기 (특정 경우)
+        # 긴 설명 후 새로운 주제로 넘어가는 패턴
+        topic_change_patterns = [
+            r'(입니다\. )([가-힣]+은|[가-힣]+를|[가-힣]+이|[가-힣]+에서)',
+            r'(됩니다\. )([가-힣]+은|[가-힣]+를|[가-힣]+이|현재)',
+            r'(습니다\. )([가-힣]+은|[가-힣]+를|[가-힣]+이|불편하시겠지만)',
+        ]
+        
+        for pattern in topic_change_patterns:
+            text = re.sub(pattern, r'\1\n\n    \2', text)  # 들여쓰기 4칸 추가
         
         # 연속된 공백을 하나로 통합 (문단 구분은 유지)
         text = re.sub(r'[ \t]+', ' ', text)
@@ -229,10 +257,24 @@ class AIAnswerGenerator:
         text = re.sub(r'\s+([,.!?])', r'\1', text)
         text = re.sub(r'([,.!?])\s+', r'\1 ', text)
         
-        # 각 줄의 시작과 끝 공백 제거
+        # 각 줄 처리 및 적절한 들여쓰기 적용
         lines = []
         for line in text.split('\n'):
-            lines.append(line.strip())
+            line = line.strip()
+            if line:
+                # 이미 들여쓰기가 있는 경우 그대로 유지
+                if line.startswith('    '):
+                    lines.append(line)
+                # 새로운 문단의 시작인 경우 (특정 패턴)
+                elif any(line.startswith(keyword) for keyword in ['그래서', '따라서', '현재', '특히', '불편하시겠지만', '성경', '바이블 애플', 'GOODTV', '대한성서공회', '또', '그리고', '하지만', '그러나', '그런데', '이', '해당', '말씀', '공동번역', '개역한글', '모두가']):
+                    lines.append(f"    {line}")
+                # 첫 번째 라인(인사말)이 아닌 경우 들여쓰기
+                elif lines and not line.startswith('안녕하세요') and not line.endswith('감사합니다.') and not line.endswith('감사드립니다.'):
+                    lines.append(f"    {line}")
+                else:
+                    lines.append(line)
+            else:
+                lines.append('')
         
         text = '\n'.join(lines)
         
