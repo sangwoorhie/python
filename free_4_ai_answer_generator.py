@@ -73,6 +73,10 @@ class AIAnswerGenerator:
         text = str(text) # 문자열 타입 강제 변환
         text = html.unescape(text) # HTML 엔티티 디코딩 (&amp; → &, &lt; → <)
         
+        # 제어 문자 제거 (백스페이스, 탭, 캐리지 리턴 등)
+        text = re.sub(r'[\b\r\f\v]', '', text)  # \b(백스페이스), \r, \f, \v 제거
+        text = re.sub(r'[\x00-\x08\x0B\x0C\x0E-\x1F\x7F]', '', text)  # 기타 제어 문자 제거
+        
         # HTML 태그를 적절한 구분자로 변환
         text = re.sub(r'<br\s*/?>', '\n', text, flags=re.IGNORECASE) # <br> → 줄바꿈
         text = re.sub(r'</p>', '\n\n', text, flags=re.IGNORECASE) # </p> → 문단 구분
@@ -273,6 +277,10 @@ class AIAnswerGenerator:
         if not text:
             return ""
         
+        # 제어 문자 제거 (백스페이스, 탭, 캐리지 리턴 등)
+        text = re.sub(r'[\b\r\f\v]', '', text)  # \b(백스페이스), \r, \f, \v 제거
+        text = re.sub(r'[\x00-\x08\x0B\x0C\x0E-\x1F\x7F]', '', text)  # 기타 제어 문자 제거
+        
         # 기존 HTML 태그가 있다면 일단 제거 (깨끗한 텍스트로 시작)
         text = re.sub(r'<[^>]+>', '', text)
         
@@ -318,8 +326,18 @@ class AIAnswerGenerator:
         T5 모델을 사용하여 실제 답변 생성
         """
         try:
-            # 상위 3개 유사 답변을 컨텍스트로 사용
-            context = " ".join([ans['answer'] for ans in similar_answers[:3]])
+            # 상위 3개 유사 답변을 컨텍스트로 사용하되, 제어 문자 제거
+            context_answers = []
+            for ans in similar_answers[:3]:
+                clean_ans = ans['answer']
+                # 제어 문자 제거
+                clean_ans = re.sub(r'[\b\r\f\v]', '', clean_ans)
+                clean_ans = re.sub(r'[\x00-\x08\x0B\x0C\x0E-\x1F\x7F]', '', clean_ans)
+                # HTML 태그 제거
+                clean_ans = re.sub(r'<[^>]+>', '', clean_ans)
+                context_answers.append(clean_ans)
+            
+            context = " ".join(context_answers)
             
             # T5 모델용 프롬프트 구성
             prompt = f"질문: {query}\n참고답변: {context}\n답변:"
@@ -344,13 +362,21 @@ class AIAnswerGenerator:
             if "답변:" in generated:
                 generated = generated.split("답변:")[-1].strip()
             
+            # 생성된 답변에서도 제어 문자 제거
+            generated = re.sub(r'[\b\r\f\v]', '', generated)
+            generated = re.sub(r'[\x00-\x08\x0B\x0C\x0E-\x1F\x7F]', '', generated)
+            
             return generated
             
         except Exception as e:
             logging.error(f"T5 모델 생성 실패: {e}")
             # T5 실패 시 첫 번째 유사 답변 반환
             if similar_answers:
-                return similar_answers[0]['answer']
+                fallback_answer = similar_answers[0]['answer']
+                # 폴백 답변에서도 제어 문자 제거
+                fallback_answer = re.sub(r'[\b\r\f\v]', '', fallback_answer)
+                fallback_answer = re.sub(r'[\x00-\x08\x0B\x0C\x0E-\x1F\x7F]', '', fallback_answer)
+                return fallback_answer
             return ""
 
     def generate_ai_answer(self, query: str, similar_answers: list, lang: str) -> str:
