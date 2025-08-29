@@ -178,9 +178,10 @@ class AIAnswerGenerator:
         
         return text
 
-    def format_answer_with_paragraphs(self, text: str) -> str:
+    def format_answer_with_html_paragraphs(self, text: str) -> str:
         """
-        문단 나누기 및 들여쓰기를 적용하는 개선된 함수
+        HTML 태그를 사용한 문단 나누기 함수
+        ASP Classic의 Quill 에디터에서 올바르게 표시되도록 HTML 태그 적용
         """
         if not text:
             return ""
@@ -247,24 +248,33 @@ class AIAnswerGenerator:
         if current_paragraph:
             paragraphs.append(' '.join(current_paragraph))
         
-        # 문단 사이에 빈 줄 추가 및 들여쓰기 적용
-        formatted_text = ""
+        # HTML 형식으로 변환
+        html_paragraphs = []
         for i, paragraph in enumerate(paragraphs):
-            if i == 0:
-                # 첫 문단 (보통 인사말)은 들여쓰기 없음
-                formatted_text += paragraph
-            else:
-                # 나머지 문단은 빈 줄 + 들여쓰기
-                formatted_text += "\n\n" + paragraph
+            # 각 문단을 <p> 태그로 감싸기
+            html_paragraphs.append(f"<p>{paragraph}</p>")
+            
+            # 문단 사이에 빈 줄 추가 (마지막 문단 제외)
+            if i < len(paragraphs) - 1:
+                # 특정 조건에서 추가 공백 줄
+                if any(keyword in paragraph for keyword in ['감사합니다', '감사드립니다', '평안하세요']):
+                    # 마무리 인사 전에는 공백 없음
+                    pass
+                else:
+                    # 일반 문단 사이에 빈 줄 추가
+                    html_paragraphs.append("<p><br></p>")
         
-        return formatted_text
+        return ''.join(html_paragraphs)
 
     def clean_answer_text(self, text: str) -> str:
         """
-        답변 텍스트 최종 정리 함수
+        답변 텍스트 최종 정리 함수 (HTML 형식)
         """
         if not text:
             return ""
+        
+        # 기존 HTML 태그가 있다면 일단 제거 (깨끗한 텍스트로 시작)
+        text = re.sub(r'<[^>]+>', '', text)
         
         # ** 마크다운 강조 제거
         text = re.sub(r'\*\*([^*]+)\*\*', r'\1', text)
@@ -298,47 +308,47 @@ class AIAnswerGenerator:
         # "(구)다번역성경찬송" 제거
         text = self.remove_old_app_name(text)
         
-        # 문단 나누기 및 들여쓰기 적용
-        text = self.format_answer_with_paragraphs(text)
+        # HTML 문단 나누기 적용
+        text = self.format_answer_with_html_paragraphs(text)
         
-        return text.strip()
+        return text
 
     def generate_ai_answer(self, query: str, similar_answers: list, lang: str) -> str:
         """
-        T5 모델을 사용한 AI 답변 생성 함수
+        T5 모델을 사용한 AI 답변 생성 함수 (HTML 형식)
         목적: 유사 답변들을 컨텍스트로 활용하여 자연스러운 새로운 답변 생성
         """
         # 유사 답변이 없는 경우 기본 메시지 반환
         if not similar_answers:
-            default_msg = "문의해주신 내용에 대해 정확한 답변을 드리기 위해 더 자세한 정보가 필요합니다.\n\n고객센터로 문의해주시면 신속하게 도움을 드리겠습니다."
-            return self.format_answer_with_paragraphs(default_msg)
+            default_msg = "<p>문의해주신 내용에 대해 정확한 답변을 드리기 위해 더 자세한 정보가 필요합니다.</p><p><br></p><p>고객센터로 문의해주시면 신속하게 도움을 드리겠습니다.</p>"
+            return default_msg
         
         try:
             # 첫 번째 유사 답변을 정리하여 사용 (T5 모델 대신)
             base_answer = similar_answers[0]['answer']
             
+            # 기존 HTML 태그 제거 후 깨끗한 텍스트로 시작
+            base_answer = re.sub(r'<[^>]+>', '', base_answer)
+            
             # "(구)다번역성경찬송" 제거
             base_answer = self.remove_old_app_name(base_answer)
             
-            # 답변 텍스트 정리
-            cleaned_answer = self.clean_answer_text(base_answer)
-            
             # 기존 인사말이 있는지 확인
-            has_greeting = any(greeting in cleaned_answer.lower() for greeting in ['안녕하세요', '안녕'])
-            has_closing = any(closing in cleaned_answer.lower() for closing in ['감사합니다', '감사드립니다'])
+            has_greeting = any(greeting in base_answer.lower() for greeting in ['안녕하세요', '안녕'])
+            has_closing = any(closing in base_answer.lower() for closing in ['감사합니다', '감사드립니다'])
             
             # 적절한 형태로 답변 구성
             final_answer = ""
             
             if not has_greeting:
-                final_answer += "안녕하세요, GOODTV 바이블 애플입니다.\n\n"
+                final_answer += "안녕하세요, GOODTV 바이블 애플입니다. "
             
-            final_answer += cleaned_answer
+            final_answer += base_answer
             
             if not has_closing:
-                final_answer += "\n\n항상 주님 안에서 평안하세요. 감사합니다."
+                final_answer += " 항상 주님 안에서 평안하세요. 감사합니다."
             
-            # 최종 정리 (문단 나누기 포함)
+            # 최종 HTML 정리 (문단 나누기 포함)
             final_answer = self.clean_answer_text(final_answer)
             
             return final_answer
@@ -347,10 +357,22 @@ class AIAnswerGenerator:
             logging.error(f"답변 생성 실패: {e}")
             # 모델 실패 시 폴백 전략
             if similar_answers:
-                base_answer = self.remove_old_app_name(similar_answers[0]['answer'])
+                base_answer = similar_answers[0]['answer']
+                base_answer = re.sub(r'<[^>]+>', '', base_answer)
+                base_answer = self.remove_old_app_name(base_answer)
                 base_answer = self.clean_answer_text(base_answer)
-                return f"안녕하세요, GOODTV 바이블 애플입니다.\n\n{base_answer}\n\n감사합니다."
-            return self.format_answer_with_paragraphs("죄송합니다. 현재 답변을 생성할 수 없습니다.\n\n고객센터로 문의해주세요.")
+                
+                # 인사말이 없으면 추가
+                if not any(greeting in base_answer.lower() for greeting in ['안녕하세요', '안녕']):
+                    base_answer = f"<p>안녕하세요, GOODTV 바이블 애플입니다.</p><p><br></p>{base_answer}"
+                
+                # 마무리 인사가 없으면 추가
+                if not any(closing in base_answer.lower() for closing in ['감사합니다', '감사드립니다']):
+                    base_answer = f"{base_answer}<p><br></p><p>감사합니다.</p>"
+                
+                return base_answer
+            
+            return "<p>죄송합니다. 현재 답변을 생성할 수 없습니다.</p><p><br></p><p>고객센터로 문의해주세요.</p>"
 
     def process(self, seq: int, question: str, lang: str) -> dict:
         """
@@ -369,26 +391,27 @@ class AIAnswerGenerator:
             # 2단계: 유사한 기존 답변 검색
             similar_answers = self.search_similar_answers(processed_question)
             
-            # 3단계: AI 답변 생성
+            # 3단계: AI 답변 생성 (HTML 형식)
             ai_answer = self.generate_ai_answer(processed_question, similar_answers, lang)
             
             # 4단계: 답변 텍스트 최종 정리 (JSON 파싱 오류 방지)
             # 스마트 따옴표 정규화
             ai_answer = ai_answer.replace('"', '"').replace('"', '"')
             ai_answer = ai_answer.replace(''', "'").replace(''', "'")
-            # 줄바꿈 정규화
-            ai_answer = ai_answer.replace('\r\n', '\n').replace('\r', '\n')
+            
+            # HTML 태그 내부의 줄바꿈은 유지하되, 태그 외부 줄바꿈은 제거
+            # (Quill 에디터에서 올바르게 렌더링되도록)
             
             # 5단계: 결과 구조화
             result = {
                 "success": True,
-                "answer": ai_answer,  # 이미 안전한 텍스트
+                "answer": ai_answer,  # HTML 형식의 답변
                 "similar_count": len(similar_answers), # 찾은 유사 답변 개수
                 "embedding_model": "sentence-transformers/paraphrase-multilingual-mpnet-base-v2", # 사용된 임베딩 모델
                 "generation_model": "google/flan-t5-base" # 사용된 생성 모델
             }
             
-            logging.info(f"처리 완료 - SEQ: {seq}")
+            logging.info(f"처리 완료 - SEQ: {seq}, HTML 답변 생성됨")
             return result
             
         except Exception as e:
