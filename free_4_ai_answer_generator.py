@@ -5,7 +5,7 @@ AI Answer Generator Flask API for ASP Classic Integration
 파일명: free_4_ai_answer_generator.py
 설명: Flask API로 ASP Classic에서 호출
 모델: google/flan-t5-base
-개선사항: 한글 자모 분리 해결, 스마트 따옴표 정리, 성경 구절 정규화
+개선사항: 한글 자모 분리 해결, 스마트 따옴표 정리, 성경 구절 정규화, 문단 나누기 개선
 """
 
 # 필수 라이브러리 임포트
@@ -158,10 +158,110 @@ class AIAnswerGenerator:
             logging.error(f"Pinecone 검색 실패: {str(e)}")
             return [] # 검색 실패 시 빈 리스트 반환
 
+    def remove_old_app_name(self, text: str) -> str:
+        """
+        "(구)다번역성경찬송" 텍스트 제거 함수
+        """
+        # 다양한 패턴으로 제거
+        patterns_to_remove = [
+            r'\s*\(구\)\s*다번역성경찬송',
+            r'\s*\(구\)다번역성경찬송',
+            r'바이블\s*애플\s*\(구\)\s*다번역성경찬송',
+            r'바이블애플\s*\(구\)다번역성경찬송',
+        ]
+        
+        for pattern in patterns_to_remove:
+            text = re.sub(pattern, '', text, flags=re.IGNORECASE)
+        
+        # GOODTV 바이블 애플 뒤의 불필요한 공백 정리
+        text = re.sub(r'(GOODTV\s+바이블\s*애플)\s+', r'\1', text)
+        
+        return text
+
+    def format_answer_with_paragraphs(self, text: str) -> str:
+        """
+        문단 나누기 및 들여쓰기를 적용하는 개선된 함수
+        """
+        if not text:
+            return ""
+        
+        # 먼저 "(구)다번역성경찬송" 제거
+        text = self.remove_old_app_name(text)
+        
+        # 문장을 분리하여 처리
+        sentences = re.split(r'(?<=[.!?])\s+', text)
+        
+        # 문단을 저장할 리스트
+        paragraphs = []
+        current_paragraph = []
+        
+        # 문단 나누기 트리거 키워드
+        paragraph_triggers = [
+            # 안내나 설명의 시작
+            '해당', '이', '만약', '혹시', '성도님', '고객님',
+            # 추가 설명
+            '번거로우시', '불편하시', '죄송하지만', '참고로',
+            # 마무리 멘트 시작
+            '항상', '늘', '앞으로도', '지속적으로',
+            # 기능 설명 시작
+            '스피커', '버튼', '메뉴', '화면', '설정',
+        ]
+        
+        for i, sentence in enumerate(sentences):
+            sentence = sentence.strip()
+            if not sentence:
+                continue
+            
+            # 인사말은 항상 별도 문단
+            if i == 0 and any(greeting in sentence for greeting in ['안녕하세요', '안녕']):
+                if current_paragraph:
+                    paragraphs.append(' '.join(current_paragraph))
+                    current_paragraph = []
+                paragraphs.append(sentence)
+                continue
+            
+            # 문단 나누기 조건 확인
+            should_break = False
+            
+            # 1. 트리거 키워드로 시작하는 경우
+            for trigger in paragraph_triggers:
+                if sentence.startswith(trigger):
+                    should_break = True
+                    break
+            
+            # 2. 이전 문장이 설명 완료이고 새로운 주제로 전환
+            if current_paragraph and len(current_paragraph) >= 2:
+                should_break = True
+            
+            # 3. 마무리 인사 시작
+            if any(closing in sentence for closing in ['감사합니다', '감사드립니다', '평안하세요']):
+                should_break = True
+            
+            if should_break and current_paragraph:
+                paragraphs.append(' '.join(current_paragraph))
+                current_paragraph = [sentence]
+            else:
+                current_paragraph.append(sentence)
+        
+        # 남은 문장 처리
+        if current_paragraph:
+            paragraphs.append(' '.join(current_paragraph))
+        
+        # 문단 사이에 빈 줄 추가 및 들여쓰기 적용
+        formatted_text = ""
+        for i, paragraph in enumerate(paragraphs):
+            if i == 0:
+                # 첫 문단 (보통 인사말)은 들여쓰기 없음
+                formatted_text += paragraph
+            else:
+                # 나머지 문단은 빈 줄 + 들여쓰기
+                formatted_text += "\n\n" + paragraph
+        
+        return formatted_text
+
     def clean_answer_text(self, text: str) -> str:
         """
-        답변 텍스트 정리 함수 (개선된 문단 나누기 및 들여쓰기 포함)
-        목적: 중복 인사말, 특수문자, 포맷팅 문제 해결 및 적절한 문단 나누기
+        답변 텍스트 최종 정리 함수
         """
         if not text:
             return ""
@@ -188,95 +288,18 @@ class AIAnswerGenerator:
         text = re.sub(r'[,\s]*,[,\s]*', ', ', text)
         text = re.sub(r'[.\s]*\.[.\s]*', '. ', text)
         
-        # 강화된 문단 나누기 - 문장 종료 후 자동 문단 구분
-        # 1. 문장 끝(.으로 끝남) 다음에 오는 새로운 문장 시작점에서 문단 나누기
-        sentence_break_patterns = [
-            # 일반적인 문장 종료 후 새 문장 시작
-            r'(\. )([가-힣A-Z][^.]*?(?:입니다|습니다|드립니다|하겠습니다|됩니다|있습니다|보입니다)\.)',
-            # 특정 키워드로 시작하는 새 문장
-            r'(\. )(그래서|따라서|현재|특히|불편하시겠지만|성경|바이블 애플|GOODTV|대한성서공회)',
-            r'(\. )(또|그리고|하지만|그러나|그런데|이|이것은|해당|말씀|공동번역|개역한글)',
-            # 호칭이나 지칭으로 시작하는 문장
-            r'(습니다\. )(성도님|고객님|이용자님|모두가)',
-            r'(니다\. )([가-힣]+이|[가-힣]+을|[가-힣]+는|[가-힣]+에서)',
-        ]
-        
-        for pattern in sentence_break_patterns:
-            text = re.sub(pattern, r'\1\n\n    \2', text)  # 들여쓰기 4칸 추가
-        
-        # 특정 키워드 후에 강제 문단 나누기 (더 포괄적)
-        keyword_breaks = [
-            '감사드립니다.',
-            '확인하였습니다.',
-            '부탁드립니다.',
-            '어렵습니다.',
-            '있습니다.',
-            '하겠습니다.',
-            '됩니다.',
-            '보입니다.',
-            '특징입니다.',
-            '차이입니다.',
-            '문제입니다.',
-            '방법입니다.',
-            '어려워,',  # 쉼표로 끝나는 경우도 포함
-            '어렵습니다,',
-            '다르기 때문에',
-            '생기는',
-            '이해해주시길',
-            '되어 있습니다.',
-            '어렵습니다.',
-            '보입니다.',
-            '있으시면',
-            '주세요,',
-            '하겠습니다',
-        ]
-        
-        for keyword in keyword_breaks:
-            # 키워드 다음에 공백과 한글/영문이 오는 경우 문단 나누기
-            pattern = rf'({re.escape(keyword)}) ([가-힣A-Z][^.]*)'
-            text = re.sub(pattern, rf'\1\n\n    \2', text)  # 들여쓰기 4칸 추가
-        
-        # 문장 부호 뒤 강제 문단 나누기 (특정 경우)
-        # 긴 설명 후 새로운 주제로 넘어가는 패턴
-        topic_change_patterns = [
-            r'(입니다\. )([가-힣]+은|[가-힣]+를|[가-힣]+이|[가-힣]+에서)',
-            r'(됩니다\. )([가-힣]+은|[가-힣]+를|[가-힣]+이|현재)',
-            r'(습니다\. )([가-힣]+은|[가-힣]+를|[가-힣]+이|불편하시겠지만)',
-        ]
-        
-        for pattern in topic_change_patterns:
-            text = re.sub(pattern, r'\1\n\n    \2', text)  # 들여쓰기 4칸 추가
-        
-        # 연속된 공백을 하나로 통합 (문단 구분은 유지)
+        # 연속된 공백을 하나로 통합
         text = re.sub(r'[ \t]+', ' ', text)
-        
-        # 연속된 줄바꿈 정리 (최대 2개까지만)
-        text = re.sub(r'\n{3,}', '\n\n', text)
         
         # 문장 부호 앞뒤 공백 정리
         text = re.sub(r'\s+([,.!?])', r'\1', text)
         text = re.sub(r'([,.!?])\s+', r'\1 ', text)
         
-        # 각 줄 처리 및 적절한 들여쓰기 적용
-        lines = []
-        for line in text.split('\n'):
-            line = line.strip()
-            if line:
-                # 이미 들여쓰기가 있는 경우 그대로 유지
-                if line.startswith('    '):
-                    lines.append(line)
-                # 새로운 문단의 시작인 경우 (특정 패턴)
-                elif any(line.startswith(keyword) for keyword in ['그래서', '따라서', '현재', '특히', '불편하시겠지만', '성경', '바이블 애플', 'GOODTV', '대한성서공회', '또', '그리고', '하지만', '그러나', '그런데', '이', '해당', '말씀', '공동번역', '개역한글', '모두가']):
-                    lines.append(f"    {line}")
-                # 첫 번째 라인(인사말)이 아닌 경우 들여쓰기
-                elif lines and not line.startswith('안녕하세요') and not line.endswith('감사합니다.') and not line.endswith('감사드립니다.'):
-                    lines.append(f"    {line}")
-                else:
-                    lines.append(line)
-            else:
-                lines.append('')
+        # "(구)다번역성경찬송" 제거
+        text = self.remove_old_app_name(text)
         
-        text = '\n'.join(lines)
+        # 문단 나누기 및 들여쓰기 적용
+        text = self.format_answer_with_paragraphs(text)
         
         return text.strip()
 
@@ -287,11 +310,15 @@ class AIAnswerGenerator:
         """
         # 유사 답변이 없는 경우 기본 메시지 반환
         if not similar_answers:
-            return "문의해주신 내용에 대해 정확한 답변을 드리기 위해 더 자세한 정보가 필요합니다. 고객센터로 문의해주시면 신속하게 도움을 드리겠습니다."
+            default_msg = "문의해주신 내용에 대해 정확한 답변을 드리기 위해 더 자세한 정보가 필요합니다.\n\n고객센터로 문의해주시면 신속하게 도움을 드리겠습니다."
+            return self.format_answer_with_paragraphs(default_msg)
         
         try:
             # 첫 번째 유사 답변을 정리하여 사용 (T5 모델 대신)
             base_answer = similar_answers[0]['answer']
+            
+            # "(구)다번역성경찬송" 제거
+            base_answer = self.remove_old_app_name(base_answer)
             
             # 답변 텍스트 정리
             cleaned_answer = self.clean_answer_text(base_answer)
@@ -304,14 +331,14 @@ class AIAnswerGenerator:
             final_answer = ""
             
             if not has_greeting:
-                final_answer += "안녕하세요.\n\n"
+                final_answer += "안녕하세요, GOODTV 바이블 애플입니다.\n\n"
             
             final_answer += cleaned_answer
             
             if not has_closing:
-                final_answer += "\n\n추가 문의사항이 있으시면 언제든 연락해주세요. 감사합니다."
+                final_answer += "\n\n항상 주님 안에서 평안하세요. 감사합니다."
             
-            # 최종 정리
+            # 최종 정리 (문단 나누기 포함)
             final_answer = self.clean_answer_text(final_answer)
             
             return final_answer
@@ -320,9 +347,10 @@ class AIAnswerGenerator:
             logging.error(f"답변 생성 실패: {e}")
             # 모델 실패 시 폴백 전략
             if similar_answers:
-                base_answer = self.clean_answer_text(similar_answers[0]['answer'])
-                return f"안녕하세요.\n\n{base_answer}\n\n감사합니다."
-            return "죄송합니다. 현재 답변을 생성할 수 없습니다. 고객센터로 문의해주세요."
+                base_answer = self.remove_old_app_name(similar_answers[0]['answer'])
+                base_answer = self.clean_answer_text(base_answer)
+                return f"안녕하세요, GOODTV 바이블 애플입니다.\n\n{base_answer}\n\n감사합니다."
+            return self.format_answer_with_paragraphs("죄송합니다. 현재 답변을 생성할 수 없습니다.\n\n고객센터로 문의해주세요.")
 
     def process(self, seq: int, question: str, lang: str) -> dict:
         """
@@ -350,8 +378,6 @@ class AIAnswerGenerator:
             ai_answer = ai_answer.replace(''', "'").replace(''', "'")
             # 줄바꿈 정규화
             ai_answer = ai_answer.replace('\r\n', '\n').replace('\r', '\n')
-            # 최종 텍스트 정리
-            ai_answer = self.clean_answer_text(ai_answer)
             
             # 5단계: 결과 구조화
             result = {

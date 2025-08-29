@@ -30,7 +30,11 @@ EMBEDDING_DIMENSION = 768
 CLOUD_PROVIDER = "aws"
 CLOUD_REGION = "us-east-1" 
 
-# 1. 환경변수 로드
+### 함수 1. 환경변수 로드
+# python에서 화살표 (->) 는 함수의 반환 타입을 나타냅니다. (함수가 특정 타입의 값을 반환해야 함을 알려주는 역할)
+# 예를 들어, -> None 은 함수가 아무것도 반환하지 않음을 의미합니다.
+# 즉, 함수는 환경변수를 로드하고 아무것도 반환하지 않습니다.
+
 def load_environment_variables() -> None:
     """
     .env 파일에서 환경변수를 로드합니다.
@@ -49,7 +53,7 @@ def load_environment_variables() -> None:
     
     print("✓ 환경변수 로드 완료!")
 
-# 2. Pinecone 클라이언트 초기화
+### 함수 2. Pinecone 클라이언트 초기화
 def initialize_pinecone() -> Pinecone:
     """
     Pinecone 클라이언트를 초기화합니다.
@@ -67,7 +71,7 @@ def initialize_pinecone() -> Pinecone:
         print("💡 API 키가 올바른지 확인하세요.")
         sys.exit(1)
 
-# 3. 벡터 임베딩 모델 로드 및 테스트
+### 함수 3. 벡터 임베딩 모델 로드 및 테스트
 def load_and_test_model() -> SentenceTransformer:
     """
     sentence-transformers 모델을 로드하고 테스트합니다.
@@ -86,7 +90,7 @@ def load_and_test_model() -> SentenceTransformer:
         
         # 모델 테스트: 한국어 문장으로 임베딩 생성
         test_text = "테스트 문장입니다."
-        test_embedding = model.encode(test_text)
+        test_embedding = model.encode(test_text) 
         actual_dimension = len(test_embedding)
         
         print(f"✓ 임베딩 차원 확인: {actual_dimension}차원")
@@ -106,7 +110,7 @@ def load_and_test_model() -> SentenceTransformer:
         print("💡 인터넷 연결을 확인하고 다시 시도하세요.")
         sys.exit(1)
 
-# 4. Pinecone 인덱스 생성 또는 연결
+### 함수 4. Pinecone 인덱스 생성 또는 연결
 def create_or_get_index(pc: Pinecone) -> None:
     """
     Pinecone 인덱스를 생성하거나 기존 인덱스에 연결합니다.
@@ -146,7 +150,7 @@ def create_or_get_index(pc: Pinecone) -> None:
         print("💡 Pinecone 대시보드에서 인덱스 상태를 확인하세요.")
         sys.exit(1)
 
-# 5. 인덱스 연결 테스트
+### 함수 5. 인덱스 연결 테스트
 def test_index_connection(pc: Pinecone) -> None:
     """
     생성된 인덱스에 연결하고 상태를 확인합니다.
