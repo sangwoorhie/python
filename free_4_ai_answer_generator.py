@@ -313,6 +313,46 @@ class AIAnswerGenerator:
         
         return text
 
+    def generate_with_t5(self, query: str, similar_answers: list) -> str:
+        """
+        T5 모델을 사용하여 실제 답변 생성
+        """
+        try:
+            # 상위 3개 유사 답변을 컨텍스트로 사용
+            context = " ".join([ans['answer'] for ans in similar_answers[:3]])
+            
+            # T5 모델용 프롬프트 구성
+            prompt = f"질문: {query}\n참고답변: {context}\n답변:"
+            
+            # 텍스트 토큰화 (최대 512 토큰)
+            inputs = text_tokenizer(prompt, return_tensors="pt", max_length=512, truncation=True)
+            
+            # T5 모델로 답변 생성 (최대 200 토큰)
+            outputs = text_model.generate(
+                **inputs, 
+                max_length=200,
+                num_beams=4,  # 더 나은 품질을 위한 빔 서치
+                early_stopping=True,
+                do_sample=True,
+                temperature=0.7  # 적절한 창의성
+            )
+            
+            # 생성된 텍스트 디코딩
+            generated = text_tokenizer.decode(outputs[0], skip_special_tokens=True)
+            
+            # 프롬프트 부분 제거하여 순수 답변만 추출
+            if "답변:" in generated:
+                generated = generated.split("답변:")[-1].strip()
+            
+            return generated
+            
+        except Exception as e:
+            logging.error(f"T5 모델 생성 실패: {e}")
+            # T5 실패 시 첫 번째 유사 답변 반환
+            if similar_answers:
+                return similar_answers[0]['answer']
+            return ""
+
     def generate_ai_answer(self, query: str, similar_answers: list, lang: str) -> str:
         """
         T5 모델을 사용한 AI 답변 생성 함수 (HTML 형식)
@@ -324,8 +364,12 @@ class AIAnswerGenerator:
             return default_msg
         
         try:
-            # 첫 번째 유사 답변을 정리하여 사용 (T5 모델 대신)
-            base_answer = similar_answers[0]['answer']
+            # T5 모델을 사용하여 새로운 답변 생성
+            base_answer = self.generate_with_t5(query, similar_answers)
+            
+            # T5 생성 결과가 비어있거나 너무 짧은 경우 폴백
+            if not base_answer or len(base_answer.strip()) < 10:
+                base_answer = similar_answers[0]['answer']
             
             # 기존 HTML 태그 제거 후 깨끗한 텍스트로 시작
             base_answer = re.sub(r'<[^>]+>', '', base_answer)
