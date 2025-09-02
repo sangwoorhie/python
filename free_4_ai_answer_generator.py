@@ -111,7 +111,7 @@ class AIAnswerGenerator:
         
         # Python의 json 모듈을 사용하여 안전하게 이스케이프
         # dumps로 JSON 문자열로 만든 후, 양쪽 따옴표 제거
-        escaped = json_module.dumps(text, ensure_ascii=False)
+        escaped = json_module.dumps(text, ensure_ascii=False) # Python 객체를 JSON 문자열로 변환하는 함수 (ensure_ascii=False → 한글 깨짐 방지)
         return escaped[1:-1]  # 앞뒤 따옴표 제거
 
     ### ★ 2. 텍스트를 768차원 벡터로 변환하는 함수 (의미적 유사도 검색을 위한 벡터 표현 생성)        
@@ -204,9 +204,9 @@ class AIAnswerGenerator:
         # 문장을 분리하여 처리
         sentences = re.split(r'(?<=[.!?])\s+', text)
         
-        # 문단을 저장할 리스트
-        paragraphs = []
-        current_paragraph = []
+        # 문단을 저장할 리스트 
+        paragraphs = [] # 최종 문단 단위 텍스트를 순서대로 저장
+        current_paragraph = [] # 현재 처리 중인 임시 문장 묶음 (일시적)
         
         # 문단 나누기 트리거 키워드
         # 한국어 고객 서비스 문체의 담화 표지어 분석 결과에 기반하여 선정
@@ -342,7 +342,7 @@ class AIAnswerGenerator:
 
         try:
             # 1단계 : 상위 3개 유사 답변을 컨텍스트로 사용하되, 제어 문자 제거
-            context_answers = []
+            context_answers = [] # 유사 답변을 컨텍스트로 사용하기 위해 저장
             for ans in similar_answers[:3]:
                 clean_ans = ans['answer']
                 # 제어 문자 제거 (T5 모델이 제어문자에 민감함)
@@ -358,7 +358,7 @@ class AIAnswerGenerator:
             prompt = f"질문: {query}\n참고답변: {context}\n답변:"
             
             # 3단계 : 텍스트 토큰화 (최대 512 토큰)
-            inputs = text_tokenizer(prompt, return_tensors="pt", max_length=512, truncation=True)
+            inputs = text_tokenizer(prompt, return_tensors="pt", max_length=512, truncation=True) # return_tensors="pt" → PyTorch Tensor 형태로 반환 (모델에 입력하기 위함) / max_length=512 → 최대 512 토큰까지 허용 / truncation=True → 최대 토큰 수를 초과하면 자르기
             
             # 4단계 : T5 모델로 답변 생성 (최대 200 토큰)
             outputs = text_model.generate(

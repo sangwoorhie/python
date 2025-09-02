@@ -30,18 +30,17 @@ EMBEDDING_DIMENSION = 768
 CLOUD_PROVIDER = "aws"
 CLOUD_REGION = "us-east-1" 
 
-### ★ 함수 1. 환경변수 로드
 # python에서 화살표 (->) 는 함수의 반환 타입을 나타냅니다. (함수가 특정 타입의 값을 반환해야 함을 알려주는 역할)
 # 예를 들어, -> None 은 함수가 아무것도 반환하지 않음을 의미합니다.
 # 즉, 함수는 환경변수를 로드하고 아무것도 반환하지 않습니다.
 
+### ★ 함수 1. 환경변수 로드
+#     .env 파일에서 환경변수를 로드합니다.  
+#     필요한 환경변수:
+#     - PINECONE_API_KEY: Pinecone API 키
+
 def load_environment_variables() -> None:
-    """
-    .env 파일에서 환경변수를 로드합니다.
     
-    필요한 환경변수:
-    - PINECONE_API_KEY: Pinecone API 키
-    """
     print("🔐 환경변수 로드 중...")
     load_dotenv()
     
@@ -54,13 +53,11 @@ def load_environment_variables() -> None:
     print("✓ 환경변수 로드 완료!")
 
 ### ★ 함수 2. Pinecone 클라이언트 초기화
+#     Pinecone 클라이언트를 초기화합니다.
+#     Returns:
+#         Pinecone: 초기화된 Pinecone 클라이언트
 def initialize_pinecone() -> Pinecone:
-    """
-    Pinecone 클라이언트를 초기화합니다.
     
-    Returns:
-        Pinecone: 초기화된 Pinecone 클라이언트
-    """
     print("🌲 Pinecone 클라이언트 초기화 중...")
     try:
         pc = Pinecone(api_key=os.getenv('PINECONE_API_KEY'))
@@ -72,16 +69,13 @@ def initialize_pinecone() -> Pinecone:
         sys.exit(1)
 
 ### ★ 함수 3. 벡터 임베딩 모델 로드 및 테스트
+# sentence-transformers 모델을 로드하고 테스트합니다.
+#     Returns:
+#         SentenceTransformer: 로드된 임베딩 모델
+#     Raises:
+#         SystemExit: 모델 로드 실패 시
 def load_and_test_model() -> SentenceTransformer:
-    """
-    sentence-transformers 모델을 로드하고 테스트합니다.
-    
-    Returns:
-        SentenceTransformer: 로드된 임베딩 모델
-        
-    Raises:
-        SystemExit: 모델 로드 실패 시
-    """
+
     print(f"📦 {MODEL_NAME} 모델 로드 중...")
     try:
         # 다국어 지원 sentence-transformers 모델 로드
@@ -111,13 +105,10 @@ def load_and_test_model() -> SentenceTransformer:
         sys.exit(1)
 
 ### 함수 4. Pinecone 인덱스 생성 또는 연결
+# Pinecone 인덱스를 생성하거나 기존 인덱스에 연결합니다.
+#     Args:
+#         pc (Pinecone): 초기화된 Pinecone 클라이언트
 def create_or_get_index(pc: Pinecone) -> None:
-    """
-    Pinecone 인덱스를 생성하거나 기존 인덱스에 연결합니다.
-    
-    Args:
-        pc (Pinecone): 초기화된 Pinecone 클라이언트
-    """
     print("📋 기존 인덱스 확인 중...")
     
     try:
@@ -151,13 +142,11 @@ def create_or_get_index(pc: Pinecone) -> None:
         sys.exit(1)
 
 ### 함수 5. 인덱스 연결 테스트
+# 생성된 인덱스에 연결하고 상태를 확인합니다.   
+# Args:
+# pc (Pinecone): 초기화된 Pinecone 클라이언트
 def test_index_connection(pc: Pinecone) -> None:
-    """
-    생성된 인덱스에 연결하고 상태를 확인합니다.
-    
-    Args:
-        pc (Pinecone): 초기화된 Pinecone 클라이언트
-    """
+
     print("🔗 인덱스 연결 테스트 중...")
     
     try:
@@ -165,7 +154,7 @@ def test_index_connection(pc: Pinecone) -> None:
         index = pc.Index(INDEX_NAME)
         
         # 인덱스 통계 정보 조회
-        stats = index.describe_index_stats()
+        stats = index.describe_index_stats() #Pinecone Python SDK에서 제공하는 Index 객체의 메서드로 인덱스의 통계 정보를 조회합니다.
         
         print("✓ 인덱스 연결 성공!")
         print(f"📊 인덱스 상태:")
@@ -178,10 +167,10 @@ def test_index_connection(pc: Pinecone) -> None:
         print("💡 잠시 후 다시 시도하세요. (인덱스 생성 직후에는 연결이 지연될 수 있습니다)")
         sys.exit(1)
 
+
+# 메인 실행 함수: 전체 설정 프로세스를 순차적으로 실행합니다.
 def main() -> None:
-    """
-    메인 실행 함수: 전체 설정 프로세스를 순차적으로 실행합니다.
-    """
+
     print("=" * 60)
     print("🚀 바이블 애플 AI 애플리케이션 초기 설정 시작")
     print("📱 무료 sentence-transformers 모델 버전 (768차원)")

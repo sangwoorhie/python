@@ -1,21 +1,26 @@
-import os
-import sys
-import argparse
-import json
-import pyodbc
-import pandas as pd
-from dotenv import load_dotenv
-from datetime import datetime
-import subprocess
-import re
-import html
+import os # 파일 경로 처리 및 환경변수 접근
+import sys # 시스템 관련 정보 접근
+import argparse # 명령행 인자 처리
+import json # JSON 데이터 처리 및 직렬화
+import pyodbc # MSSQL 데이터베이스 연결
+import pandas as pd # 데이터 분석 및 처리
+from dotenv import load_dotenv # .env 파일에서 환경변수 로드
+from datetime import datetime # 날짜 및 시간 처리
+import subprocess # 외부 프로세스 실행
+import re # 정규식을 이용한 텍스트 패턴 매칭 및 치환
+import html # HTML 엔티티 디코딩 (&amp; → &)
 
 # 환경 변수 로드
 load_dotenv()
 
+# 바이블 애플 문의 처리 시스템 (무료 임베딩 모델 사용)
 class BibleInquiryProcessorFree:
-    """바이블 애플 문의 처리 시스템 (무료 임베딩 모델 사용)"""
     
+    # ★ 함수 1. 초기화
+    # Args:
+    #     None
+    # Returns:
+    #     None
     def __init__(self):
         # 환경변수에서 MSSQL 연결 정보 가져오기
         server = os.getenv('MSSQL_SERVER')
@@ -42,8 +47,12 @@ class BibleInquiryProcessorFree:
         )
         self.conn = None
     
+    # ★ 함수 2. MSSQL 데이터베이스 연결
+    # Args:
+    #     None
+    # Returns:
+    #     bool: 연결 성공 시 True, 실패 시 False
     def connect_database(self):
-        """MSSQL 데이터베이스 연결"""
         try:
             self.conn = pyodbc.connect(self.connection_string)
             print("✅ MSSQL 데이터베이스 연결 성공")
@@ -58,7 +67,7 @@ class BibleInquiryProcessorFree:
             self.conn.close()
             print("🔌 데이터베이스 연결 해제")
     
-    def get_unanswered_inquiries(self, limit=10):
+    def get_unanswered_inquiries(self, limit=10): # limit=10: 답변이 없는 문의들 조회 개수
         """답변이 없는 문의들 조회"""
         if not self.conn:
             self.connect_database()
@@ -80,8 +89,13 @@ class BibleInquiryProcessorFree:
             print(f"❌ 문의 조회 실패: {e}")
             return pd.DataFrame()
     
+    # ★ 함수 3. 특정 문의에 대해 AI 답변 생성 (무료 모델 사용)
+    # Args:
+    #     inquiry_seq (int): 문의 번호
+    #     question (str): 문의 내용
+    # Returns:
+    #     str: AI 답변
     def generate_ai_answer_for_inquiry(self, inquiry_seq, question):
-        """특정 문의에 대해 AI 답변 생성 (무료 모델 사용)"""
         try:
             # 무료 버전 Python 스크립트 실행
             result = subprocess.run([
@@ -105,13 +119,19 @@ class BibleInquiryProcessorFree:
             print(f"AI 답변 생성 중 오류: {e}")
             return None
     
+    # ★ 함수 4. 생성된 AI 답변을 DB에 저장 (answer_YN='N' - 관리자 승인 대기)
+    # Args:
+    #     inquiry_seq (int): 문의 번호
+    #     ai_answer (str): AI 답변
+    # Returns:
+    #     bool: 저장 성공 시 True, 실패 시 False
     def save_ai_answer(self, inquiry_seq, ai_answer):
-        """생성된 AI 답변을 DB에 저장 (answer_YN='N' - 관리자 승인 대기)"""
         if not self.conn:
             self.connect_database()
         
         try:
-            cursor = self.conn.cursor()
+            cursor = self.conn.cursor() # 데이터베이스 커서 생성
+            # 영어 원래 뜻: 책갈피, 포인터, 커서 => DB 관점에서 커서는 결과 집합(ResultSet)에서 현재 위치를 가리키는 포인터 역할을 함
             
             # AI 답변을 reply_contents에 저장하되 answer_YN='N'으로 설정 (관리자 승인 필요)
             update_query = """
@@ -120,7 +140,7 @@ class BibleInquiryProcessorFree:
             WHERE seq = ?
             """
             
-            cursor.execute(update_query, (ai_answer, inquiry_seq))
+            cursor.execute(update_query, (ai_answer, inquiry_seq)) # execute: 커서가 SQL을 DB로 전달하고 실행하는 내장 메서드
             self.conn.commit()
             print(f"✅ AI 답변이 저장됨 (문의 번호: {inquiry_seq}, 관리자 승인 대기)")
             print("💰 완전 무료 모델 사용으로 모든 API 비용 없음!")
@@ -130,8 +150,12 @@ class BibleInquiryProcessorFree:
             print(f"❌ AI 답변 저장 실패: {e}")
             return False
     
+    # ★ 함수 5. 관리자 승인 대기 중인 답변들 조회 (answer_YN='N')
+    # Args:
+    #     None
+    # Returns:
+    #     pd.DataFrame: 관리자 승인 대기 중인 답변들
     def get_pending_confirmations(self):
-        """관리자 승인 대기 중인 답변들 조회 (answer_YN='N')"""
         if not self.conn:
             self.connect_database()
         
@@ -152,13 +176,19 @@ class BibleInquiryProcessorFree:
             print(f"❌ 승인 대기 목록 조회 실패: {e}")
             return pd.DataFrame()
     
+    # ★ 함수 5. 관리자: 답변 승인 (answer_YN='Y'로 변경)
+    # Args:
+    #     inquiry_seq (int): 문의 번호
+    #     admin_name (str): 관리자 이름
+    #     final_answer (str): 수정된 답변
+    # Returns:
+    #     bool: 승인 성공 시 True, 실패 시 False
     def confirm_answer(self, inquiry_seq, admin_name=None, final_answer=None):
-        """관리자: 답변 승인 (answer_YN='Y'로 변경)"""
         if not self.conn:
             self.connect_database()
         
         try:
-            cursor = self.conn.cursor()
+            cursor = self.conn.cursor() # 데이터베이스 커서 생성
             
             if final_answer:
                 # 수정된 답변으로 업데이트
@@ -167,7 +197,7 @@ class BibleInquiryProcessorFree:
                 SET reply_contents = ?, answer_YN = 'Y'
                 WHERE seq = ?
                 """
-                cursor.execute(update_query, (final_answer, inquiry_seq))
+                cursor.execute(update_query, (final_answer, inquiry_seq)) # final_answer: 수정된 답변, inquiry_seq: 문의 번호
             else:
                 # 기존 답변 승인
                 update_query = """
@@ -175,7 +205,7 @@ class BibleInquiryProcessorFree:
                 SET answer_YN = 'Y'
                 WHERE seq = ?
                 """
-                cursor.execute(update_query, (inquiry_seq,))
+                cursor.execute(update_query, (inquiry_seq,)) # inquiry_seq: 문의 번호
             
             self.conn.commit()
             print(f"✅ 답변 승인 완료 (문의 번호: {inquiry_seq}) - 고객이 답변을 볼 수 있습니다")
@@ -185,8 +215,13 @@ class BibleInquiryProcessorFree:
             print(f"❌ 답변 승인 실패: {e}")
             return False
     
+    # ★ 함수 6. 관리자: 답변 반려 (reply_contents 초기화)
+    # Args:
+    #     inquiry_seq (int): 문의 번호
+    #     reason (str): 반려 사유
+    # Returns:
+    #     bool: 반려 성공 시 True, 실패 시 False
     def reject_answer(self, inquiry_seq, reason=None):
-        """관리자: 답변 반려 (reply_contents 초기화)"""
         if not self.conn:
             self.connect_database()
         
@@ -200,7 +235,7 @@ class BibleInquiryProcessorFree:
             WHERE seq = ?
             """
             
-            cursor.execute(update_query, (inquiry_seq,))
+            cursor.execute(update_query, (inquiry_seq,)) # inquiry_seq: 문의 번호
             self.conn.commit()
             print(f"✅ 답변 반려 완료 (문의 번호: {inquiry_seq})")
             if reason:
@@ -211,8 +246,12 @@ class BibleInquiryProcessorFree:
             print(f"❌ 답변 반려 실패: {e}")
             return False
     
+    # ★ 함수 7. 단일 문의 처리 (무료 모델 사용)
+    # Args:
+    #     inquiry_seq (int): 문의 번호
+    # Returns:
+    #     bool: 처리 성공 시 True, 실패 시 False
     def process_single_inquiry(self, inquiry_seq):
-        """단일 문의 처리 (무료 모델 사용)"""
         if not self.conn:
             self.connect_database()
         
@@ -225,7 +264,7 @@ class BibleInquiryProcessorFree:
             FROM [mobile].[dbo].[bible_inquiry] 
             WHERE seq = ?
             """
-            cursor.execute(query, (inquiry_seq,))
+            cursor.execute(query, (inquiry_seq,)) # inquiry_seq: 문의 번호
             result = cursor.fetchone()
             
             if not result:
@@ -253,8 +292,12 @@ class BibleInquiryProcessorFree:
             print(f"❌ 문의 처리 중 오류: {e}")
             return False
 
+# 메인 실행 함수 (무료 버전)
+# Args:
+#     None
+# Returns:
+#     None
 def main():
-    """메인 실행 함수 (무료 버전)"""
     processor = BibleInquiryProcessorFree()
     
     if not processor.connect_database():

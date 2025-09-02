@@ -48,7 +48,7 @@ DOMAIN_KEYWORDS = set([
     '다운로드', '설치', '업데이트', '버전', '앱'
 ])
 
-# 카테고리별 키워드 정의
+# 카테고리별 키워드 정의 (각 카테고리별 키워드들을 리스트로 정의)
 CATEGORY_KEYWORDS = {
     '후원/해지': [
         '후원', '기부', '결제', '구독', '해지', '취소', '환불', '요금', '유료', 
@@ -84,16 +84,12 @@ CATEGORY_KEYWORDS = {
     ]
 }
 
+# ★ 함수 1. 필요한 서비스들을 초기화합니다.
+# Returns:
+# tuple: (Pinecone 클라이언트, 인덱스, sentence-transformers 모델) 함수의 "리턴 타입(Returns)"을 설명하는 부분. 즉, 반환 값이 3개(pc, index, model)이고, 파이썬에서는 여러 개를 반환하면 자동으로 tuple 형태가 됨됨
+# Raises: (함수 실행 도중 발생할 수 있는 예외(Exceptions)를 문서화하는 부분)
+# SystemExit: 초기화 실패 시
 def initialize_services() -> tuple[Pinecone, Any, Any]:
-    """
-    필요한 서비스들을 초기화합니다.
-    
-    Returns:
-        tuple: (Pinecone 클라이언트, 인덱스, sentence-transformers 모델)
-        
-    Raises:
-        SystemExit: 초기화 실패 시
-    """
     print("🔐 환경변수 로드 중...")
     load_dotenv()
     
@@ -129,17 +125,14 @@ def initialize_services() -> tuple[Pinecone, Any, Any]:
     
     return pc, index, model
 
+# ★ 함수 2. 통합 텍스트 전처리 함수
+# Args:
+#     text (str): 전처리할 원본 텍스트
+#     for_metadata (bool): 메타데이터용 전처리 여부      
+# Returns:
+#     str: 전처리된 텍스트
 def preprocess_text(text: str, for_metadata: bool = False) -> str:
-    """
-    통합 텍스트 전처리 함수
-    
-    Args:
-        text (str): 전처리할 원본 텍스트
-        for_metadata (bool): 메타데이터용 전처리 여부
-        
-    Returns:
-        str: 전처리된 텍스트
-    """
+
     if not text or pd.isna(text):
         return ""
     
@@ -201,39 +194,39 @@ def preprocess_text(text: str, for_metadata: bool = False) -> str:
     
     return text
 
+# ★ 함수 3. 도메인 특화 키워드 추출 함수
+# Args:
+#     text (str): 키워드 추출할 텍스트
+# Returns:
+#     List[str]: 추출된 키워드 리스트
 def extract_keywords(text: str) -> List[str]:
-    """
-    도메인 특화 키워드 추출
-    """
     keywords = []
     
     # 성경 구절 패턴 추출
     bible_verses = re.findall(r'[가-힣]+[서복음기록상하전후편]+\s*\d+[장절:]+\s*\d*', text)
-    keywords.extend(bible_verses)
+    keywords.extend(bible_verses) # extend: 리스트에 요소를 추가하는 내장 메서드 (반복 가능한 객체의 요소를 하나씩 꺼내서 리스트에 추가)
     
     # 찬송가 번호 추출
-    hymn_numbers = re.findall(r'찬송가?\s*\d+장?', text)
-    keywords.extend(hymn_numbers)
+    hymn_numbers = re.findall(r'찬송가?\s*\d+장?', text) # findall: 정규식 패턴과 일치하는 모든 부분을 찾아서 리스트로 반환하는 내장 메서드
+    keywords.extend(hymn_numbers) 
     
     # 도메인 키워드 추출
     for keyword in DOMAIN_KEYWORDS:
         if keyword in text:
-            keywords.append(keyword)
+            keywords.append(keyword) # append: 리스트 끝에 매개변수수를 추가하는 내장 메서드
     
     return keywords
 
+# ★ 함수 4. 임베딩 생성 함수
+# 텍스트를 임베딩 벡터로 변환합니다.  
+# Args:
+#     text (str): 임베딩으로 변환할 텍스트
+#     model (Any): sentence-transformers 모델 인스턴스
+#     retry_count (int): 최대 재시도 횟수       
+# Returns:
+#     Optional[List[float]]: 성공 시 768차원 임베딩 벡터, 실패 시 None
 def create_embedding(text: str, model: Any, retry_count: int = 3) -> Optional[List[float]]:
-    """
-    텍스트를 임베딩 벡터로 변환합니다.
-    
-    Args:
-        text (str): 임베딩으로 변환할 텍스트
-        model (Any): sentence-transformers 모델 인스턴스
-        retry_count (int): 최대 재시도 횟수
-        
-    Returns:
-        Optional[List[float]]: 성공 시 768차원 임베딩 벡터, 실패 시 None
-    """
+
     if not text or not text.strip():
         print("⚠️ 빈 텍스트로 인해 임베딩 생성을 건너뜁니다.")
         return None
@@ -245,9 +238,15 @@ def create_embedding(text: str, model: Any, retry_count: int = 3) -> Optional[Li
         text = f"{keyword_str} {text}"
     
     # 재시도 로직을 포함한 임베딩 생성
+        # 📌 왜 convert_to_tensor=False?
+        # - PyTorch 텐서가 아닌 NumPy 배열로 반환
+        # - 이후 .tolist()로 Python 리스트로 변환하여 JSON 직렬화 가능
+        
+        # - NumPy 배열(ndarray)은 Python의 NumPy 라이브러리에서 제공하는 다차원 배열 객체입니다. 숫자 데이터를 효율적으로 저장하고, 수학적 연산(덧셈, 곱셈, 행렬 연산 등)을 빠르게 수행할 수 있도록 설계
+        # - PyTorch 라이브러리에서 제공하는 다차원 배열 객체로, 머신러닝과 딥러닝 작업에 최적화되어 있습니다. NumPy 배열과 비슷하지만, GPU를 활용한 고속 연산과 자동 미분(gradient 계산) 기능을 지원하는 점이 다름.
     for attempt in range(retry_count):
         try:
-            embedding = model.encode(text, convert_to_tensor=False)
+            embedding = model.encode(text, convert_to_tensor=False) # convert_to_tensor=False → 결과를 PyTorch Tensor 대신 numpy.ndarray 형태로 반환하라는 옵션
             embedding_list = embedding.tolist()
             
             # 차원 검증
@@ -267,16 +266,12 @@ def create_embedding(text: str, model: Any, retry_count: int = 3) -> Optional[Li
                 print("  모든 재시도가 실패했습니다.")
                 return None
 
+# ★ 함수 5. 질문 내용을 분석하여 자동으로 카테고리를 분류합니다.
+# Args:
+#     question (str): 분류할 질문 텍스트
+# Returns:
+#     str: 분류된 카테고리명
 def categorize_question(question: str) -> str:
-    """
-    질문 내용을 분석하여 자동으로 카테고리를 분류합니다.
-    
-    Args:
-        question (str): 분류할 질문 텍스트
-        
-    Returns:
-        str: 분류된 카테고리명
-    """
     if not question or not question.strip():
         return '사용 문의(기타)'
     
@@ -289,19 +284,14 @@ def categorize_question(question: str) -> str:
     
     return '사용 문의(기타)'
 
+# ★ 함수 6. CSV 파일을 다양한 인코딩으로 시도하여 안전하게 로드합니다.
+# Args:
+#     file_path (str): 로드할 CSV 파일 경로
+# Returns:
+#     pd.DataFrame: 로드된 데이터프레임
+# Raises:
+#     Exception: 모든 인코딩 시도가 실패한 경우
 def load_csv_data(file_path: str) -> pd.DataFrame:
-    """
-    CSV 파일을 다양한 인코딩으로 시도하여 안전하게 로드합니다.
-    
-    Args:
-        file_path (str): 로드할 CSV 파일 경로
-        
-    Returns:
-        pd.DataFrame: 로드된 데이터프레임
-        
-    Raises:
-        Exception: 모든 인코딩 시도가 실패한 경우
-    """
     print(f"\n📖 '{file_path}' 파일 읽는 중...")
     
     encodings = ['utf-8', 'utf-8-sig', 'cp949', 'euc-kr', 'latin1']
@@ -323,14 +313,13 @@ def load_csv_data(file_path: str) -> pd.DataFrame:
     
     raise Exception(f"'{file_path}' 파일을 읽을 수 없습니다. 파일이 존재하고 올바른 CSV 형식인지 확인해주세요.")
 
+# ★ 함수 7. CSV 파일의 Q&A 데이터를 Pinecone 벡터 데이터베이스에 업로드합니다.
+# Args:
+#     batch_size (int): 한 번에 업로드할 벡터 수
+#     max_items (Optional[int]): 테스트용 최대 아이템 수 제한
+# Returns:
+#     None: 업로드 완료 후 반환 값 없음
 def upload_bible_data(batch_size: int = DEFAULT_BATCH_SIZE, max_items: Optional[int] = None) -> None:
-    """
-    CSV 파일의 Q&A 데이터를 Pinecone 벡터 데이터베이스에 업로드합니다.
-    
-    Args:
-        batch_size (int): 한 번에 업로드할 벡터 수
-        max_items (Optional[int]): 테스트용 최대 아이템 수 제한
-    """
     # 서비스 초기화
     pc, index, model = initialize_services()
     
@@ -503,3 +492,13 @@ def main() -> None:
 
 if __name__ == "__main__":
     main()
+
+    class Car:
+        def __init__(self, wheels):
+            self.wheels = wheels
+
+        def drive(self):
+            if self.wheels == 4:
+                print("자동차가 달립니다...")
+            else:
+                print(f"이 차는 바퀴가 {self.wheels}개라서 달릴 수 없습니다.")

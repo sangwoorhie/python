@@ -16,9 +16,6 @@ API 비용 없이 의미 기반 검색을 수행합니다.
 - 코사인 유사도 기반 매칭
 - 상위 5개 결과 반환
 
-작성자: Bible AI Team
-버전: 1.0
-마지막 수정: 2024
 """
 
 import os
@@ -42,16 +39,14 @@ ANSWER_PREVIEW_LENGTH = 200
 # 유사도 임계값 (이 값 이하는 관련성이 낮은 것으로 판단)
 SIMILARITY_THRESHOLD = 0.3
 
+# ★ 함수 1. 필요한 서비스들을 초기화합니다.
+# Args:
+#     None
+# Returns:
+#     tuple: (Pinecone 인덱스, sentence-transformers 모델)
+# Raises:
+#     SystemExit: 초기화 실패 시
 def initialize_services() -> tuple[Any, Any]:
-    """
-    필요한 서비스들을 초기화합니다.
-    
-    Returns:
-        tuple: (Pinecone 인덱스, sentence-transformers 모델)
-        
-    Raises:
-        SystemExit: 초기화 실패 시
-    """
     print("🔐 환경변수 로드 중...")
     load_dotenv()
     
@@ -97,20 +92,13 @@ def initialize_services() -> tuple[Any, Any]:
     
     return index, model
 
+# ★ 함수 2. 텍스트를 768차원 벡터로 변환하는 함수
+# Args:
+#     text (str): 임베딩으로 변환할 텍스트
+#     model (Any): sentence-transformers 모델 인스턴스
+# Returns:
+#     Optional[List[float]]: 성공 시 768차원 임베딩 벡터, 실패 시 None
 def create_embedding(text: str, model: Any) -> Optional[List[float]]:
-    """
-    텍스트를 임베딩 벡터로 변환합니다.
-    
-    sentence-transformers 모델을 사용하여 입력 텍스트를 768차원 벡터로 변환합니다.
-    이 벡터는 텍스트의 의미적 특성을 수치적으로 표현합니다.
-    
-    Args:
-        text (str): 임베딩으로 변환할 텍스트
-        model (Any): sentence-transformers 모델 인스턴스
-        
-    Returns:
-        Optional[List[float]]: 성공 시 768차원 임베딩 벡터, 실패 시 None
-    """
     # 빈 텍스트 검증
     if not text or not text.strip():
         print("⚠️ 빈 텍스트는 임베딩할 수 없습니다.")
@@ -134,25 +122,16 @@ def create_embedding(text: str, model: Any) -> Optional[List[float]]:
         print("💡 텍스트 형식을 확인하고 다시 시도하세요.")
         return None
 
+# ★ 함수 3. 사용자 질문에 대해 유사한 Q&A를 검색합니다.
+# Args:
+#     query (str): 검색할 질문
+#     index (Any): Pinecone 인덱스 객체
+#     model (Any): sentence-transformers 모델
+#     top_k (int): 반환할 최대 결과 수 (기본값: 5)
+# Returns:
+#     List[Dict]: 검색 결과 리스트 (빈 리스트면 결과 없음)
 def search_question(query: str, index: Any, model: Any, top_k: int = DEFAULT_TOP_K) -> List[Dict]:
-    """
-    사용자 질문에 대해 유사한 Q&A를 검색합니다.
-    
-    이 함수는 다음과 같은 과정을 거쳐 검색을 수행합니다:
-    1. 사용자 질문을 임베딩 벡터로 변환
-    2. Pinecone에서 코사인 유사도 기반 검색 수행
-    3. 유사도 점수와 함께 결과 반환
-    4. 관련성이 낮은 결과 필터링
-    
-    Args:
-        query (str): 검색할 질문
-        index (Any): Pinecone 인덱스 객체
-        model (Any): sentence-transformers 모델
-        top_k (int): 반환할 최대 결과 수 (기본값: 5)
-        
-    Returns:
-        List[Dict]: 검색 결과 리스트 (빈 리스트면 결과 없음)
-    """
+
     print(f"\n🔍 검색어: '{query}'")
     print("=" * 60)
     
@@ -201,13 +180,13 @@ def search_question(query: str, index: Any, model: Any, top_k: int = DEFAULT_TOP
         print("💡 네트워크 연결을 확인하고 다시 시도하세요.")
         return []
 
+# ★ 함수 4. 검색 결과를 사용자 친화적인 형식으로 표시합니다.
+# Args:
+#     results (List[Dict]): Pinecone 검색 결과 리스트
+# Returns:
+#     None: 결과 표시 후 반환 값 없음
 def display_search_results(results: List[Dict]) -> None:
-    """
-    검색 결과를 사용자 친화적인 형식으로 표시합니다.
-    
-    Args:
-        results (List[Dict]): Pinecone 검색 결과 리스트
-    """
+
     for i, match in enumerate(results, 1):
         score = match['score']
         metadata = match.get('metadata', {})
@@ -237,8 +216,12 @@ def display_search_results(results: List[Dict]) -> None:
         print(f"   💬 답변: {answer_preview}")
         print("   " + "-" * 50)
 
+#  환영 메시지와 시스템 정보를 표시합니다.
+# Args:
+#     None
+# Returns:
+#     None: 환영 메시지 표시 후 반환 값 없음
 def show_welcome_message() -> None:
-    """환영 메시지와 시스템 정보를 표시합니다."""
     print("=" * 60)
     print("🔍 Bible AI 검색 시스템 테스트 (무료 버전)")
     print("=" * 60)
@@ -253,8 +236,12 @@ def show_welcome_message() -> None:
     print("- 'quit', 'exit', '종료'를 입력하면 프로그램이 종료됩니다")
     print()
 
+# 검색 예시를 표시합니다.
+# Args:
+#     None
+# Returns:
+#     List[str]: 검색 예시 질문들
 def get_search_examples() -> List[str]:
-    """검색 예시 질문들을 반환합니다."""
     return [
         "성경 앱이 느려요",
         "로그인이 안돼요",
@@ -263,24 +250,25 @@ def get_search_examples() -> List[str]:
         "통독 계획을 설정하고 싶어요"
     ]
 
+
+# ★ 함수 5. 검색 예시를 표시합니다.
+# Args:
+#     None
+# Returns:
+#     None: 검색 예시 표시 후 반환 값 없음
 def show_search_examples() -> None:
-    """검색 예시를 표시합니다."""
     examples = get_search_examples()
     print("🔍 검색 예시:")
     for i, example in enumerate(examples, 1):
         print(f"   {i}. {example}")
     print()
 
+# ★ 함수 6. 사용자 입력을 검증합니다.
+# Args:
+#     query (str): 사용자가 입력한 질문
+# Returns:
+#     bool: 유효한 입력이면 True, 아니면 False
 def validate_user_input(query: str) -> bool:
-    """
-    사용자 입력을 검증합니다.
-    
-    Args:
-        query (str): 사용자가 입력한 질문
-        
-    Returns:
-        bool: 유효한 입력이면 True, 아니면 False
-    """
     # 빈 입력 검증
     if not query:
         print("❌ 질문을 입력해주세요.")
@@ -298,10 +286,13 @@ def validate_user_input(query: str) -> bool:
     
     return True
 
+# ★ 함수 5. 메인 실행 함수
+# Args:
+#     None
+# Returns:
+#     None: 결과 표시 후 반환 값 없음
 def main() -> None:
-    """
-    메인 실행 함수: 대화형 검색 인터페이스를 제공합니다.
-    """
+
     try:
         # 1. 환영 메시지 표시
         show_welcome_message()
