@@ -30,12 +30,13 @@ import html # HTML 태그 처리 파이썬 모듈
 from typing import Optional, List, Dict, Any # 타입 힌트 파이썬 모듈
 import unicodedata # 유니코드 문자 처리
 import logging # 로그 기록 파이썬 모듈
+import openai # OpenAI API 클라이언트
 
 # ====== 설정 상수 ======
-MODEL_NAME = 'sentence-transformers/paraphrase-multilingual-mpnet-base-v2'
-INDEX_NAME = "bible-app-support-768-free"
+MODEL_NAME = 'text-embedding-3-small'
+INDEX_NAME = "bible-app-support-1536-openai"
 DATA_FILE = "data_2025.csv"
-EMBEDDING_DIMENSION = 768
+EMBEDDING_DIMENSION = 1536
 DEFAULT_BATCH_SIZE = 20
 MAX_TEXT_LENGTH = 8000
 MAX_METADATA_LENGTH = 1000
@@ -86,18 +87,25 @@ CATEGORY_KEYWORDS = {
 
 # ★ 함수 1. 필요한 서비스들을 초기화합니다.
 # Returns:
-# tuple: (Pinecone 클라이언트, 인덱스, sentence-transformers 모델) 함수의 "리턴 타입(Returns)"을 설명하는 부분. 즉, 반환 값이 3개(pc, index, model)이고, 파이썬에서는 여러 개를 반환하면 자동으로 tuple 형태가 됨됨
-# Raises: (함수 실행 도중 발생할 수 있는 예외(Exceptions)를 문서화하는 부분)
+# tuple: (Pinecone 클라이언트, 인덱스, OpenAI 클라이언트) 
+# Raises:
 # SystemExit: 초기화 실패 시
 def initialize_services() -> tuple[Pinecone, Any, Any]:
     print("🔐 환경변수 로드 중...")
     load_dotenv()
     
     # API 키 확인
-    api_key = os.getenv('PINECONE_API_KEY')
-    if not api_key:
+    pinecone_api_key = os.getenv('PINECONE_API_KEY')
+    openai_api_key = os.getenv('OPENAI_API_KEY')
+    
+    if not pinecone_api_key:
         print("❌ PINECONE_API_KEY가 .env 파일에 설정되지 않았습니다.")
         print("💡 .env 파일에 PINECONE_API_KEY=your_api_key를 추가하세요.")
+        sys.exit(1)
+    
+    if not openai_api_key:
+        print("❌ OPENAI_API_KEY가 .env 파일에 설정되지 않았습니다.")
+        print("💡 .env 파일에 OPENAI_API_KEY=your_api_key를 추가하세요.")
         sys.exit(1)
     
     print("✓ 환경변수 로드 완료!")
@@ -105,7 +113,7 @@ def initialize_services() -> tuple[Pinecone, Any, Any]:
     # Pinecone 초기화
     print("🌲 Pinecone 클라이언트 초기화 중...")
     try:
-        pc = Pinecone(api_key=api_key)
+        pc = Pinecone(api_key=pinecone_api_key)
         index = pc.Index(INDEX_NAME)
         print("✓ Pinecone 연결 완료!")
     except Exception as e:
@@ -113,17 +121,17 @@ def initialize_services() -> tuple[Pinecone, Any, Any]:
         print("💡 API 키와 인덱스 이름을 확인하세요.")
         sys.exit(1)
     
-    # sentence-transformers 모델 로드
-    print(f"📦 {MODEL_NAME} 모델 로드 중...")
+    # OpenAI 클라이언트 초기화
+    print(f"📦 OpenAI {MODEL_NAME} 모델 준비 중...")
     try:
-        model = SentenceTransformer(MODEL_NAME)
-        print("✓ sentence-transformers 무료 모델 사용 준비 완료!")
+        openai_client = openai.OpenAI(api_key=openai_api_key)
+        print("✓ OpenAI 클라이언트 초기화 완료!")
     except Exception as e:
-        print(f"❌ 모델 로드 실패: {e}")
-        print("💡 sentence-transformers 패키지를 설치하세요: pip install sentence-transformers")
+        print(f"❌ OpenAI 클라이언트 초기화 실패: {e}")
+        print("💡 OpenAI API 키를 확인하세요.")
         sys.exit(1)
     
-    return pc, index, model
+    return pc, index, openai_client
 
 # ★ 함수 2. 통합 텍스트 전처리 함수
 # Args:
@@ -218,14 +226,14 @@ def extract_keywords(text: str) -> List[str]:
     return keywords
 
 # ★ 함수 4. 임베딩 생성 함수
-# 텍스트를 임베딩 벡터로 변환합니다.  
+# 텍스트를 OpenAI text-embedding-3-small 모델로 1536차원 벡터로 변환합니다.
 # Args:
 #     text (str): 임베딩으로 변환할 텍스트
-#     model (Any): sentence-transformers 모델 인스턴스
+#     openai_client (Any): OpenAI 클라이언트 인스턴스
 #     retry_count (int): 최대 재시도 횟수       
 # Returns:
-#     Optional[List[float]]: 성공 시 768차원 임베딩 벡터, 실패 시 None
-def create_embedding(text: str, model: Any, retry_count: int = 3) -> Optional[List[float]]:
+#     Optional[List[float]]: 성공 시 1536차원 임베딩 벡터, 실패 시 None
+def create_embedding(text: str, openai_client: Any, retry_count: int = 3) -> Optional[List[float]]:
 
     if not text or not text.strip():
         print("⚠️ 빈 텍스트로 인해 임베딩 생성을 건너뜁니다.")
@@ -238,16 +246,15 @@ def create_embedding(text: str, model: Any, retry_count: int = 3) -> Optional[Li
         text = f"{keyword_str} {text}"
     
     # 재시도 로직을 포함한 임베딩 생성
-        # 📌 왜 convert_to_tensor=False?
-        # - PyTorch 텐서가 아닌 NumPy 배열로 반환
-        # - 이후 .tolist()로 Python 리스트로 변환하여 JSON 직렬화 가능
-        
-        # - NumPy 배열(ndarray)은 Python의 NumPy 라이브러리에서 제공하는 다차원 배열 객체입니다. 숫자 데이터를 효율적으로 저장하고, 수학적 연산(덧셈, 곱셈, 행렬 연산 등)을 빠르게 수행할 수 있도록 설계
-        # - PyTorch 라이브러리에서 제공하는 다차원 배열 객체로, 머신러닝과 딥러닝 작업에 최적화되어 있습니다. NumPy 배열과 비슷하지만, GPU를 활용한 고속 연산과 자동 미분(gradient 계산) 기능을 지원하는 점이 다름.
     for attempt in range(retry_count):
         try:
-            embedding = model.encode(text, convert_to_tensor=False) # convert_to_tensor=False → 결과를 PyTorch Tensor 대신 numpy.ndarray 형태로 반환하라는 옵션
-            embedding_list = embedding.tolist()
+            # OpenAI text-embedding-3-small 모델로 임베딩 생성
+            response = openai_client.embeddings.create(
+                model=MODEL_NAME,
+                input=text
+            )
+            
+            embedding_list = response.data[0].embedding
             
             # 차원 검증
             if len(embedding_list) != EMBEDDING_DIMENSION:
@@ -321,14 +328,14 @@ def load_csv_data(file_path: str) -> pd.DataFrame:
 #     None: 업로드 완료 후 반환 값 없음
 def upload_bible_data(batch_size: int = DEFAULT_BATCH_SIZE, max_items: Optional[int] = None) -> None:
     # 서비스 초기화
-    pc, index, model = initialize_services()
+    pc, index, openai_client = initialize_services()
     
     print("=" * 60)
     print("🚀 Bible AI Q&A 데이터 업로드 시작")
     print(f"📁 파일: {DATA_FILE}")
     print(f"🤖 모델: {MODEL_NAME}")
     print(f"📏 차원: {EMBEDDING_DIMENSION}차원")
-    print(f"💰 무료 모델 사용 - API 비용 없음!")
+    print(f"💰 OpenAI 유료 모델 사용 - 더 정확한 의미 검색!")
     print("=" * 60)
     
     # 데이터 읽기
@@ -385,8 +392,8 @@ def upload_bible_data(batch_size: int = DEFAULT_BATCH_SIZE, max_items: Optional[
                       f"성공: {success_count} | 실패: {failed_count} | "
                       f"예상 남은 시간: {estimated_remaining/60:.1f}분")
         
-        # 질문 벡터화
-        embedding = create_embedding(row['contents'], model)
+        # 질문 벡터화 (OpenAI 클라이언트 사용)
+        embedding = create_embedding(row['contents'], openai_client)
         
         if embedding is None:
             failed_count += 1
@@ -458,7 +465,7 @@ def upload_bible_data(batch_size: int = DEFAULT_BATCH_SIZE, max_items: Optional[
         print(f"📈 인덱스 상태 조회 실패: {e}")
     
     print(f"\n✅ {DATA_FILE} 업로드가 완료되었습니다!")
-    print("💰 무료 sentence-transformers 모델 사용으로 API 비용 없음!")
+    print("💰 OpenAI 유료 모델 사용으로 API 비용 없음!")
 
 def main() -> None:
     """
@@ -470,7 +477,7 @@ def main() -> None:
     print(f"📁 파일: {DATA_FILE}")
     print(f"🤖 모델: {MODEL_NAME}")
     print(f"📏 차원: {EMBEDDING_DIMENSION}차원")
-    print(f"💰 무료 모델 사용 - API 비용 없음!")
+    print(f"💰 OpenAI 유료 모델 사용 - 더 정확한 의미 검색!")
     print(f"⏱ 예상 시간: 약 3-5분")
     print("=" * 60)
     
@@ -492,13 +499,3 @@ def main() -> None:
 
 if __name__ == "__main__":
     main()
-
-    class Car:
-        def __init__(self, wheels):
-            self.wheels = wheels
-
-        def drive(self):
-            if self.wheels == 4:
-                print("자동차가 달립니다...")
-            else:
-                print(f"이 차는 바퀴가 {self.wheels}개라서 달릴 수 없습니다.")

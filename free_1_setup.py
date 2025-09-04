@@ -20,12 +20,12 @@ from pinecone import Pinecone # Pinecone 파이썬 모듈
 from sentence_transformers import SentenceTransformer # 임베딩 모델 파이썬 모듈
 
 # ====== 설정 상수 ======
-# 사용할 임베딩 모델 이름 (다국어 지원, 768차원 출력)
-MODEL_NAME = 'sentence-transformers/paraphrase-multilingual-mpnet-base-v2'
-# Pinecone 인덱스 이름 (768차원 무료 모델용)
-INDEX_NAME = "bible-app-support-768-free"
+# 사용할 임베딩 모델 이름 (OpenAI 유료 모델)
+MODEL_NAME = 'text-embedding-3-small'
+# Pinecone 인덱스 이름 (1536차원 OpenAI 모델용)
+INDEX_NAME = "bible-app-support-1536-openai"
 # 임베딩 벡터의 차원 수
-EMBEDDING_DIMENSION = 768
+EMBEDDING_DIMENSION = 1536
 # Pinecone 클라우드 설정
 CLOUD_PROVIDER = "aws"
 CLOUD_REGION = "us-east-1" 
@@ -69,39 +69,30 @@ def initialize_pinecone() -> Pinecone:
         sys.exit(1)
 
 ### ★ 함수 3. 벡터 임베딩 모델 로드 및 테스트
-# sentence-transformers 모델을 로드하고 테스트합니다.
+# OpenAI text-embedding-3-small 모델을 로드하고 테스트합니다.
 #     Returns:
-#         SentenceTransformer: 로드된 임베딩 모델
+#         str: 모델 이름 (OpenAI 모델은 직접 로드하지 않음)
 #     Raises:
 #         SystemExit: 모델 로드 실패 시
-def load_and_test_model() -> SentenceTransformer:
+def load_and_test_model() -> str:
 
-    print(f"📦 {MODEL_NAME} 모델 로드 중...")
+    print(f"📦 {MODEL_NAME} 모델 준비 중...")
     try:
-        # 다국어 지원 sentence-transformers 모델 로드
-        model = SentenceTransformer(MODEL_NAME)
-        print("✓ sentence-transformers 모델 로드 완료!")
+        # OpenAI API 키 확인
+        if not os.getenv('OPENAI_API_KEY'):
+            print("❌ OPENAI_API_KEY가 .env 파일에 설정되지 않았습니다.")
+            print("💡 .env 파일에 OPENAI_API_KEY=your_api_key를 추가하세요.")
+            sys.exit(1)
         
-        # 모델 테스트: 한국어 문장으로 임베딩 생성
-        test_text = "테스트 문장입니다."
-        test_embedding = model.encode(test_text) 
-        actual_dimension = len(test_embedding)
+        print("✓ OpenAI API 키 확인 완료!")
+        print("✓ text-embedding-3-small 모델 사용 준비 완료!")
         
-        print(f"✓ 임베딩 차원 확인: {actual_dimension}차원")
+        # OpenAI 모델은 직접 로드하지 않고 API 호출 시 사용
+        return MODEL_NAME
         
-        # 예상 차원과 일치하는지 확인
-        if actual_dimension != EMBEDDING_DIMENSION:
-            print(f"⚠️ 경고: 예상 차원({EMBEDDING_DIMENSION})과 실제 차원({actual_dimension})이 다릅니다.")
-        
-        return model
-        
-    except ImportError:
-        print("❌ sentence-transformers 패키지가 설치되지 않았습니다.")
-        print("💡 다음 명령으로 설치하세요: pip install sentence-transformers")
-        sys.exit(1)
     except Exception as e:
-        print(f"❌ 모델 로드 실패: {e}")
-        print("💡 인터넷 연결을 확인하고 다시 시도하세요.")
+        print(f"❌ 모델 준비 실패: {e}")
+        print("💡 OpenAI API 키를 확인하고 다시 시도하세요.")
         sys.exit(1)
 
 ### 함수 4. Pinecone 인덱스 생성 또는 연결
@@ -173,7 +164,7 @@ def main() -> None:
 
     print("=" * 60)
     print("🚀 바이블 애플 AI 애플리케이션 초기 설정 시작")
-    print("📱 무료 sentence-transformers 모델 버전 (768차원)")
+    print("🤖 OpenAI text-embedding-3-small 모델 버전 (1536차원)")
     print("=" * 60)
     
     try:
@@ -183,8 +174,8 @@ def main() -> None:
         # 2. Pinecone 클라이언트 초기화
         pc = initialize_pinecone()
         
-        # 3. sentence-transformers 모델 로드 및 테스트
-        model = load_and_test_model()
+        # 3. OpenAI 모델 준비 및 테스트
+        model_name = load_and_test_model()
         
         # 4. Pinecone 인덱스 생성 또는 연결
         create_or_get_index(pc)
@@ -195,7 +186,9 @@ def main() -> None:
         # 설정 완료 메시지
         print("\n" + "=" * 60)
         print("🎉 바이블 애플 AI 애플리케이션 설정 완료!")
-        print("💰 OpenAI API 비용 없이 무료로 사용 가능합니다.")
+        print("🤖 OpenAI text-embedding-3-small 모델 사용")
+        print("📏 1536차원 벡터로 더 정확한 의미 검색 가능")
+        print("💰 OpenAI 유료 모델 사용 - 더 정확한 의미 검색!")
         print("📚 이제 성경 데이터를 업로드하고 검색 기능을 테스트할 수 있습니다.")
         print("=" * 60)
         

@@ -22,6 +22,7 @@ from sentence_transformers import SentenceTransformer # 텍스트를 벡터로 �
 from transformers import T5ForConditionalGeneration, T5Tokenizer # Google T5 텍스트 생성 모델
 from dotenv import load_dotenv # .env 파일에서 환경변수 로드
 from flask_cors import CORS # 크로스 도메인 요청 허용 설정
+import openai # OpenAI API 클라이언트
 
 # Flask 웹 애플리케이션 인스턴스 생성
 app = Flask(__name__)
@@ -42,21 +43,18 @@ load_dotenv()
 # AI 모델 및 벡터 데이터베이스 초기화하는 이유는 매 요청마다 모델을 다시 로드하면 30초씩 걸리므로 사용자 경험 저하
 try:
     # Pinecone 벡터 데이터베이스 연결 (유사도 검색용)
-    pc = Pinecone(api_key=os.getenv('PINECONE_API_KEY')) # 환경변수에서 API 키를 가져와서 Pinecone 클라이언트 초기화
-    index = pc.Index("bible-app-support-768-free") # 성경 앱 지원용 인덱스
+    pc = Pinecone(api_key=os.getenv('PINECONE_API_KEY'))
+    index = pc.Index("bible-app-support-1536-openai") # OpenAI 모델용 인덱스
     
-    # 다국어 임베딩 모델 로드 (768차원 벡터 생성)
-    embedding_model = SentenceTransformer('sentence-transformers/paraphrase-multilingual-mpnet-base-v2')
+    # OpenAI 클라이언트 초기화 (1536차원 벡터 생성)
+    openai_client = openai.OpenAI(api_key=os.getenv('OPENAI_API_KEY'))
     
     # Google T5 텍스트 생성 모델 및 토크나이저 로드
-    # T5ForConditionalGeneration: 실제 텍스트를 생성하는 모델
-    # T5Tokenizer: 텍스트를 토큰으로 변환하고 다시 텍스트로 변환하는 도구
     text_model = T5ForConditionalGeneration.from_pretrained('google/flan-t5-base')
     text_tokenizer = T5Tokenizer.from_pretrained('google/flan-t5-base')
 
 except Exception as e:
     # 모델 로드 실패 시 로그 기록 및 예외 발생
-    # 이 단계에서 실패하면 애플리케이션 자체가 시작되지 않음
     logging.error(f"모듈 로드 실패: {str(e)}")
     app.logger.error(f"모듈 로드 실패: {str(e)}")
     raise
@@ -114,7 +112,7 @@ class AIAnswerGenerator:
         escaped = json_module.dumps(text, ensure_ascii=False) # Python 객체를 JSON 문자열로 변환하는 함수 (ensure_ascii=False → 한글 깨짐 방지)
         return escaped[1:-1]  # 앞뒤 따옴표 제거
 
-    ### ★ 2. 텍스트를 768차원 벡터로 변환하는 함수 (의미적 유사도 검색을 위한 벡터 표현 생성)        
+    ### ★ 2. 텍스트를 1536차원 벡터로 변환하는 함수 (의미적 유사도 검색을 위한 벡터 표현 생성)        
         # 📌 SentenceTransformer 작동 원리:
         # 1) 텍스트를 토큰으로 분할 (subword tokenization)
         # 2) (BERT 계열 모델(양방향 트랜스포머(Bidirectional Transformer)를 사용해 문맥을 이해하는 모델))로 각 토큰의 컨텍스트 벡터 생성
@@ -130,9 +128,12 @@ class AIAnswerGenerator:
     def create_embedding(self, text: str) -> list:
 
         try:
-            # SentenceTransformer로 텍스트를 벡터로 변환 (전역에서 로드한 embedding_model을 사용해 768차원 벡터로 변환)
-            embedding = embedding_model.encode(text, convert_to_tensor=False)
-            return embedding.tolist() # numpy 배열을 리스트로 변환
+            # OpenAI text-embedding-3-small 모델로 텍스트를 1536차원 벡터로 변환
+            response = openai_client.embeddings.create(
+                model='text-embedding-3-small',
+                input=text
+            )
+            return response.data[0].embedding
         except Exception as e:
             logging.error(f"임베딩 생성 실패: {e}")
             return None # 실패 시 None 반환으로 안전장치
@@ -490,7 +491,7 @@ class AIAnswerGenerator:
                 "success": True,
                 "answer": ai_answer,  # HTML 형식의 답변
                 "similar_count": len(similar_answers), # 찾은 유사 답변 개수
-                "embedding_model": "sentence-transformers/paraphrase-multilingual-mpnet-base-v2", # 사용된 임베딩 모델
+                "embedding_model": "text-embedding-3-small", # 사용된 임베딩 모델
                 "generation_model": "google/flan-t5-base" # 사용된 생성 모델
             }
             

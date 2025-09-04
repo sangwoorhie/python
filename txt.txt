@@ -11,3 +11,8 @@ graph TD
 
 파이썬 배포 방법
     https://grok.com/share/bGVnYWN5_e655b71a-6768-4553-83a1-20e9c9d91a8f
+
+
+<코드 변경후 EC2 적용>
+파이썬 리로드 : sudo systemctl restart ai-answer-api
+재시작후 상태확인 : sudo systemctl status ai-answer-api

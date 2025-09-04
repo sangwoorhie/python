@@ -24,14 +24,15 @@ from typing import Optional, List, Dict, Any
 from dotenv import load_dotenv
 from pinecone import Pinecone
 from sentence_transformers import SentenceTransformer
+import openai # OpenAI API 클라이언트
 
 # ====== 설정 상수 ======
-# 사용할 임베딩 모델 이름 (다국어 지원, 768차원 출력)
-MODEL_NAME = 'sentence-transformers/paraphrase-multilingual-mpnet-base-v2'
+# 사용할 임베딩 모델 이름 (OpenAI 유료 모델)
+MODEL_NAME = 'text-embedding-3-small'
 # Pinecone 인덱스 이름
-INDEX_NAME = "bible-app-support-768-free"
+INDEX_NAME = "bible-app-support-1536-openai"
 # 임베딩 벡터 차원
-EMBEDDING_DIMENSION = 768
+EMBEDDING_DIMENSION = 1536
 # 기본 검색 결과 개수
 DEFAULT_TOP_K = 5
 # 답변 미리보기 최대 길이
@@ -43,7 +44,7 @@ SIMILARITY_THRESHOLD = 0.3
 # Args:
 #     None
 # Returns:
-#     tuple: (Pinecone 인덱스, sentence-transformers 모델)
+#     tuple: (Pinecone 인덱스, OpenAI 클라이언트)
 # Raises:
 #     SystemExit: 초기화 실패 시
 def initialize_services() -> tuple[Any, Any]:
@@ -51,10 +52,17 @@ def initialize_services() -> tuple[Any, Any]:
     load_dotenv()
     
     # API 키 확인
-    api_key = os.getenv('PINECONE_API_KEY')
-    if not api_key:
+    pinecone_api_key = os.getenv('PINECONE_API_KEY')
+    openai_api_key = os.getenv('OPENAI_API_KEY')
+    
+    if not pinecone_api_key:
         print("❌ PINECONE_API_KEY가 .env 파일에 설정되지 않았습니다.")
         print("💡 .env 파일에 PINECONE_API_KEY=your_api_key를 추가하세요.")
+        sys.exit(1)
+    
+    if not openai_api_key:
+        print("❌ OPENAI_API_KEY가 .env 파일에 설정되지 않았습니다.")
+        print("💡 .env 파일에 OPENAI_API_KEY=your_api_key를 추가하세요.")
         sys.exit(1)
     
     print("✓ 환경변수 로드 완료!")
@@ -62,7 +70,7 @@ def initialize_services() -> tuple[Any, Any]:
     # Pinecone 초기화
     print("🌲 Pinecone 연결 중...")
     try:
-        pc = Pinecone(api_key=api_key)
+        pc = Pinecone(api_key=pinecone_api_key)
         index = pc.Index(INDEX_NAME)
         
         # 인덱스 상태 확인
@@ -80,36 +88,38 @@ def initialize_services() -> tuple[Any, Any]:
         print("💡 API 키와 인덱스 이름을 확인하세요.")
         sys.exit(1)
     
-    # sentence-transformers 모델 로드
+    # OpenAI 클라이언트 초기화
     print(f"📦 {MODEL_NAME} 모델 로드 중...")
     try:
-        model = SentenceTransformer(MODEL_NAME)
-        print("✓ sentence-transformers 무료 모델 사용 준비 완료!")
+        openai_client = openai.OpenAI(api_key=openai_api_key)
+        print("✓ OpenAI 클라이언트 초기화 완료!")
     except Exception as e:
         print(f"❌ 모델 로드 실패: {e}")
-        print("💡 sentence-transformers 패키지를 설치하세요: pip install sentence-transformers")
+        print("💡 OpenAI API 키를 확인하세요.")
         sys.exit(1)
     
-    return index, model
+    return index, openai_client
 
-# ★ 함수 2. 텍스트를 768차원 벡터로 변환하는 함수
+# ★ 함수 2. 텍스트를 1536차원 벡터로 변환하는 함수
 # Args:
 #     text (str): 임베딩으로 변환할 텍스트
-#     model (Any): sentence-transformers 모델 인스턴스
+#     openai_client (Any): OpenAI 클라이언트 인스턴스
 # Returns:
-#     Optional[List[float]]: 성공 시 768차원 임베딩 벡터, 실패 시 None
-def create_embedding(text: str, model: Any) -> Optional[List[float]]:
+#     Optional[List[float]]: 성공 시 1536차원 임베딩 벡터, 실패 시 None
+def create_embedding(text: str, openai_client: Any) -> Optional[List[float]]:
     # 빈 텍스트 검증
     if not text or not text.strip():
         print("⚠️ 빈 텍스트는 임베딩할 수 없습니다.")
         return None
     
     try:
-        # sentence-transformers 모델로 임베딩 생성
-        embedding = model.encode(text, convert_to_tensor=False)
+        # OpenAI text-embedding-3-small 모델로 임베딩 생성
+        response = openai_client.embeddings.create(
+            model=MODEL_NAME,
+            input=text
+        )
         
-        # numpy array를 Python list로 변환
-        embedding_list = embedding.tolist()
+        embedding_list = response.data[0].embedding
         
         # 차원 검증
         if len(embedding_list) != EMBEDDING_DIMENSION:
@@ -126,18 +136,18 @@ def create_embedding(text: str, model: Any) -> Optional[List[float]]:
 # Args:
 #     query (str): 검색할 질문
 #     index (Any): Pinecone 인덱스 객체
-#     model (Any): sentence-transformers 모델
+#     openai_client (Any): OpenAI 클라이언트
 #     top_k (int): 반환할 최대 결과 수 (기본값: 5)
 # Returns:
 #     List[Dict]: 검색 결과 리스트 (빈 리스트면 결과 없음)
-def search_question(query: str, index: Any, model: Any, top_k: int = DEFAULT_TOP_K) -> List[Dict]:
+def search_question(query: str, index: Any, openai_client: Any, top_k: int = DEFAULT_TOP_K) -> List[Dict]:
 
     print(f"\n🔍 검색어: '{query}'")
     print("=" * 60)
     
     # 1. 질문을 벡터로 변환
     print("📊 검색 벡터 생성 중...")
-    query_vector = create_embedding(query, model)
+    query_vector = create_embedding(query, openai_client)
     
     if query_vector is None:
         print("❌ 검색 벡터 생성 실패")
@@ -223,11 +233,11 @@ def display_search_results(results: List[Dict]) -> None:
 #     None: 환영 메시지 표시 후 반환 값 없음
 def show_welcome_message() -> None:
     print("=" * 60)
-    print("🔍 Bible AI 검색 시스템 테스트 (무료 버전)")
+    print("🔍 Bible AI 검색 시스템 테스트 (OpenAI 버전)")
     print("=" * 60)
     print(f"🤖 모델: {MODEL_NAME}")
     print(f"📏 차원: {EMBEDDING_DIMENSION}차원")
-    print("💰 무료 모델 사용 - API 비용 없음!")
+    print("💰 OpenAI 유료 모델 사용 - 더 정확한 의미 검색!");
     print("📚 데이터: 100개 샘플 FAQ")
     print("=" * 60)
     print("\n💡 사용법:")
@@ -298,7 +308,7 @@ def main() -> None:
         show_welcome_message()
         
         # 2. 서비스 초기화
-        index, model = initialize_services()
+        index, openai_client = initialize_services()
         
         # 3. 검색 예시 표시
         show_search_examples()
@@ -324,8 +334,8 @@ def main() -> None:
                 if not validate_user_input(query):
                     continue
                 
-                # 검색 실행
-                results = search_question(query, index, model)
+                # 검색 실행 (OpenAI 클라이언트 사용)
+                results = search_question(query, index, openai_client)
                 search_count += 1
                 
                 # 검색 결과가 없을 때 예시 제안

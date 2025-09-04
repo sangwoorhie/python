@@ -9,6 +9,7 @@ from datetime import datetime # 날짜 및 시간 처리
 import subprocess # 외부 프로세스 실행
 import re # 정규식을 이용한 텍스트 패턴 매칭 및 치환
 import html # HTML 엔티티 디코딩 (&amp; → &)
+import openai # OpenAI API 클라이언트
 
 # 환경 변수 로드
 load_dotenv()
@@ -304,9 +305,9 @@ def main():
         return
     
     try:
-        print("\n🎯 바이블 애플 MSSQL 연동 AI 시스템 (무료 버전)")
+        print("\n🎯 바이블 애플 MSSQL 연동 AI 시스템 (OpenAI 버전)")
         print("=" * 60)
-        print("💰 완전 무료 모델 사용 - 모든 API 비용 없음! (sentence-transformers + T5)")
+        print("🤖 OpenAI text-embedding-3-small 모델 사용 - 1536차원 벡터로 더 정확한 의미 검색!")
         print("💡 로직: AI 답변 생성 → answer_YN='N' → 관리자 승인 → answer_YN='Y' → 고객 확인 가능")
         
         # 명령행 인자로 특정 문의 처리
@@ -340,7 +341,7 @@ def main():
             elif choice == "2":
                 seq = input("문의 번호 입력: ").strip()
                 if seq.isdigit():
-                    print("💰 완전 무료 모델(sentence-transformers + T5)로 처리합니다...")
+                    print("🤖 OpenAI text-embedding-3-small 모델로 처리합니다...")
                     processor.process_single_inquiry(int(seq))
                 else:
                     print("❌ 올바른 문의 번호를 입력해주세요.")
