@@ -53,8 +53,8 @@ try:
     text_model = T5ForConditionalGeneration.from_pretrained('google/flan-t5-base')
     text_tokenizer = T5Tokenizer.from_pretrained(
         'google/flan-t5-base',
-        legacy=False,  # 새로운 동작 방식 사용
-        clean_up_tokenization_spaces=False  # 토큰화 공백 정리 비활성화
+        legacy=True,  # 기존 동작 방식 사용 (안정적)
+        clean_up_tokenization_spaces=False  # 토큰화 공백 정리 비활성화 (경고 제거)
     )
 
 except Exception as e:
