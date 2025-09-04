@@ -121,7 +121,7 @@ def initialize_services() -> tuple[Pinecone, Any, Any]:
         print(" API 키와 인덱스 이름을 확인하세요.")
         sys.exit(1)
     
-    # OpenAI 클라이언트 초기화 (간단한 방식)
+    # OpenAI 클라이언트 초기화 (더 안전한 방식)
     print(f" OpenAI {MODEL_NAME} 모델 준비 중...")
     try:
         # 환경변수에 API 키 설정
@@ -130,7 +130,13 @@ def initialize_services() -> tuple[Pinecone, Any, Any]:
         # OpenAI 클라이언트 초기화 (기본 설정만 사용)
         openai_client = openai.OpenAI()
         
-        print("✓ OpenAI 클라이언트 초기화 완료!")
+        # 간단한 테스트 호출로 연결 확인
+        test_response = openai_client.embeddings.create(
+            model=MODEL_NAME,
+            input="test"
+        )
+        
+        print("✓ OpenAI 클라이언트 초기화 및 연결 테스트 완료!")
         
     except Exception as e:
         print(f"❌ OpenAI 클라이언트 초기화 실패: {e}")
@@ -141,11 +147,18 @@ def initialize_services() -> tuple[Pinecone, Any, Any]:
         try:
             print(" 대안 방법으로 OpenAI 클라이언트 초기화 시도...")
             openai_client = openai.OpenAI(api_key=openai_api_key)
+            
+            # 테스트 호출
+            test_response = openai_client.embeddings.create(
+                model=MODEL_NAME,
+                input="test"
+            )
+            
             print("✓ 대안 방법으로 OpenAI 클라이언트 초기화 성공!")
         except Exception as e2:
             print(f"❌ 대안 방법도 실패: {e2}")
-            print("💡 OpenAI 라이브러리 버전을 확인하고 다시 설치해보세요.")
-            print(" pip install openai==1.3.0")
+            print("💡 OpenAI 라이브러리를 최신 버전으로 업데이트해보세요.")
+            print(" pip install --upgrade openai")
             sys.exit(1)
     
     return pc, index, openai_client
@@ -482,7 +495,7 @@ def upload_bible_data(batch_size: int = DEFAULT_BATCH_SIZE, max_items: Optional[
         print(f"📈 인덱스 상태 조회 실패: {e}")
     
     print(f"\n✅ {DATA_FILE} 업로드가 완료되었습니다!")
-    print("💰 OpenAI 유료 모델 사용으로 API 비용 없음!")
+    # print("💰 OpenAI 유료 모델 사용으로 API 비용 없음!")
 
 def main() -> None:
     """
