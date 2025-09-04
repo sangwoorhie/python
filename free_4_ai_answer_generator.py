@@ -49,9 +49,13 @@ try:
     # OpenAI 클라이언트 초기화 (1536차원 벡터 생성)
     openai_client = openai.OpenAI(api_key=os.getenv('OPENAI_API_KEY'))
     
-    # Google T5 텍스트 생성 모델 및 토크나이저 로드
+    # Google T5 텍스트 생성 모델 및 토크나이저 로드 (경고 메시지 해결)
     text_model = T5ForConditionalGeneration.from_pretrained('google/flan-t5-base')
-    text_tokenizer = T5Tokenizer.from_pretrained('google/flan-t5-base')
+    text_tokenizer = T5Tokenizer.from_pretrained(
+        'google/flan-t5-base',
+        legacy=False,  # 새로운 동작 방식 사용
+        clean_up_tokenization_spaces=False  # 토큰화 공백 정리 비활성화
+    )
 
 except Exception as e:
     # 모델 로드 실패 시 로그 기록 및 예외 발생
