@@ -121,14 +121,19 @@ def initialize_services() -> tuple[Pinecone, Any, Any]:
         print("💡 API 키와 인덱스 이름을 확인하세요.")
         sys.exit(1)
     
-    # OpenAI 클라이언트 초기화
+    # OpenAI 클라이언트 초기화 (환경변수 직접 설정 방식)
     print(f"📦 OpenAI {MODEL_NAME} 모델 준비 중...")
     try:
-        openai_client = openai.OpenAI(api_key=openai_api_key)
+        # 환경변수에 API 키 설정
+        os.environ['OPENAI_API_KEY'] = openai_api_key
+        
+        # OpenAI 클라이언트 초기화 (기본 설정만 사용)
+        openai_client = openai.OpenAI()
         print("✓ OpenAI 클라이언트 초기화 완료!")
     except Exception as e:
         print(f"❌ OpenAI 클라이언트 초기화 실패: {e}")
         print("💡 OpenAI API 키를 확인하세요.")
+        print(f"디버그: API 키 길이: {len(openai_api_key) if openai_api_key else 0}")
         sys.exit(1)
     
     return pc, index, openai_client
