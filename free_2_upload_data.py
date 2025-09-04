@@ -121,23 +121,16 @@ def initialize_services() -> tuple[Pinecone, Any, Any]:
         print(" API 키와 인덱스 이름을 확인하세요.")
         sys.exit(1)
     
-    # OpenAI 클라이언트 초기화 (안전한 방식)
+    # OpenAI 클라이언트 초기화 (간단한 방식)
     print(f" OpenAI {MODEL_NAME} 모델 준비 중...")
     try:
-        # 방법 1: 환경변수 설정 후 기본 초기화
+        # 환경변수에 API 키 설정
         os.environ['OPENAI_API_KEY'] = openai_api_key
         
         # OpenAI 클라이언트 초기화 (기본 설정만 사용)
         openai_client = openai.OpenAI()
         
-        # 간단한 테스트 호출로 연결 확인
-        test_response = openai_client.embeddings.create(
-            model=MODEL_NAME,
-            input="테스트"
-        )
-        
-        print("✓ OpenAI 클라이언트 초기화 및 테스트 완료!")
-        print(f"✓ 테스트 임베딩 차원: {len(test_response.data[0].embedding)}")
+        print("✓ OpenAI 클라이언트 초기화 완료!")
         
     except Exception as e:
         print(f"❌ OpenAI 클라이언트 초기화 실패: {e}")
