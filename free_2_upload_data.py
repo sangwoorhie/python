@@ -91,7 +91,7 @@ CATEGORY_KEYWORDS = {
 # Raises:
 # SystemExit: 초기화 실패 시
 def initialize_services() -> tuple[Pinecone, Any, Any]:
-    print("🔐 환경변수 로드 중...")
+    print(" 환경변수 로드 중...")
     load_dotenv()
     
     # API 키 확인
@@ -111,30 +111,49 @@ def initialize_services() -> tuple[Pinecone, Any, Any]:
     print("✓ 환경변수 로드 완료!")
     
     # Pinecone 초기화
-    print("🌲 Pinecone 클라이언트 초기화 중...")
+    print(" Pinecone 클라이언트 초기화 중...")
     try:
         pc = Pinecone(api_key=pinecone_api_key)
         index = pc.Index(INDEX_NAME)
         print("✓ Pinecone 연결 완료!")
     except Exception as e:
         print(f"❌ Pinecone 초기화 실패: {e}")
-        print("💡 API 키와 인덱스 이름을 확인하세요.")
+        print(" API 키와 인덱스 이름을 확인하세요.")
         sys.exit(1)
     
-    # OpenAI 클라이언트 초기화 (환경변수 직접 설정 방식)
-    print(f"📦 OpenAI {MODEL_NAME} 모델 준비 중...")
+    # OpenAI 클라이언트 초기화 (안전한 방식)
+    print(f" OpenAI {MODEL_NAME} 모델 준비 중...")
     try:
-        # 환경변수에 API 키 설정
+        # 방법 1: 환경변수 설정 후 기본 초기화
         os.environ['OPENAI_API_KEY'] = openai_api_key
         
         # OpenAI 클라이언트 초기화 (기본 설정만 사용)
         openai_client = openai.OpenAI()
-        print("✓ OpenAI 클라이언트 초기화 완료!")
+        
+        # 간단한 테스트 호출로 연결 확인
+        test_response = openai_client.embeddings.create(
+            model=MODEL_NAME,
+            input="테스트"
+        )
+        
+        print("✓ OpenAI 클라이언트 초기화 및 테스트 완료!")
+        print(f"✓ 테스트 임베딩 차원: {len(test_response.data[0].embedding)}")
+        
     except Exception as e:
         print(f"❌ OpenAI 클라이언트 초기화 실패: {e}")
         print("💡 OpenAI API 키를 확인하세요.")
         print(f"디버그: API 키 길이: {len(openai_api_key) if openai_api_key else 0}")
-        sys.exit(1)
+        
+        # 대안 방법 시도
+        try:
+            print(" 대안 방법으로 OpenAI 클라이언트 초기화 시도...")
+            openai_client = openai.OpenAI(api_key=openai_api_key)
+            print("✓ 대안 방법으로 OpenAI 클라이언트 초기화 성공!")
+        except Exception as e2:
+            print(f"❌ 대안 방법도 실패: {e2}")
+            print("💡 OpenAI 라이브러리 버전을 확인하고 다시 설치해보세요.")
+            print(" pip install openai==1.3.0")
+            sys.exit(1)
     
     return pc, index, openai_client
 
