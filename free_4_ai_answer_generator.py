@@ -571,19 +571,25 @@ def sync_to_pinecone():
         data = request.get_json()
         seq = data.get('seq')
         mode = data.get('mode', 'upsert')
+
+        logging.info(f"동기화 요청 수신: seq={seq}, mode={mode}")
         
         if not seq:
+            logging.warning("seq 누락")
             return jsonify({"success": False, "error": "seq가 필요합니다"}), 400
         
         if not isinstance(seq, int):
             seq = int(seq)
         
         result = sync_manager.sync_to_pinecone(seq, mode)
+
+        logging.info(f"동기화 결과: {result}")
         
         status_code = 200 if result["success"] else 500
         return jsonify(result), status_code
         
     except ValueError as e:
+        logging.error(f"잘못된 seq 값: {str(e)}")
         return jsonify({"success": False, "error": f"잘못된 seq 값: {str(e)}"}), 400
     except Exception as e:
         logging.error(f"Pinecone 동기화 API 오류: {str(e)}")
