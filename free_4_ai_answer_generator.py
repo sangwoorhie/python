@@ -16,6 +16,8 @@ import re
 import html
 import unicodedata
 import logging
+import gc
+import torch
 from flask import Flask, request, jsonify
 from pinecone import Pinecone
 from sentence_transformers import SentenceTransformer
@@ -26,6 +28,10 @@ import openai
 import pyodbc
 from datetime import datetime
 from typing import Optional, Dict, Any, List
+import tracemalloc
+
+# Python 내장 모듈로 메모리 누수 추적
+tracemalloc.start() 
 
 # Flask 웹 애플리케이션 인스턴스 생성
 app = Flask(__name__)
@@ -131,13 +137,18 @@ class AIAnswerGenerator:
         escaped = json_module.dumps(text, ensure_ascii=False)
         return escaped[1:-1]
 
+    # ★ 메모리 누수 해제
     def create_embedding(self, text: str) -> list:
         try:
             response = openai_client.embeddings.create(
                 model='text-embedding-3-small',
                 input=text
             )
-            return response.data[0].embedding
+            # return response.data[0].embedding
+            embedding = response.data[0].embedding
+            del response  # 불필요 객체 해제
+            gc.collect()
+            return embedding
         except Exception as e:
             logging.error(f"임베딩 생성 실패: {e}")
             return None
@@ -262,8 +273,12 @@ class AIAnswerGenerator:
         
         return text
 
+    # ★ 메모리 누수 해제
+    # torch.no_grad()는 불필요한 메모리 점유를 막고, gc.collect()는 사용 후 메모리를 즉시 해제. 스레드 제한은 CPU 과부하 방지
     def generate_with_t5(self, query: str, similar_answers: list) -> str:
         try:
+            torch.set_num_threads(2)  # CPU 스레드 수 제한 (인스턴스 코어에 맞게 조정. 2개)
+
             context_answers = []
             for ans in similar_answers[:3]:
                 clean_ans = ans['answer']
@@ -276,19 +291,26 @@ class AIAnswerGenerator:
             
             prompt = f"질문: {query}\n참고답변: {context}\n답변:"
             
-            inputs = text_tokenizer(prompt, return_tensors="pt", max_length=512, truncation=True)
+            # inputs = text_tokenizer(prompt, return_tensors="pt", max_length=512, truncation=True)
             
-            outputs = text_model.generate(
-                **inputs, 
-                max_length=200,
-                num_beams=4,
-                early_stopping=True,
-                do_sample=True,
-                temperature=0.7
-            )
+            with torch.no_grad():  # 그라디언트 계산 비활성화로 메모리/CPU 절약
+                inputs = text_tokenizer(prompt, return_tensors="pt", max_length=512, truncation=True)
+
+                outputs = text_model.generate(
+                    **inputs, 
+                    max_length=200,
+                    num_beams=4,
+                    early_stopping=True,
+                    do_sample=True,
+                    temperature=0.7
+                )
             
             generated = text_tokenizer.decode(outputs[0], skip_special_tokens=True)
             
+            del inputs  # 텐서 해제
+            del outputs # 텐서 해제
+            gc.collect()  # 가비지 컬렉션 강제 실행
+
             if "답변:" in generated:
                 generated = generated.split("답변:")[-1].strip()
             
@@ -559,6 +581,12 @@ def generate_answer():
         
         response = jsonify(result)
         response.headers['Content-Type'] = 'application/json; charset=utf-8'
+
+        # 메모리 누수 추적용 tracemalloc 스냅샷 찍기 (엔드포인트 끝에서)
+        snapshot = tracemalloc.take_snapshot()
+        top_stats = snapshot.statistics('lineno')
+        logging.info("Top 10 memory leaks: " + str(top_stats[:10]))
+
         return response
         
     except Exception as e:
