@@ -28,6 +28,7 @@ import openai
 import pyodbc
 from datetime import datetime
 from typing import Optional, Dict, Any, List
+from memory_profiler import profile
 import tracemalloc
 
 # Python 내장 모듈로 메모리 누수 추적
@@ -275,6 +276,7 @@ class AIAnswerGenerator:
 
     # ★ 메모리 누수 해제
     # torch.no_grad()는 불필요한 메모리 점유를 막고, gc.collect()는 사용 후 메모리를 즉시 해제. 스레드 제한은 CPU 과부하 방지
+    @profile # 메모리 누수 추적용 profile 데코레이터 추가
     def generate_with_t5(self, query: str, similar_answers: list) -> str:
         try:
             torch.set_num_threads(2)  # CPU 스레드 수 제한 (인스턴스 코어에 맞게 조정. 2개)
