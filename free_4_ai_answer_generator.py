@@ -86,12 +86,13 @@ try:
     }
     
     connection_string = (
-        f"DRIVER={{ODBC Driver 17 for SQL Server}};"
-        f"SERVER={mssql_config['server']};"
-        f"DATABASE={mssql_config['database']};"
-        f"UID={mssql_config['username']};"
-        f"PWD={mssql_config['password']};"
-        f"TrustServerCertificate=yes;"
+            f"DRIVER={{ODBC Driver 17 for SQL Server}};"
+            f"SERVER={mssql_config['server']},1433;"  # 포트 명시
+            f"DATABASE={mssql_config['database']};"
+            f"UID={mssql_config['username']};"
+            f"PWD={mssql_config['password']};"
+            f"TrustServerCertificate=yes;"
+            f"Connection Timeout=30;"  # 타임아웃 추가
     )
 
 except Exception as e:
