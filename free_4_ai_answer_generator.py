@@ -357,6 +357,75 @@ class AIAnswerGenerator:
         
         return text
 
+    def is_valid_korean_text(self, text: str) -> bool:
+        """한국어 텍스트의 유효성을 검증하는 함수"""
+        if not text or len(text.strip()) < 3:
+            return False
+        
+        # 한글 문자 비율 계산
+        korean_chars = len(re.findall(r'[가-힣]', text))
+        total_chars = len(re.sub(r'\s', '', text))
+        
+        if total_chars == 0:
+            return False
+            
+        korean_ratio = korean_chars / total_chars
+        
+        # 한글이 30% 이상이어야 유효한 텍스트로 판단
+        if korean_ratio < 0.3:
+            return False
+        
+        # 무의미한 문자 패턴 검사
+        meaningless_patterns = [
+            r'^[a-z\s\.,;:\(\)\[\]\-_&\/\'"]+$',  # 영어 소문자만
+            r'^[A-Z\s\.,;:\(\)\[\]\-_&\/\'"]+$',  # 영어 대문자만
+            r'^[\s\.,;:\(\)\[\]\-_&\/\'"]+$',     # 특수문자와 공백만
+            r'^[0-9\s\.,;:\(\)\[\]\-_&\/\'"]+$',  # 숫자와 특수문자만
+            r'.*[а-я].*',                          # 러시아어 문자
+            r'.*[α-ω].*',                          # 그리스어 문자
+        ]
+        
+        for pattern in meaningless_patterns:
+            if re.match(pattern, text, re.IGNORECASE):
+                return False
+        
+        # 반복되는 단일 문자 패턴 검사 (예: "aaaaaa", "111111")
+        if re.search(r'(.)\1{5,}', text):
+            return False
+        
+        # 무작위 문자열 패턴 검사 (연속된 의미없는 문자)
+        random_pattern = r'[a-zA-Z]{8,}'
+        if re.search(random_pattern, text) and korean_ratio < 0.5:
+            return False
+        
+        return True
+
+    def clean_generated_text(self, text: str) -> str:
+        """생성된 텍스트를 정리하고 검증하는 함수"""
+        if not text:
+            return ""
+        
+        # 기본 정리
+        text = re.sub(r'[\x00-\x08\x0B\x0C\x0E-\x1F\x7F]', '', text)
+        text = re.sub(r'[\b\r\f\v]', '', text)
+        
+        # 무의미한 문자열 제거
+        text = re.sub(r'\b[a-z]{1,2}\b(?:\s+[a-z]{1,2}\b)*', '', text, flags=re.IGNORECASE)
+        text = re.sub(r'[а-я]+', '', text)  # 러시아어 제거
+        text = re.sub(r'[α-ω]+', '', text)  # 그리스어 제거
+        
+        # 특수문자 연속 제거
+        text = re.sub(r'[^\w\s가-힣.,!?()"\'-]{3,}', '', text)
+        
+        # 의미없는 구두점 연속 제거
+        text = re.sub(r'[.,;:!?]{3,}', '.', text)
+        
+        # 공백 정리
+        text = re.sub(r'\s+', ' ', text)
+        text = text.strip()
+        
+        return text
+
     # ★ 대폭 개선된 T5 생성 함수
     @profile
     def generate_with_t5(self, query: str, similar_answers: list) -> str:
@@ -367,7 +436,16 @@ class AIAnswerGenerator:
                 context_answers = []
                 for ans in similar_answers[:2]:  # 3개 → 2개로 줄임
                     clean_ans = re.sub(r'[\b\r\f\v\x00-\x08\x0B\x0C\x0E-\x1F\x7F]|<[^>]+>', '', ans['answer'])
-                    context_answers.append(clean_ans[:150])  # 200 → 150으로 줄임
+                    # 한국어 검증 추가
+                    if self.is_valid_korean_text(clean_ans):
+                        context_answers.append(clean_ans[:150])  # 200 → 150으로 줄임
+                
+                # 유효한 컨텍스트가 없으면 첫 번째 답변 반환
+                if not context_answers:
+                    logging.warning("유효한 한국어 컨텍스트가 없어 T5 생성 중단")
+                    if similar_answers:
+                        return self.clean_generated_text(similar_answers[0]['answer'])
+                    return ""
                 
                 context = " ".join(context_answers)
                 prompt = f"질문: {query[:80]}\n참고답변: {context[:250]}\n답변:"  # 길이 축소
@@ -407,7 +485,18 @@ class AIAnswerGenerator:
                 if "답변:" in generated:
                     generated = generated.split("답변:")[-1].strip()
                 
-                generated = re.sub(r'[\b\r\f\v\x00-\x08\x0B\x0C\x0E-\x1F\x7F]', '', generated)
+                # 생성된 텍스트 정리 및 검증
+                generated = self.clean_generated_text(generated)
+                
+                # 한국어 텍스트 검증
+                if not self.is_valid_korean_text(generated):
+                    logging.warning("T5가 무효한 텍스트를 생성했습니다. 폴백 사용.")
+                    # 폴백: 첫 번째 유사 답변 사용
+                    if similar_answers:
+                        fallback = self.clean_generated_text(similar_answers[0]['answer'])
+                        if self.is_valid_korean_text(fallback):
+                            return fallback[:400]
+                    return ""
                 
                 return generated[:400]  # 500 → 400으로 줄임
                 
@@ -415,8 +504,9 @@ class AIAnswerGenerator:
             logging.error(f"T5 모델 생성 실패: {e}")
             # 폴백: 첫 번째 유사 답변 반환
             if similar_answers:
-                fallback = re.sub(r'[\b\r\f\v\x00-\x08\x0B\x0C\x0E-\x1F\x7F]|<[^>]+>', '', similar_answers[0]['answer'])
-                return fallback[:400]
+                fallback = self.clean_generated_text(similar_answers[0]['answer'])
+                if self.is_valid_korean_text(fallback):
+                    return fallback[:400]
             return ""
 
     def generate_ai_answer(self, query: str, similar_answers: list, lang: str) -> str:
@@ -426,15 +516,46 @@ class AIAnswerGenerator:
         
         try:
             # 첫 번째 답변의 유사도가 매우 높으면 T5 생략
-            if similar_answers[0]['score'] > 0.9:  # 90% 이상 유사도
+            if similar_answers[0]['score'] > 0.85:  # 90% → 85%로 낮춤 (더 안전)
                 base_answer = similar_answers[0]['answer']
                 logging.info("높은 유사도로 인해 T5 생성 생략")
+                
+                # 유사 답변도 검증
+                base_answer = self.clean_generated_text(base_answer)
+                if not self.is_valid_korean_text(base_answer):
+                    logging.warning("유사 답변이 무효한 텍스트입니다.")
+                    # 다른 유사 답변들 확인
+                    for ans in similar_answers[1:3]:
+                        candidate = self.clean_generated_text(ans['answer'])
+                        if self.is_valid_korean_text(candidate):
+                            base_answer = candidate
+                            break
+                    else:
+                        # 모든 유사 답변이 무효하면 기본 메시지
+                        return "<p>문의해주신 내용에 대해 정확한 답변을 드리기 위해 더 자세한 정보가 필요합니다.</p><p><br></p><p>고객센터로 문의해주시면 신속하게 도움을 드리겠습니다.</p>"
             else:
                 # 유사도가 낮을 때만 T5 사용
                 base_answer = self.generate_with_t5(query, similar_answers)
+                
+                # T5 결과가 무효하면 폴백
+                if not base_answer or not self.is_valid_korean_text(base_answer):
+                    logging.warning("T5 생성 결과가 무효합니다. 유사 답변 사용.")
+                    for ans in similar_answers[:3]:
+                        candidate = self.clean_generated_text(ans['answer'])
+                        if self.is_valid_korean_text(candidate):
+                            base_answer = candidate
+                            break
+                    else:
+                        return "<p>문의해주신 내용에 대해 정확한 답변을 드리기 위해 더 자세한 정보가 필요합니다.</p><p><br></p><p>고객센터로 문의해주시면 신속하게 도움을 드리겠습니다.</p>"
             
+            # HTML 태그 제거 및 앱 이름 정리
             base_answer = re.sub(r'<[^>]+>', '', base_answer)
             base_answer = self.remove_old_app_name(base_answer)
+            
+            # 최종 검증
+            if not self.is_valid_korean_text(base_answer):
+                logging.error("최종 답변이 무효한 텍스트입니다.")
+                return "<p>죄송합니다. 현재 답변을 생성할 수 없습니다.</p><p><br></p><p>고객센터로 문의해주세요.</p>"
             
             has_greeting = any(greeting in base_answer.lower() for greeting in ['안녕하세요', '안녕'])
             has_closing = any(closing in base_answer.lower() for closing in ['감사합니다', '감사드립니다'])
@@ -450,6 +571,11 @@ class AIAnswerGenerator:
                 final_answer += " 항상 주님 안에서 평안하세요. 감사합니다."
             
             final_answer = self.clean_answer_text(final_answer)
+            
+            # 최종 검증
+            if not self.is_valid_korean_text(final_answer):
+                logging.error("최종 포맷된 답변이 무효합니다.")
+                return "<p>죄송합니다. 현재 답변을 생성할 수 없습니다.</p><p><br></p><p>고객센터로 문의해주세요.</p>"
             
             return final_answer
             
