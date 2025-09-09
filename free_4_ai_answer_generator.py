@@ -381,8 +381,10 @@ class AIAnswerGenerator:
 1. 제공된 참고 답변들과 거의 동일한 스타일과 내용으로 답변해주세요
 2. 창의적인 답변보다는 참고 답변에 충실한 답변을 작성해주세요
 3. 참고 답변의 톤, 문체, 표현을 최대한 따라하세요
-4. HTML 태그나 마크다운 사용 금지, 일반 텍스트만 사용
-5. 인사말과 끝맺음말은 제외하고 본문만 작성하세요"""
+4. 기술적 문제는 캡쳐나 영상을 요청하고 이메일(dev@goodtv.co.kr)로 문의하도록 안내하세요
+5. 고객 호칭은 반드시 '성도님'으로만 사용하세요 (고객님 사용 금지)
+6. HTML 태그나 마크다운 사용 금지, 일반 텍스트만 사용
+7. 인사말과 끝맺음말은 제외하고 본문만 작성하세요"""
 
                 user_prompt = f"""고객 질문: {query}
 
@@ -390,7 +392,8 @@ class AIAnswerGenerator:
 {context}
 
 위 참고 답변들의 스타일과 톤을 그대로 따라서, 고객의 질문에 적절한 답변을 작성해주세요. 
-창의적인 답변보다는 참고 답변과 유사한 답변을 작성하는 것이 중요합니다."""
+창의적인 답변보다는 참고 답변과 유사한 답변을 작성하는 것이 중요합니다.
+고객은 반드시 '성도님'으로 호칭해주세요."""
 
                 # ★ 더 보수적인 API 설정
                 response = self.openai_client.chat.completions.create(
@@ -474,29 +477,45 @@ class AIAnswerGenerator:
             base_answer = re.sub(r'<[^>]+>', '', base_answer)
             base_answer = self.remove_old_app_name(base_answer)
             
+            # ★ '고객님' → '성도님'으로 통일
+            base_answer = re.sub(r'고객님', '성도님', base_answer)
+            
             # 최종 검증
             if not self.is_valid_korean_text(base_answer):
                 logging.error("최종 답변이 무효한 텍스트입니다.")
                 return "<p>죄송합니다. 현재 답변을 생성할 수 없습니다.</p><p><br></p><p>고객센터로 문의해주세요.</p>"
             
-            # ★ 고정된 인사말과 끝맺음말
+            # ★ 고정된 인사말
             final_answer = "안녕하세요. GOODTV 바이블 애플입니다. 바이블 애플을 애용해 주셔서 감사합니다. "
             
-            # 기존 인사말 제거
+            # ★ 기존 인사말 완전 제거 (더 포괄적으로)
+            base_answer = re.sub(r'^안녕하세요[^.]*바이블\s*애플[^.]*\.\s*', '', base_answer)
+            base_answer = re.sub(r'^안녕하세요[^.]*GOODTV[^.]*\.\s*', '', base_answer)
             base_answer = re.sub(r'^안녕하세요[^.]*\.\s*', '', base_answer)
             base_answer = re.sub(r'^안녕[^.]*\.\s*', '', base_answer)
+            base_answer = re.sub(r'^바이블\s*애플[^.]*\.\s*', '', base_answer)
+            base_answer = re.sub(r'^GOODTV[^.]*\.\s*', '', base_answer)
             
-            # 기존 끝맺음말 제거
-            base_answer = re.sub(r'\s*항상[^.]*평안하세요[^.]*\.\s*$', '', base_answer)
+            # ★ 기존 끝맺음말 완전 제거 (더 포괄적으로)
+            base_answer = re.sub(r'\s*항상[^.]*바이블\s*애플[^.]*\.\s*', '', base_answer)
+            base_answer = re.sub(r'\s*항상[^.]*성경앱[^.]*\.\s*', '', base_answer)
+            base_answer = re.sub(r'\s*항상[^.]*평안하세요[^.]*\.\s*', '', base_answer)
+            base_answer = re.sub(r'\s*감사합니다[^.]*평안하세요[^.]*\.\s*', '', base_answer)
             base_answer = re.sub(r'\s*감사합니다[^.]*\.\s*$', '', base_answer)
-            base_answer = re.sub(r'\s*주님 안에서[^.]*\.\s*$', '', base_answer)
+            base_answer = re.sub(r'\s*주님\s*안에서[^.]*\.\s*$', '', base_answer)
+            base_answer = re.sub(r'\s*평안하세요[^.]*\.\s*$', '', base_answer)
+            base_answer = re.sub(r'\s*함께[^.]*\.\s*$', '', base_answer)  # "함께." 제거
+            
+            # ★ 중복된 감사합니다 제거
+            base_answer = re.sub(r'(\s*감사합니다[^.]*\.\s*){2,}', ' 감사합니다. ', base_answer)
             
             final_answer += base_answer.strip()
             
-            # 고정된 끝맺음말
-            if not final_answer.endswith('.'):
+            # 마지막 문장이 완전하지 않으면 마침표 추가
+            if final_answer and not final_answer.endswith(('.', '!', '?')):
                 final_answer += "."
             
+            # ★ 고정된 끝맺음말 (중복 방지)
             final_answer += " 항상 성도님께 좋은 성경앱을 제공하기 위해 노력하는 바이블 애플이 되겠습니다. 감사합니다. 주님 안에서 평안하세요."
             
             final_answer = self.clean_answer_text(final_answer)
