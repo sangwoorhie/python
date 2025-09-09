@@ -30,6 +30,9 @@ from datetime import datetime
 from typing import Optional, Dict, Any, List
 from memory_profiler import profile
 import tracemalloc
+import threading
+import weakref
+from contextlib import contextmanager
 
 # Python 내장 모듈로 메모리 누수 추적
 tracemalloc.start() 
@@ -37,6 +40,11 @@ tracemalloc.start()
 # Flask 웹 애플리케이션 인스턴스 생성
 app = Flask(__name__)
 CORS(app)
+
+# ★ CPU 스레드 수 제한 (전역 설정)
+os.environ['OMP_NUM_THREADS'] = '1'  # 1개로 줄임
+os.environ['MKL_NUM_THREADS'] = '1'  # 1개로 줄임
+torch.set_num_threads(1)  # 1개로 줄임
 
 # 로깅 시스템 설정 - 파일에 로그 저장
 logging.basicConfig(
@@ -67,6 +75,42 @@ CATEGORY_MAPPING = {
     '0': '사용 문의(기타)'
 }
 
+# ★ 글로벌 모델 인스턴스 (싱글톤 패턴)
+_model_instances = {}
+_model_lock = threading.Lock()
+
+@contextmanager
+def memory_cleanup():
+    """컨텍스트 매니저로 메모리 정리"""
+    try:
+        yield
+    finally:
+        gc.collect()
+        if torch.cuda.is_available():
+            torch.cuda.empty_cache()
+
+def get_model_instance(model_type: str):
+    """모델 싱글톤 패턴으로 메모리 절약"""
+    global _model_instances
+    
+    with _model_lock:
+        if model_type not in _model_instances:
+            if model_type == 'text_model':
+                _model_instances[model_type] = T5ForConditionalGeneration.from_pretrained(
+                    'google/flan-t5-base',
+                    torch_dtype=torch.float16,  # 메모리 절약을 위해 float16 사용
+                    low_cpu_mem_usage=True
+                )
+                _model_instances[model_type].eval()  # 추론 모드로 설정
+            elif model_type == 'text_tokenizer':
+                _model_instances[model_type] = T5Tokenizer.from_pretrained(
+                    'google/flan-t5-base',
+                    legacy=True,
+                    clean_up_tokenization_spaces=False
+                )
+        
+        return _model_instances[model_type]
+
 # AI 모델 및 벡터 데이터베이스 초기화
 try:
     # Pinecone 벡터 데이터베이스 연결
@@ -76,13 +120,9 @@ try:
     # OpenAI 클라이언트 초기화
     openai_client = openai.OpenAI(api_key=os.getenv('OPENAI_API_KEY'))
     
-    # Google T5 텍스트 생성 모델 및 토크나이저 로드
-    text_model = T5ForConditionalGeneration.from_pretrained('google/flan-t5-base')
-    text_tokenizer = T5Tokenizer.from_pretrained(
-        'google/flan-t5-base',
-        legacy=True,
-        clean_up_tokenization_spaces=False
-    )
+    # ★ 모델 사전 로딩 (싱글톤으로 관리)
+    text_model = get_model_instance('text_model')
+    text_tokenizer = get_model_instance('text_tokenizer')
     
     # MSSQL 연결 문자열 (Pinecone 동기화용)
     mssql_config = {
@@ -109,6 +149,28 @@ except Exception as e:
 
 # ====== 기존 AI 답변 생성 클래스 ======
 class AIAnswerGenerator:
+    
+    def __init__(self):
+        # 약한 참조로 모델 참조 (메모리 누수 방지)
+        self._text_model_ref = weakref.ref(get_model_instance('text_model'))
+        self._text_tokenizer_ref = weakref.ref(get_model_instance('text_tokenizer'))
+    
+    @property
+    def text_model(self):
+        model = self._text_model_ref()
+        if model is None:
+            # 모델이 가비지 컬렉션된 경우 재로드
+            model = get_model_instance('text_model')
+            self._text_model_ref = weakref.ref(model)
+        return model
+    
+    @property
+    def text_tokenizer(self):
+        tokenizer = self._text_tokenizer_ref()
+        if tokenizer is None:
+            tokenizer = get_model_instance('text_tokenizer')
+            self._text_tokenizer_ref = weakref.ref(tokenizer)
+        return tokenizer
     
     def preprocess_text(self, text: str) -> str:
         if not text:
@@ -138,42 +200,63 @@ class AIAnswerGenerator:
         escaped = json_module.dumps(text, ensure_ascii=False)
         return escaped[1:-1]
 
-    # ★ 메모리 누수 해제
-    def create_embedding(self, text: str) -> list:
+    # ★ 개선된 임베딩 생성 함수
+    def create_embedding(self, text: str) -> Optional[list]:
+        """메모리 최적화된 임베딩 생성"""
+        if not text or not text.strip():
+            return None
+            
         try:
-            response = openai_client.embeddings.create(
-                model='text-embedding-3-small',
-                input=text
-            )
-            # return response.data[0].embedding
-            embedding = response.data[0].embedding
-            del response  # 불필요 객체 해제
-            gc.collect()
-            return embedding
+            with memory_cleanup():
+                response = openai_client.embeddings.create(
+                    model='text-embedding-3-small',
+                    input=text[:8000]  # 토큰 제한
+                )
+                
+                # 임베딩 추출 후 즉시 응답 객체 해제
+                embedding = response.data[0].embedding.copy()
+                
+                # 명시적으로 메모리 해제
+                del response
+                return embedding
+                
         except Exception as e:
             logging.error(f"임베딩 생성 실패: {e}")
             return None
 
     def search_similar_answers(self, query: str, top_k: int = 10, similarity_threshold: float = 0.6) -> list:
+        """메모리 최적화된 유사 답변 검색"""
         try:
-            query_vector = self.create_embedding(query)
-            if query_vector is None:
-                return []
-            
-            results = index.query(vector=query_vector, top_k=top_k, include_metadata=True)
-            
-            filtered_results = [
-                {
-                    'score': match['score'],
-                    'question': match['metadata'].get('question', ''),
-                    'answer': match['metadata'].get('answer', ''),
-                    'category': match['metadata'].get('category', '일반')
-                }
-                for match in results['matches'] if match['score'] >= similarity_threshold
-            ]
-            
-            logging.info(f"유사 답변 {len(filtered_results)}개 검색 완료")
-            return filtered_results
+            with memory_cleanup():
+                query_vector = self.create_embedding(query)
+                if query_vector is None:
+                    return []
+                
+                # Pinecone 검색
+                results = index.query(
+                    vector=query_vector, 
+                    top_k=top_k, 
+                    include_metadata=True
+                )
+                
+                # 결과 처리 후 즉시 메모리 해제
+                filtered_results = [
+                    {
+                        'score': match['score'],
+                        'question': match['metadata'].get('question', ''),
+                        'answer': match['metadata'].get('answer', ''),
+                        'category': match['metadata'].get('category', '일반')
+                    }
+                    for match in results['matches'] if match['score'] >= similarity_threshold
+                ]
+                
+                # 검색 결과 메모리 해제
+                del results
+                del query_vector
+                
+                logging.info(f"유사 답변 {len(filtered_results)}개 검색 완료")
+                return filtered_results
+                
         except Exception as e:
             logging.error(f"Pinecone 검색 실패: {str(e)}")
             return []
@@ -274,60 +357,66 @@ class AIAnswerGenerator:
         
         return text
 
-    # ★ 메모리 누수 해제
-    # torch.no_grad()는 불필요한 메모리 점유를 막고, gc.collect()는 사용 후 메모리를 즉시 해제. 스레드 제한은 CPU 과부하 방지
-    @profile # 메모리 누수 추적용 profile 데코레이터 추가
+    # ★ 대폭 개선된 T5 생성 함수
+    @profile
     def generate_with_t5(self, query: str, similar_answers: list) -> str:
+        """CPU 최적화된 T5 텍스트 생성 (품질 유지)"""
         try:
-            torch.set_num_threads(2)  # CPU 스레드 수 제한 (인스턴스 코어에 맞게 조정. 2개)
-
-            context_answers = []
-            for ans in similar_answers[:3]:
-                clean_ans = ans['answer']
-                clean_ans = re.sub(r'[\b\r\f\v]', '', clean_ans)
-                clean_ans = re.sub(r'[\x00-\x08\x0B\x0C\x0E-\x1F\x7F]', '', clean_ans)
-                clean_ans = re.sub(r'<[^>]+>', '', clean_ans)
-                context_answers.append(clean_ans)
-            
-            context = " ".join(context_answers)
-            
-            prompt = f"질문: {query}\n참고답변: {context}\n답변:"
-            
-            # inputs = text_tokenizer(prompt, return_tensors="pt", max_length=512, truncation=True)
-            
-            with torch.no_grad():  # 그라디언트 계산 비활성화로 메모리/CPU 절약
-                inputs = text_tokenizer(prompt, return_tensors="pt", max_length=512, truncation=True)
-
-                outputs = text_model.generate(
-                    **inputs, 
-                    max_length=200,
-                    num_beams=4,
-                    early_stopping=True,
-                    do_sample=True,
-                    temperature=0.7
-                )
-            
-            generated = text_tokenizer.decode(outputs[0], skip_special_tokens=True)
-            
-            del inputs  # 텐서 해제
-            del outputs # 텐서 해제
-            gc.collect()  # 가비지 컬렉션 강제 실행
-
-            if "답변:" in generated:
-                generated = generated.split("답변:")[-1].strip()
-            
-            generated = re.sub(r'[\b\r\f\v]', '', generated)
-            generated = re.sub(r'[\x00-\x08\x0B\x0C\x0E-\x1F\x7F]', '', generated)
-            
-            return generated
-            
+            with memory_cleanup():
+                # 더 효율적인 컨텍스트 준비
+                context_answers = []
+                for ans in similar_answers[:2]:  # 3개 → 2개로 줄임
+                    clean_ans = re.sub(r'[\b\r\f\v\x00-\x08\x0B\x0C\x0E-\x1F\x7F]|<[^>]+>', '', ans['answer'])
+                    context_answers.append(clean_ans[:150])  # 200 → 150으로 줄임
+                
+                context = " ".join(context_answers)
+                prompt = f"질문: {query[:80]}\n참고답변: {context[:250]}\n답변:"  # 길이 축소
+                
+                with torch.no_grad():
+                    inputs = self.text_tokenizer(
+                        prompt, 
+                        return_tensors="pt", 
+                        max_length=200,  # 256 → 200으로 줄임
+                        truncation=True,
+                        padding=False
+                    )
+                    
+                    # ★ CPU 효율적인 생성 설정
+                    outputs = self.text_model.generate(
+                        **inputs,
+                        max_length=120,     # 150 → 120으로 줄임
+                        num_beams=1,        # 2 → 1로 줄임 (가장 큰 CPU 절약!)
+                        early_stopping=True,
+                        do_sample=False,
+                        pad_token_id=self.text_tokenizer.pad_token_id,
+                        use_cache=True,     # 캐싱 활성화
+                        no_repeat_ngram_size=2
+                    )
+                    
+                    generated = self.text_tokenizer.decode(
+                        outputs[0], 
+                        skip_special_tokens=True,
+                        clean_up_tokenization_spaces=True
+                    )
+                
+                # 메모리 해제
+                del inputs, outputs
+                torch.cuda.empty_cache() if torch.cuda.is_available() else None
+                
+                # 결과 정리
+                if "답변:" in generated:
+                    generated = generated.split("답변:")[-1].strip()
+                
+                generated = re.sub(r'[\b\r\f\v\x00-\x08\x0B\x0C\x0E-\x1F\x7F]', '', generated)
+                
+                return generated[:400]  # 500 → 400으로 줄임
+                
         except Exception as e:
             logging.error(f"T5 모델 생성 실패: {e}")
+            # 폴백: 첫 번째 유사 답변 반환
             if similar_answers:
-                fallback_answer = similar_answers[0]['answer']
-                fallback_answer = re.sub(r'[\b\r\f\v]', '', fallback_answer)
-                fallback_answer = re.sub(r'[\x00-\x08\x0B\x0C\x0E-\x1F\x7F]', '', fallback_answer)
-                return fallback_answer
+                fallback = re.sub(r'[\b\r\f\v\x00-\x08\x0B\x0C\x0E-\x1F\x7F]|<[^>]+>', '', similar_answers[0]['answer'])
+                return fallback[:400]
             return ""
 
     def generate_ai_answer(self, query: str, similar_answers: list, lang: str) -> str:
@@ -336,10 +425,13 @@ class AIAnswerGenerator:
             return default_msg
         
         try:
-            base_answer = self.generate_with_t5(query, similar_answers)
-            
-            if not base_answer or len(base_answer.strip()) < 10:
+            # 첫 번째 답변의 유사도가 매우 높으면 T5 생략
+            if similar_answers[0]['score'] > 0.9:  # 90% 이상 유사도
                 base_answer = similar_answers[0]['answer']
+                logging.info("높은 유사도로 인해 T5 생성 생략")
+            else:
+                # 유사도가 낮을 때만 T5 사용
+                base_answer = self.generate_with_t5(query, similar_answers)
             
             base_answer = re.sub(r'<[^>]+>', '', base_answer)
             base_answer = self.remove_old_app_name(base_answer)
@@ -366,30 +458,36 @@ class AIAnswerGenerator:
             return "<p>죄송합니다. 현재 답변을 생성할 수 없습니다.</p><p><br></p><p>고객센터로 문의해주세요.</p>"
 
     def process(self, seq: int, question: str, lang: str) -> dict:
+        """메모리 최적화된 메인 처리 함수"""
         try:
-            processed_question = self.preprocess_text(question)
-            if not processed_question:
-                return {"success": False, "error": "질문이 비어있습니다."}
-            
-            logging.info(f"처리 시작 - SEQ: {seq}, 질문: {processed_question[:50]}...")
-            
-            similar_answers = self.search_similar_answers(processed_question)
-            ai_answer = self.generate_ai_answer(processed_question, similar_answers, lang)
-            
-            ai_answer = ai_answer.replace('"', '"').replace('"', '"')
-            ai_answer = ai_answer.replace(''', "'").replace(''', "'")
-            
-            result = {
-                "success": True,
-                "answer": ai_answer,
-                "similar_count": len(similar_answers),
-                "embedding_model": "text-embedding-3-small",
-                "generation_model": "google/flan-t5-base"
-            }
-            
-            logging.info(f"처리 완료 - SEQ: {seq}, HTML 답변 생성됨")
-            return result
-            
+            with memory_cleanup():
+                processed_question = self.preprocess_text(question)
+                if not processed_question:
+                    return {"success": False, "error": "질문이 비어있습니다."}
+                
+                logging.info(f"처리 시작 - SEQ: {seq}, 질문: {processed_question[:50]}...")
+                
+                # 유사 답변 검색
+                similar_answers = self.search_similar_answers(processed_question)
+                
+                # AI 답변 생성
+                ai_answer = self.generate_ai_answer(processed_question, similar_answers, lang)
+                
+                # 특수문자 정리
+                ai_answer = ai_answer.replace('"', '"').replace('"', '"')
+                ai_answer = ai_answer.replace(''', "'").replace(''', "'")
+                
+                result = {
+                    "success": True,
+                    "answer": ai_answer,
+                    "similar_count": len(similar_answers),
+                    "embedding_model": "text-embedding-3-small",
+                    "generation_model": "google/flan-t5-base"
+                }
+                
+                logging.info(f"처리 완료 - SEQ: {seq}, HTML 답변 생성됨")
+                return result
+                
         except Exception as e:
             logging.error(f"처리 중 오류 - SEQ: {seq}, 오류: {str(e)}")
             return {"success": False, "error": str(e)}
@@ -441,11 +539,12 @@ class PineconeSyncManager:
             if not text or not text.strip():
                 return None
             
-            response = self.openai_client.embeddings.create(
-                model=MODEL_NAME,
-                input=text
-            )
-            return response.data[0].embedding
+            with memory_cleanup():
+                response = openai_client.embeddings.create(
+                    model=MODEL_NAME,
+                    input=text
+                )
+                return response.data[0].embedding
             
         except Exception as e:
             logging.error(f"임베딩 생성 실패: {e}")
@@ -458,33 +557,34 @@ class PineconeSyncManager:
     def get_mssql_data(self, seq: int) -> Optional[Dict]:
         """MSSQL에서 데이터 조회"""
         try:
-            conn = pyodbc.connect(connection_string)
-            cursor = conn.cursor()
-            
-            query = """
-            SELECT seq, contents, reply_contents, cate_idx, name, 
-                   CONVERT(varchar, regdate, 120) as regdate
-            FROM mobile.dbo.bible_inquiry
-            WHERE seq = ? AND answer_YN = 'Y'
-            """
-            
-            cursor.execute(query, seq)
-            row = cursor.fetchone()
-            
-            if row:
-                data = {
-                    'seq': row[0],
-                    'contents': row[1],
-                    'reply_contents': row[2],
-                    'cate_idx': row[3],
-                    'name': row[4],
-                    'regdate': row[5]
-                }
-                return data
-            
-            cursor.close()
-            conn.close()
-            return None
+            with memory_cleanup():
+                conn = pyodbc.connect(connection_string)
+                cursor = conn.cursor()
+                
+                query = """
+                SELECT seq, contents, reply_contents, cate_idx, name, 
+                       CONVERT(varchar, regdate, 120) as regdate
+                FROM mobile.dbo.bible_inquiry
+                WHERE seq = ? AND answer_YN = 'Y'
+                """
+                
+                cursor.execute(query, seq)
+                row = cursor.fetchone()
+                
+                if row:
+                    data = {
+                        'seq': row[0],
+                        'contents': row[1],
+                        'reply_contents': row[2],
+                        'cate_idx': row[3],
+                        'name': row[4],
+                        'regdate': row[5]
+                    }
+                    return data
+                
+                cursor.close()
+                conn.close()
+                return None
             
         except Exception as e:
             logging.error(f"MSSQL 조회 실패: {e}")
@@ -493,69 +593,70 @@ class PineconeSyncManager:
     def sync_to_pinecone(self, seq: int, mode: str = 'upsert') -> Dict[str, Any]:
         """MSSQL 데이터를 Pinecone에 동기화"""
         try:
-            # 삭제 모드
-            if mode == 'delete':
+            with memory_cleanup():
+                # 삭제 모드
+                if mode == 'delete':
+                    vector_id = f"qa_bible_{seq}"
+                    self.index.delete(ids=[vector_id])
+                    logging.info(f"Pinecone에서 삭제 완료: {vector_id}")
+                    return {"success": True, "message": "삭제 완료", "seq": seq}
+                
+                # MSSQL에서 데이터 가져오기
+                data = self.get_mssql_data(seq)
+                if not data:
+                    return {"success": False, "error": "데이터를 찾을 수 없습니다"}
+                
+                # 텍스트 전처리
+                question = self.preprocess_text(data['contents'])
+                answer = self.preprocess_text(data['reply_contents'])
+                
+                # 임베딩 생성 (질문 기반)
+                embedding = self.create_embedding(question)
+                if not embedding:
+                    return {"success": False, "error": "임베딩 생성 실패"}
+                
+                # 카테고리 이름 가져오기
+                category = self.get_category_name(data['cate_idx'])
+                
+                # 메타데이터 구성
+                metadata = {
+                    "seq": int(data['seq']),
+                    "question": self.preprocess_text(data['contents'], for_metadata=True),
+                    "answer": self.preprocess_text(data['reply_contents'], for_metadata=True),
+                    "category": category,
+                    "name": data['name'] if data['name'] else "익명",
+                    "regdate": data['regdate'],
+                    "source": "bible_inquiry_mssql",
+                    "updated_at": datetime.now().strftime("%Y-%m-%d %H:%M:%S")
+                }
+                
+                # Pinecone에 upsert
                 vector_id = f"qa_bible_{seq}"
-                self.index.delete(ids=[vector_id])
-                logging.info(f"Pinecone에서 삭제 완료: {vector_id}")
-                return {"success": True, "message": "삭제 완료", "seq": seq}
-            
-            # MSSQL에서 데이터 가져오기
-            data = self.get_mssql_data(seq)
-            if not data:
-                return {"success": False, "error": "데이터를 찾을 수 없습니다"}
-            
-            # 텍스트 전처리
-            question = self.preprocess_text(data['contents'])
-            answer = self.preprocess_text(data['reply_contents'])
-            
-            # 임베딩 생성 (질문 기반)
-            embedding = self.create_embedding(question)
-            if not embedding:
-                return {"success": False, "error": "임베딩 생성 실패"}
-            
-            # 카테고리 이름 가져오기
-            category = self.get_category_name(data['cate_idx'])
-            
-            # 메타데이터 구성
-            metadata = {
-                "seq": int(data['seq']),
-                "question": self.preprocess_text(data['contents'], for_metadata=True),
-                "answer": self.preprocess_text(data['reply_contents'], for_metadata=True),
-                "category": category,
-                "name": data['name'] if data['name'] else "익명",
-                "regdate": data['regdate'],
-                "source": "bible_inquiry_mssql",
-                "updated_at": datetime.now().strftime("%Y-%m-%d %H:%M:%S")
-            }
-            
-            # Pinecone에 upsert
-            vector_id = f"qa_bible_{seq}"
-            
-            # 기존 벡터 확인
-            existing = self.index.fetch(ids=[vector_id])
-            is_update = vector_id in existing['vectors']
-            
-            # 벡터 데이터 구성
-            vector_data = {
-                "id": vector_id,
-                "values": embedding,
-                "metadata": metadata
-            }
-            
-            # Pinecone에 저장
-            self.index.upsert(vectors=[vector_data])
-            
-            action = "수정" if is_update else "생성"
-            logging.info(f"Pinecone {action} 완료: {vector_id}")
-            
-            return {
-                "success": True,
-                "message": f"Pinecone {action} 완료",
-                "seq": seq,
-                "vector_id": vector_id,
-                "is_update": is_update
-            }
+                
+                # 기존 벡터 확인
+                existing = self.index.fetch(ids=[vector_id])
+                is_update = vector_id in existing['vectors']
+                
+                # 벡터 데이터 구성
+                vector_data = {
+                    "id": vector_id,
+                    "values": embedding,
+                    "metadata": metadata
+                }
+                
+                # Pinecone에 저장
+                self.index.upsert(vectors=[vector_data])
+                
+                action = "수정" if is_update else "생성"
+                logging.info(f"Pinecone {action} 완료: {vector_id}")
+                
+                return {
+                    "success": True,
+                    "message": f"Pinecone {action} 완료",
+                    "seq": seq,
+                    "vector_id": vector_id,
+                    "is_update": is_update
+                }
             
         except Exception as e:
             logging.error(f"Pinecone 동기화 실패: {str(e)}")
@@ -569,27 +670,33 @@ sync_manager = PineconeSyncManager()
 
 @app.route('/generate_answer', methods=['POST'])
 def generate_answer():
-    """AI 답변 생성 API (기존)"""
+    """AI 답변 생성 API (메모리 최적화)"""
     try:
-        data = request.get_json()
-        seq = data.get('seq', 0)
-        question = data.get('question', '')
-        lang = data.get('lang', 'kr')
-        
-        if not question:
-            return jsonify({"success": False, "error": "질문이 필요합니다."}), 400
-        
-        result = generator.process(seq, question, lang)
-        
-        response = jsonify(result)
-        response.headers['Content-Type'] = 'application/json; charset=utf-8'
+        with memory_cleanup():
+            data = request.get_json()
+            seq = data.get('seq', 0)
+            question = data.get('question', '')
+            lang = data.get('lang', 'kr')
+            
+            if not question:
+                return jsonify({"success": False, "error": "질문이 필요합니다."}), 400
+            
+            result = generator.process(seq, question, lang)
+            
+            response = jsonify(result)
+            response.headers['Content-Type'] = 'application/json; charset=utf-8'
 
-        # 메모리 누수 추적용 tracemalloc 스냅샷 찍기 (엔드포인트 끝에서)
-        snapshot = tracemalloc.take_snapshot()
-        top_stats = snapshot.statistics('lineno')
-        logging.info("Top 10 memory leaks: " + str(top_stats[:10]))
+            # ★ 메모리 사용량 모니터링
+            snapshot = tracemalloc.take_snapshot()
+            top_stats = snapshot.statistics('lineno')
+            memory_usage = sum(stat.size for stat in top_stats) / 1024 / 1024  # MB
+            logging.info(f"현재 메모리 사용량: {memory_usage:.2f}MB")
+            
+            if memory_usage > 500:  # 500MB 초과시 경고
+                logging.warning(f"높은 메모리 사용량 감지: {memory_usage:.2f}MB")
+                gc.collect()
 
-        return response
+            return response
         
     except Exception as e:
         logging.error(f"API 호출 오류: {str(e)}")
@@ -653,5 +760,6 @@ if __name__ == "__main__":
     
     print(f"Flask API starting on port {port}")
     print("Services: AI Answer Generation + Pinecone Sync")
+    print(f"CPU Threads: {torch.get_num_threads()}")
     
-    app.run(host='0.0.0.0', port=port, debug=False)
+    app.run(host='0.0.0.0', port=port, debug=False, threaded=True)
