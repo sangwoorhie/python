@@ -4,7 +4,7 @@
 AI Answer Generator Flask API for ASP Classic Integration
 파일명: free_4_ai_answer_generator.py
 설명: Flask API로 ASP Classic에서 호출 (Pinecone 동기화 기능 통합)
-모델: google/flan-t5-base + OpenAI embeddings
+모델: gpt-3.5-turbo + OpenAI embeddings
 """
 
 # 필수 라이브러리 임포트
@@ -17,11 +17,8 @@ import html
 import unicodedata
 import logging
 import gc
-import torch
 from flask import Flask, request, jsonify
 from pinecone import Pinecone
-from sentence_transformers import SentenceTransformer
-from transformers import T5ForConditionalGeneration, T5Tokenizer
 from dotenv import load_dotenv
 from flask_cors import CORS
 import openai
@@ -31,7 +28,6 @@ from typing import Optional, Dict, Any, List
 from memory_profiler import profile
 import tracemalloc
 import threading
-import weakref
 from contextlib import contextmanager
 
 # Python 내장 모듈로 메모리 누수 추적
@@ -40,11 +36,6 @@ tracemalloc.start()
 # Flask 웹 애플리케이션 인스턴스 생성
 app = Flask(__name__)
 CORS(app)
-
-# ★ CPU 스레드 수 제한 (전역 설정)
-os.environ['OMP_NUM_THREADS'] = '1'  # 1개로 줄임
-os.environ['MKL_NUM_THREADS'] = '1'  # 1개로 줄임
-torch.set_num_threads(1)  # 1개로 줄임
 
 # 로깅 시스템 설정 - 파일에 로그 저장
 logging.basicConfig(
@@ -63,6 +54,11 @@ INDEX_NAME = "bible-app-support-1536-openai"
 EMBEDDING_DIMENSION = 1536
 MAX_TEXT_LENGTH = 8000
 
+# GPT 모델 설정
+GPT_MODEL = 'gpt-3.5-turbo'
+MAX_TOKENS = 400
+TEMPERATURE = 0.7
+
 # 카테고리 매핑 (cate_idx → 카테고리명)
 CATEGORY_MAPPING = {
     '1': '후원/해지',
@@ -75,10 +71,6 @@ CATEGORY_MAPPING = {
     '0': '사용 문의(기타)'
 }
 
-# ★ 글로벌 모델 인스턴스 (싱글톤 패턴)
-_model_instances = {}
-_model_lock = threading.Lock()
-
 @contextmanager
 def memory_cleanup():
     """컨텍스트 매니저로 메모리 정리"""
@@ -86,30 +78,6 @@ def memory_cleanup():
         yield
     finally:
         gc.collect()
-        if torch.cuda.is_available():
-            torch.cuda.empty_cache()
-
-def get_model_instance(model_type: str):
-    """모델 싱글톤 패턴으로 메모리 절약"""
-    global _model_instances
-    
-    with _model_lock:
-        if model_type not in _model_instances:
-            if model_type == 'text_model':
-                _model_instances[model_type] = T5ForConditionalGeneration.from_pretrained(
-                    'google/flan-t5-base',
-                    torch_dtype=torch.float16,  # 메모리 절약을 위해 float16 사용
-                    low_cpu_mem_usage=True
-                )
-                _model_instances[model_type].eval()  # 추론 모드로 설정
-            elif model_type == 'text_tokenizer':
-                _model_instances[model_type] = T5Tokenizer.from_pretrained(
-                    'google/flan-t5-base',
-                    legacy=True,
-                    clean_up_tokenization_spaces=False
-                )
-        
-        return _model_instances[model_type]
 
 # AI 모델 및 벡터 데이터베이스 초기화
 try:
@@ -119,10 +87,6 @@ try:
     
     # OpenAI 클라이언트 초기화
     openai_client = openai.OpenAI(api_key=os.getenv('OPENAI_API_KEY'))
-    
-    # ★ 모델 사전 로딩 (싱글톤으로 관리)
-    text_model = get_model_instance('text_model')
-    text_tokenizer = get_model_instance('text_tokenizer')
     
     # MSSQL 연결 문자열 (Pinecone 동기화용)
     mssql_config = {
@@ -134,12 +98,12 @@ try:
     
     connection_string = (
             f"DRIVER={{ODBC Driver 17 for SQL Server}};"
-            f"SERVER={mssql_config['server']},1433;"  # 포트 명시
+            f"SERVER={mssql_config['server']},1433;"
             f"DATABASE={mssql_config['database']};"
             f"UID={mssql_config['username']};"
             f"PWD={mssql_config['password']};"
             f"TrustServerCertificate=yes;"
-            f"Connection Timeout=30;"  # 타임아웃 추가
+            f"Connection Timeout=30;"
     )
 
 except Exception as e:
@@ -147,30 +111,11 @@ except Exception as e:
     app.logger.error(f"모듈 로드 실패: {str(e)}")
     raise
 
-# ====== 기존 AI 답변 생성 클래스 ======
+# ====== AI 답변 생성 클래스 (GPT-3.5-turbo 버전) ======
 class AIAnswerGenerator:
     
     def __init__(self):
-        # 약한 참조로 모델 참조 (메모리 누수 방지)
-        self._text_model_ref = weakref.ref(get_model_instance('text_model'))
-        self._text_tokenizer_ref = weakref.ref(get_model_instance('text_tokenizer'))
-    
-    @property
-    def text_model(self):
-        model = self._text_model_ref()
-        if model is None:
-            # 모델이 가비지 컬렉션된 경우 재로드
-            model = get_model_instance('text_model')
-            self._text_model_ref = weakref.ref(model)
-        return model
-    
-    @property
-    def text_tokenizer(self):
-        tokenizer = self._text_tokenizer_ref()
-        if tokenizer is None:
-            tokenizer = get_model_instance('text_tokenizer')
-            self._text_tokenizer_ref = weakref.ref(tokenizer)
-        return tokenizer
+        self.openai_client = openai_client
     
     def preprocess_text(self, text: str) -> str:
         if not text:
@@ -200,7 +145,6 @@ class AIAnswerGenerator:
         escaped = json_module.dumps(text, ensure_ascii=False)
         return escaped[1:-1]
 
-    # ★ 개선된 임베딩 생성 함수
     def create_embedding(self, text: str) -> Optional[list]:
         """메모리 최적화된 임베딩 생성"""
         if not text or not text.strip():
@@ -208,15 +152,12 @@ class AIAnswerGenerator:
             
         try:
             with memory_cleanup():
-                response = openai_client.embeddings.create(
+                response = self.openai_client.embeddings.create(
                     model='text-embedding-3-small',
-                    input=text[:8000]  # 토큰 제한
+                    input=text[:8000]
                 )
                 
-                # 임베딩 추출 후 즉시 응답 객체 해제
                 embedding = response.data[0].embedding.copy()
-                
-                # 명시적으로 메모리 해제
                 del response
                 return embedding
                 
@@ -232,14 +173,12 @@ class AIAnswerGenerator:
                 if query_vector is None:
                     return []
                 
-                # Pinecone 검색
                 results = index.query(
                     vector=query_vector, 
                     top_k=top_k, 
                     include_metadata=True
                 )
                 
-                # 결과 처리 후 즉시 메모리 해제
                 filtered_results = [
                     {
                         'score': match['score'],
@@ -250,7 +189,6 @@ class AIAnswerGenerator:
                     for match in results['matches'] if match['score'] >= similarity_threshold
                 ]
                 
-                # 검색 결과 메모리 해제
                 del results
                 del query_vector
                 
@@ -362,7 +300,6 @@ class AIAnswerGenerator:
         if not text or len(text.strip()) < 3:
             return False
         
-        # 한글 문자 비율 계산
         korean_chars = len(re.findall(r'[가-힣]', text))
         total_chars = len(re.sub(r'\s', '', text))
         
@@ -371,29 +308,25 @@ class AIAnswerGenerator:
             
         korean_ratio = korean_chars / total_chars
         
-        # 한글이 30% 이상이어야 유효한 텍스트로 판단
         if korean_ratio < 0.3:
             return False
         
-        # 무의미한 문자 패턴 검사
         meaningless_patterns = [
-            r'^[a-z\s\.,;:\(\)\[\]\-_&\/\'"]+$',  # 영어 소문자만
-            r'^[A-Z\s\.,;:\(\)\[\]\-_&\/\'"]+$',  # 영어 대문자만
-            r'^[\s\.,;:\(\)\[\]\-_&\/\'"]+$',     # 특수문자와 공백만
-            r'^[0-9\s\.,;:\(\)\[\]\-_&\/\'"]+$',  # 숫자와 특수문자만
-            r'.*[а-я].*',                          # 러시아어 문자
-            r'.*[α-ω].*',                          # 그리스어 문자
+            r'^[a-z\s\.,;:\(\)\[\]\-_&\/\'"]+$',
+            r'^[A-Z\s\.,;:\(\)\[\]\-_&\/\'"]+$',
+            r'^[\s\.,;:\(\)\[\]\-_&\/\'"]+$',
+            r'^[0-9\s\.,;:\(\)\[\]\-_&\/\'"]+$',
+            r'.*[а-я].*',
+            r'.*[α-ω].*',
         ]
         
         for pattern in meaningless_patterns:
             if re.match(pattern, text, re.IGNORECASE):
                 return False
         
-        # 반복되는 단일 문자 패턴 검사 (예: "aaaaaa", "111111")
         if re.search(r'(.)\1{5,}', text):
             return False
         
-        # 무작위 문자열 패턴 검사 (연속된 의미없는 문자)
         random_pattern = r'[a-zA-Z]{8,}'
         if re.search(random_pattern, text) and korean_ratio < 0.5:
             return False
@@ -405,103 +338,91 @@ class AIAnswerGenerator:
         if not text:
             return ""
         
-        # 기본 정리
         text = re.sub(r'[\x00-\x08\x0B\x0C\x0E-\x1F\x7F]', '', text)
         text = re.sub(r'[\b\r\f\v]', '', text)
         
-        # 무의미한 문자열 제거
         text = re.sub(r'\b[a-z]{1,2}\b(?:\s+[a-z]{1,2}\b)*', '', text, flags=re.IGNORECASE)
-        text = re.sub(r'[а-я]+', '', text)  # 러시아어 제거
-        text = re.sub(r'[α-ω]+', '', text)  # 그리스어 제거
+        text = re.sub(r'[а-я]+', '', text)
+        text = re.sub(r'[α-ω]+', '', text)
         
-        # 특수문자 연속 제거
         text = re.sub(r'[^\w\s가-힣.,!?()"\'-]{3,}', '', text)
-        
-        # 의미없는 구두점 연속 제거
         text = re.sub(r'[.,;:!?]{3,}', '.', text)
         
-        # 공백 정리
         text = re.sub(r'\s+', ' ', text)
         text = text.strip()
         
         return text
 
-    # ★ 대폭 개선된 T5 생성 함수
+    # ★ GPT-3.5-turbo를 사용한 새로운 생성 함수
     @profile
-    def generate_with_t5(self, query: str, similar_answers: list) -> str:
-        """CPU 최적화된 T5 텍스트 생성 (품질 유지)"""
+    def generate_with_gpt(self, query: str, similar_answers: list) -> str:
+        """GPT-3.5-turbo를 사용한 메모리 최적화된 텍스트 생성"""
         try:
             with memory_cleanup():
-                # 더 효율적인 컨텍스트 준비
+                # 컨텍스트 준비
                 context_answers = []
-                for ans in similar_answers[:2]:  # 3개 → 2개로 줄임
+                for ans in similar_answers[:3]:
                     clean_ans = re.sub(r'[\b\r\f\v\x00-\x08\x0B\x0C\x0E-\x1F\x7F]|<[^>]+>', '', ans['answer'])
-                    # 한국어 검증 추가
                     if self.is_valid_korean_text(clean_ans):
-                        context_answers.append(clean_ans[:150])  # 200 → 150으로 줄임
+                        context_answers.append(clean_ans[:200])
                 
-                # 유효한 컨텍스트가 없으면 첫 번째 답변 반환
                 if not context_answers:
-                    logging.warning("유효한 한국어 컨텍스트가 없어 T5 생성 중단")
+                    logging.warning("유효한 한국어 컨텍스트가 없어 GPT 생성 중단")
                     if similar_answers:
                         return self.clean_generated_text(similar_answers[0]['answer'])
                     return ""
                 
-                context = " ".join(context_answers)
-                prompt = f"질문: {query[:80]}\n참고답변: {context[:250]}\n답변:"  # 길이 축소
+                context = "\n".join(context_answers)
                 
-                with torch.no_grad():
-                    inputs = self.text_tokenizer(
-                        prompt, 
-                        return_tensors="pt", 
-                        max_length=200,  # 256 → 200으로 줄임
-                        truncation=True,
-                        padding=False
-                    )
-                    
-                    # ★ CPU 효율적인 생성 설정
-                    outputs = self.text_model.generate(
-                        **inputs,
-                        max_length=120,     # 150 → 120으로 줄임
-                        num_beams=1,        # 2 → 1로 줄임 (가장 큰 CPU 절약!)
-                        early_stopping=True,
-                        do_sample=False,
-                        pad_token_id=self.text_tokenizer.pad_token_id,
-                        use_cache=True,     # 캐싱 활성화
-                        no_repeat_ngram_size=2
-                    )
-                    
-                    generated = self.text_tokenizer.decode(
-                        outputs[0], 
-                        skip_special_tokens=True,
-                        clean_up_tokenization_spaces=True
-                    )
+                # GPT 프롬프트 구성
+                system_prompt = """당신은 GOODTV 바이블 애플 고객센터 상담원입니다. 
+고객의 질문에 대해 친절하고 정확한 답변을 제공해주세요.
+답변은 한국어로 작성하며, 정중하고 도움이 되는 톤을 사용하세요.
+HTML 태그나 마크다운을 사용하지 말고, 일반 텍스트로만 답변하세요.
+답변은 400자 이내로 간결하게 작성해주세요."""
+
+                user_prompt = f"""질문: {query}
+
+참고할 수 있는 유사한 문의 답변들:
+{context}
+
+위 참고 답변들을 바탕으로 고객의 질문에 적절한 답변을 작성해주세요."""
+
+                # OpenAI API 호출
+                response = self.openai_client.chat.completions.create(
+                    model=GPT_MODEL,
+                    messages=[
+                        {"role": "system", "content": system_prompt},
+                        {"role": "user", "content": user_prompt}
+                    ],
+                    max_tokens=MAX_TOKENS,
+                    temperature=TEMPERATURE,
+                    top_p=0.9,
+                    frequency_penalty=0.1,
+                    presence_penalty=0.1
+                )
+                
+                generated = response.choices[0].message.content.strip()
                 
                 # 메모리 해제
-                del inputs, outputs
-                torch.cuda.empty_cache() if torch.cuda.is_available() else None
-                
-                # 결과 정리
-                if "답변:" in generated:
-                    generated = generated.split("답변:")[-1].strip()
+                del response
                 
                 # 생성된 텍스트 정리 및 검증
                 generated = self.clean_generated_text(generated)
                 
                 # 한국어 텍스트 검증
                 if not self.is_valid_korean_text(generated):
-                    logging.warning("T5가 무효한 텍스트를 생성했습니다. 폴백 사용.")
-                    # 폴백: 첫 번째 유사 답변 사용
+                    logging.warning("GPT가 무효한 텍스트를 생성했습니다. 폴백 사용.")
                     if similar_answers:
                         fallback = self.clean_generated_text(similar_answers[0]['answer'])
                         if self.is_valid_korean_text(fallback):
                             return fallback[:400]
                     return ""
                 
-                return generated[:400]  # 500 → 400으로 줄임
+                return generated[:400]
                 
         except Exception as e:
-            logging.error(f"T5 모델 생성 실패: {e}")
+            logging.error(f"GPT 모델 생성 실패: {e}")
             # 폴백: 첫 번째 유사 답변 반환
             if similar_answers:
                 fallback = self.clean_generated_text(similar_answers[0]['answer'])
@@ -515,31 +436,28 @@ class AIAnswerGenerator:
             return default_msg
         
         try:
-            # 첫 번째 답변의 유사도가 매우 높으면 T5 생략
-            if similar_answers[0]['score'] > 0.85:  # 90% → 85%로 낮춤 (더 안전)
+            # 첫 번째 답변의 유사도가 매우 높으면 GPT 생략
+            if similar_answers[0]['score'] > 0.85:
                 base_answer = similar_answers[0]['answer']
-                logging.info("높은 유사도로 인해 T5 생성 생략")
+                logging.info("높은 유사도로 인해 GPT 생성 생략")
                 
-                # 유사 답변도 검증
                 base_answer = self.clean_generated_text(base_answer)
                 if not self.is_valid_korean_text(base_answer):
                     logging.warning("유사 답변이 무효한 텍스트입니다.")
-                    # 다른 유사 답변들 확인
                     for ans in similar_answers[1:3]:
                         candidate = self.clean_generated_text(ans['answer'])
                         if self.is_valid_korean_text(candidate):
                             base_answer = candidate
                             break
                     else:
-                        # 모든 유사 답변이 무효하면 기본 메시지
                         return "<p>문의해주신 내용에 대해 정확한 답변을 드리기 위해 더 자세한 정보가 필요합니다.</p><p><br></p><p>고객센터로 문의해주시면 신속하게 도움을 드리겠습니다.</p>"
             else:
-                # 유사도가 낮을 때만 T5 사용
-                base_answer = self.generate_with_t5(query, similar_answers)
+                # 유사도가 낮을 때만 GPT 사용
+                base_answer = self.generate_with_gpt(query, similar_answers)
                 
-                # T5 결과가 무효하면 폴백
+                # GPT 결과가 무효하면 폴백
                 if not base_answer or not self.is_valid_korean_text(base_answer):
-                    logging.warning("T5 생성 결과가 무효합니다. 유사 답변 사용.")
+                    logging.warning("GPT 생성 결과가 무효합니다. 유사 답변 사용.")
                     for ans in similar_answers[:3]:
                         candidate = self.clean_generated_text(ans['answer'])
                         if self.is_valid_korean_text(candidate):
@@ -608,7 +526,7 @@ class AIAnswerGenerator:
                     "answer": ai_answer,
                     "similar_count": len(similar_answers),
                     "embedding_model": "text-embedding-3-small",
-                    "generation_model": "google/flan-t5-base"
+                    "generation_model": "gpt-3.5-turbo"
                 }
                 
                 logging.info(f"처리 완료 - SEQ: {seq}, HTML 답변 생성됨")
@@ -618,7 +536,7 @@ class AIAnswerGenerator:
             logging.error(f"처리 중 오류 - SEQ: {seq}, 오류: {str(e)}")
             return {"success": False, "error": str(e)}
 
-# ====== 새로운 Pinecone 동기화 클래스 ======
+# ====== Pinecone 동기화 클래스는 그대로 유지 ======
 class PineconeSyncManager:
     """MSSQL 데이터를 Pinecone에 동기화하는 클래스"""
     
@@ -830,7 +748,7 @@ def generate_answer():
 
 @app.route('/sync_to_pinecone', methods=['POST'])
 def sync_to_pinecone():
-    """MSSQL 데이터를 Pinecone에 동기화하는 API (새로 추가)"""
+    """MSSQL 데이터를 Pinecone에 동기화하는 API"""
     try:
         data = request.get_json()
         seq = data.get('seq')
@@ -886,6 +804,6 @@ if __name__ == "__main__":
     
     print(f"Flask API starting on port {port}")
     print("Services: AI Answer Generation + Pinecone Sync")
-    print(f"CPU Threads: {torch.get_num_threads()}")
+    print(f"AI Model: {GPT_MODEL}")
     
     app.run(host='0.0.0.0', port=port, debug=False, threaded=True)
