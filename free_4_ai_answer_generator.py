@@ -54,10 +54,10 @@ INDEX_NAME = "bible-app-support-1536-openai"
 EMBEDDING_DIMENSION = 1536
 MAX_TEXT_LENGTH = 8000
 
-# GPT 모델 설정
+# ★ GPT 모델 설정 (더 보수적으로 변경)
 GPT_MODEL = 'gpt-3.5-turbo'
-MAX_TOKENS = 400
-TEMPERATURE = 0.7
+MAX_TOKENS = 350  # 400 → 350으로 줄임
+TEMPERATURE = 0.3  # 0.7 → 0.3으로 대폭 줄임 (창의성 억제)
 
 # 카테고리 매핑 (cate_idx → 카테고리명)
 CATEGORY_MAPPING = {
@@ -111,7 +111,7 @@ except Exception as e:
     app.logger.error(f"모듈 로드 실패: {str(e)}")
     raise
 
-# ====== AI 답변 생성 클래스 (GPT-3.5-turbo 버전) ======
+# ====== AI 답변 생성 클래스 (보수적 GPT-3.5-turbo 버전) ======
 class AIAnswerGenerator:
     
     def __init__(self):
@@ -353,18 +353,18 @@ class AIAnswerGenerator:
         
         return text
 
-    # ★ GPT-3.5-turbo를 사용한 새로운 생성 함수
+    # ★ 더 보수적인 GPT-3.5-turbo 생성 함수
     @profile
     def generate_with_gpt(self, query: str, similar_answers: list) -> str:
-        """GPT-3.5-turbo를 사용한 메모리 최적화된 텍스트 생성"""
+        """보수적이고 참고 답변에 충실한 GPT-3.5-turbo 텍스트 생성"""
         try:
             with memory_cleanup():
-                # 컨텍스트 준비
+                # 컨텍스트 준비 (더 많은 참고 답변 사용)
                 context_answers = []
-                for ans in similar_answers[:3]:
+                for ans in similar_answers[:5]:  # 3개 → 5개로 늘려서 더 많은 참고
                     clean_ans = re.sub(r'[\b\r\f\v\x00-\x08\x0B\x0C\x0E-\x1F\x7F]|<[^>]+>', '', ans['answer'])
                     if self.is_valid_korean_text(clean_ans):
-                        context_answers.append(clean_ans[:200])
+                        context_answers.append(clean_ans[:300])  # 200 → 300으로 늘림
                 
                 if not context_answers:
                     logging.warning("유효한 한국어 컨텍스트가 없어 GPT 생성 중단")
@@ -372,23 +372,27 @@ class AIAnswerGenerator:
                         return self.clean_generated_text(similar_answers[0]['answer'])
                     return ""
                 
-                context = "\n".join(context_answers)
+                context = "\n\n---\n\n".join(context_answers)  # 구분자 명확히
                 
-                # GPT 프롬프트 구성
-                system_prompt = """당신은 GOODTV 바이블 애플 고객센터 상담원입니다. 
-고객의 질문에 대해 친절하고 정확한 답변을 제공해주세요.
-답변은 한국어로 작성하며, 정중하고 도움이 되는 톤을 사용하세요.
-HTML 태그나 마크다운을 사용하지 말고, 일반 텍스트로만 답변하세요.
-답변은 400자 이내로 간결하게 작성해주세요."""
+                # ★ 더 제한적이고 보수적인 프롬프트
+                system_prompt = """당신은 GOODTV 바이블 애플 고객센터 상담원입니다.
 
-                user_prompt = f"""질문: {query}
+중요 규칙:
+1. 제공된 참고 답변들과 거의 동일한 스타일과 내용으로 답변해주세요
+2. 창의적인 답변보다는 참고 답변에 충실한 답변을 작성해주세요
+3. 참고 답변의 톤, 문체, 표현을 최대한 따라하세요
+4. HTML 태그나 마크다운 사용 금지, 일반 텍스트만 사용
+5. 인사말과 끝맺음말은 제외하고 본문만 작성하세요"""
 
-참고할 수 있는 유사한 문의 답변들:
+                user_prompt = f"""고객 질문: {query}
+
+참고 답변들 (이와 유사하게 답변해주세요):
 {context}
 
-위 참고 답변들을 바탕으로 고객의 질문에 적절한 답변을 작성해주세요."""
+위 참고 답변들의 스타일과 톤을 그대로 따라서, 고객의 질문에 적절한 답변을 작성해주세요. 
+창의적인 답변보다는 참고 답변과 유사한 답변을 작성하는 것이 중요합니다."""
 
-                # OpenAI API 호출
+                # ★ 더 보수적인 API 설정
                 response = self.openai_client.chat.completions.create(
                     model=GPT_MODEL,
                     messages=[
@@ -396,10 +400,10 @@ HTML 태그나 마크다운을 사용하지 말고, 일반 텍스트로만 답�
                         {"role": "user", "content": user_prompt}
                     ],
                     max_tokens=MAX_TOKENS,
-                    temperature=TEMPERATURE,
-                    top_p=0.9,
-                    frequency_penalty=0.1,
-                    presence_penalty=0.1
+                    temperature=TEMPERATURE,  # 0.3으로 낮춤
+                    top_p=0.7,  # 0.9 → 0.7로 낮춤
+                    frequency_penalty=0.2,  # 0.1 → 0.2로 높임
+                    presence_penalty=0.2   # 0.1 → 0.2로 높임
                 )
                 
                 generated = response.choices[0].message.content.strip()
@@ -416,10 +420,10 @@ HTML 태그나 마크다운을 사용하지 말고, 일반 텍스트로만 답�
                     if similar_answers:
                         fallback = self.clean_generated_text(similar_answers[0]['answer'])
                         if self.is_valid_korean_text(fallback):
-                            return fallback[:400]
+                            return fallback[:350]
                     return ""
                 
-                return generated[:400]
+                return generated[:350]
                 
         except Exception as e:
             logging.error(f"GPT 모델 생성 실패: {e}")
@@ -427,7 +431,7 @@ HTML 태그나 마크다운을 사용하지 말고, 일반 텍스트로만 답�
             if similar_answers:
                 fallback = self.clean_generated_text(similar_answers[0]['answer'])
                 if self.is_valid_korean_text(fallback):
-                    return fallback[:400]
+                    return fallback[:350]
             return ""
 
     def generate_ai_answer(self, query: str, similar_answers: list, lang: str) -> str:
@@ -436,8 +440,8 @@ HTML 태그나 마크다운을 사용하지 말고, 일반 텍스트로만 답�
             return default_msg
         
         try:
-            # 첫 번째 답변의 유사도가 매우 높으면 GPT 생략
-            if similar_answers[0]['score'] > 0.85:
+            # ★ 유사도 임계값을 높여서 더 보수적으로 GPT 사용
+            if similar_answers[0]['score'] > 0.75:  # 0.85 → 0.75로 낮춤 (GPT 더 자주 사용 안함)
                 base_answer = similar_answers[0]['answer']
                 logging.info("높은 유사도로 인해 GPT 생성 생략")
                 
@@ -475,18 +479,25 @@ HTML 태그나 마크다운을 사용하지 말고, 일반 텍스트로만 답�
                 logging.error("최종 답변이 무효한 텍스트입니다.")
                 return "<p>죄송합니다. 현재 답변을 생성할 수 없습니다.</p><p><br></p><p>고객센터로 문의해주세요.</p>"
             
-            has_greeting = any(greeting in base_answer.lower() for greeting in ['안녕하세요', '안녕'])
-            has_closing = any(closing in base_answer.lower() for closing in ['감사합니다', '감사드립니다'])
+            # ★ 고정된 인사말과 끝맺음말
+            final_answer = "안녕하세요. GOODTV 바이블 애플입니다. 바이블 애플을 애용해 주셔서 감사합니다. "
             
-            final_answer = ""
+            # 기존 인사말 제거
+            base_answer = re.sub(r'^안녕하세요[^.]*\.\s*', '', base_answer)
+            base_answer = re.sub(r'^안녕[^.]*\.\s*', '', base_answer)
             
-            if not has_greeting:
-                final_answer += "안녕하세요, GOODTV 바이블 애플입니다. "
+            # 기존 끝맺음말 제거
+            base_answer = re.sub(r'\s*항상[^.]*평안하세요[^.]*\.\s*$', '', base_answer)
+            base_answer = re.sub(r'\s*감사합니다[^.]*\.\s*$', '', base_answer)
+            base_answer = re.sub(r'\s*주님 안에서[^.]*\.\s*$', '', base_answer)
             
-            final_answer += base_answer
+            final_answer += base_answer.strip()
             
-            if not has_closing:
-                final_answer += " 항상 주님 안에서 평안하세요. 감사합니다."
+            # 고정된 끝맺음말
+            if not final_answer.endswith('.'):
+                final_answer += "."
+            
+            final_answer += " 항상 성도님께 좋은 성경앱을 제공하기 위해 노력하는 바이블 애플이 되겠습니다. 감사합니다. 주님 안에서 평안하세요."
             
             final_answer = self.clean_answer_text(final_answer)
             
@@ -804,6 +815,6 @@ if __name__ == "__main__":
     
     print(f"Flask API starting on port {port}")
     print("Services: AI Answer Generation + Pinecone Sync")
-    print(f"AI Model: {GPT_MODEL}")
+    print(f"AI Model: {GPT_MODEL} (Conservative Mode)")
     
     app.run(host='0.0.0.0', port=port, debug=False, threaded=True)
