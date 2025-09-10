@@ -30,12 +30,12 @@ import tracemalloc
 import threading
 from contextlib import contextmanager
 
-# Python 내장 모듈로 메모리 누수 추적
+# Python의 tracemalloc 모듈을 사용하여 메모리 누수 및 사용량을 추적합니다.
 tracemalloc.start() 
 
 # Flask 웹 애플리케이션 인스턴스 생성
-app = Flask(__name__)
-CORS(app)
+app = Flask(__name__) # 현재 실행 중인 모듈의 이름, Flask가 템플릿, 정적 파일 등의 위치를 올바르게 찾을 수 있게 도와줌
+CORS(app) # 모든 도메인에서 오는 요청(CORS) 허용
 
 # 로깅 시스템 설정 - 파일에 로그 저장
 logging.basicConfig(
@@ -165,9 +165,9 @@ class AIAnswerGenerator:
             logging.error(f"임베딩 생성 실패: {e}")
             return None
 
-    def search_similar_answers(self, query: str, top_k: int = 15, similarity_threshold: float = 0.4) -> list:
+    def search_similar_answers(self, query: str, top_k: int = 15, similarity_threshold: float = 0.6) -> list:
         """
-        개선된 유사 답변 검색 - 더 낮은 임계값으로 더 많은 후보 확보
+        개선된 유사 답변 검색 - 높은 임계값으로 정확도 향상
         """
         try:
             with memory_cleanup():
@@ -188,7 +188,7 @@ class AIAnswerGenerator:
                     answer = match['metadata'].get('answer', '')
                     category = match['metadata'].get('category', '일반')
                     
-                    # 유사도 0.4 이상이면 포함 (기존 0.6 → 0.4로 완화)
+                    # 유사도 0.6 이상이면 포함 (더 높은 정확도 확보)
                     if score >= similarity_threshold:
                         filtered_results.append({
                             'score': score,
@@ -236,15 +236,15 @@ class AIAnswerGenerator:
         # 접근 방식 결정
         if best_score >= 0.8:
             approach = 'direct_use'  # 직접 사용
-        elif best_score >= 0.6 or high_quality_count >= 2:
+        elif best_score >= 0.7 or high_quality_count >= 2:
             approach = 'gpt_with_strong_context'  # 강한 컨텍스트로 GPT 사용
-        elif best_score >= 0.4 or medium_quality_count >= 3:
+        elif best_score >= 0.6 or medium_quality_count >= 3:
             approach = 'gpt_with_weak_context'  # 약한 컨텍스트로 GPT 사용
         else:
             approach = 'fallback'  # 폴백 사용
         
         analysis = {
-            'has_good_context': best_score >= 0.4,
+            'has_good_context': best_score >= 0.6,
             'best_score': best_score,
             'high_quality_count': high_quality_count,
             'medium_quality_count': medium_quality_count,
@@ -289,9 +289,10 @@ class AIAnswerGenerator:
                 context_parts.append(f"[참고답변 {used_answers+1} - 점수: {ans['score']:.2f}]\n{clean_answer[:300]}")
                 used_answers += 1
         
-        # 저품질 답변도 필요시 포함
-        if used_answers < 3:  # 너무 적으면 저품질도 포함
-            for ans in low_score[:2]:
+        # 중간 품질 답변도 필요시 포함 (0.5-0.6)
+        if used_answers < 3:  # 너무 적으면 중간 품질도 포함
+            medium_low_score = [ans for ans in similar_answers if 0.5 <= ans['score'] < 0.6]
+            for ans in medium_low_score[:2]:
                 if used_answers >= max_answers:
                     break
                 clean_answer = re.sub(r'[\b\r\f\v\x00-\x08\x0B\x0C\x0E-\x1F\x7F]|<[^>]+>', '', ans['answer'])
@@ -779,6 +780,74 @@ class PineconeSyncManager:
     def __init__(self):
         self.index = index
         self.openai_client = openai_client
+    
+    def fix_korean_typos_with_ai(self, text: str) -> str:
+        """AI를 이용한 한국어 오타 수정 함수"""
+        if not text or len(text.strip()) < 3:
+            return text
+        
+        # 너무 긴 텍스트는 처리하지 않음 (비용 절약)
+        if len(text) > 500:
+            logging.warning(f"텍스트가 너무 길어 오타 수정 건너뜀: {len(text)}자")
+            return text
+        
+        try:
+            with memory_cleanup():
+                system_prompt = """당신은 한국어 맞춤법 및 오타 교정 전문가입니다.
+
+지침:
+1. 입력된 한국어 텍스트의 맞춤법과 오타만 수정하세요
+2. 원문의 의미와 어조는 절대 변경하지 마세요
+3. 띄어쓰기, 맞춤법, 조사 사용법을 정확히 교정하세요
+4. 앱/어플리케이션 관련 기술 용어는 표준 용어로 통일하세요
+5. 수정이 필요없다면 원문 그대로 반환하세요
+6. 수정된 텍스트만 반환하고 추가 설명은 하지 마세요
+
+예시:
+- "어플이 안됀다" → "앱이 안 돼요"
+- "다운받기가 안되요" → "다운로드가 안 돼요"
+- "삭재하고싶어요" → "삭제하고 싶어요"
+- "업데이드해주세요" → "업데이트해주세요"
+"""
+
+                user_prompt = f"다음 텍스트의 맞춤법과 오타를 수정해주세요:\n\n{text}"
+
+                response = self.openai_client.chat.completions.create(
+                    model='gpt-3.5-turbo',
+                    messages=[
+                        {"role": "system", "content": system_prompt},
+                        {"role": "user", "content": user_prompt}
+                    ],
+                    max_tokens=600,
+                    temperature=0.1,  # 매우 보수적으로 설정
+                    top_p=0.8,
+                    frequency_penalty=0.0,
+                    presence_penalty=0.0
+                )
+                
+                corrected_text = response.choices[0].message.content.strip()
+                del response
+                
+                # 결과 검증
+                if not corrected_text or len(corrected_text) == 0:
+                    logging.warning("AI 오타 수정 결과가 비어있음, 원문 반환")
+                    return text
+                
+                # 너무 많이 변경된 경우 의심스러우므로 원문 반환
+                if len(corrected_text) > len(text) * 2:
+                    logging.warning("AI 오타 수정 결과가 원문보다 너무 길어짐, 원문 반환")
+                    return text
+                
+                # 수정 내용이 있으면 로그 기록
+                if corrected_text != text:
+                    logging.info(f"AI 오타 수정: '{text[:50]}...' → '{corrected_text[:50]}...'")
+                
+                return corrected_text
+                
+        except Exception as e:
+            logging.error(f"AI 오타 수정 실패: {e}")
+            # AI 실패 시 원문 그대로 반환
+            return text
         
     def preprocess_text(self, text: str, for_metadata: bool = False) -> str:
         """텍스트 전처리"""
@@ -886,8 +955,9 @@ class PineconeSyncManager:
                 if not data:
                     return {"success": False, "error": "데이터를 찾을 수 없습니다"}
                 
-                # 텍스트 전처리
-                question = self.preprocess_text(data['contents'])
+                # 텍스트 전처리 (질문에 AI 오타 수정 적용)
+                raw_question = self.preprocess_text(data['contents'])
+                question = self.fix_korean_typos_with_ai(raw_question)  # AI 오타 수정 적용
                 answer = self.preprocess_text(data['reply_contents'])
                 
                 # 임베딩 생성 (질문 기반)
@@ -898,10 +968,10 @@ class PineconeSyncManager:
                 # 카테고리 이름 가져오기
                 category = self.get_category_name(data['cate_idx'])
                 
-                # 메타데이터 구성
+                # 메타데이터 구성 (질문은 오타 수정된 버전 사용)
                 metadata = {
                     "seq": int(data['seq']),
-                    "question": self.preprocess_text(data['contents'], for_metadata=True),
+                    "question": question,  # 오타 수정된 질문 사용
                     "answer": self.preprocess_text(data['reply_contents'], for_metadata=True),
                     "category": category,
                     "name": data['name'] if data['name'] else "익명",
