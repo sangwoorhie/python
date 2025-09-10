@@ -563,14 +563,16 @@ class AIAnswerGenerator:
         
         return ''.join(html_paragraphs)
 
-    # 답변 텍스트를 정리하고 포맷팅하는 메서드
+    # 답변 텍스트를 정리하고 포맷팅하는 메서드 (Quill 에디터용)
     def clean_answer_text(self, text: str) -> str:
         if not text:
             return ""
         
+        # 제어 문자만 제거하고 HTML 태그는 유지
         text = re.sub(r'[\b\r\f\v]', '', text)
         text = re.sub(r'[\x00-\x08\x0B\x0C\x0E-\x1F\x7F]', '', text)
-        text = re.sub(r'<[^>]+>', '', text)
+        # HTML 태그 제거하지 않음 (Quill 에디터용)
+        # text = re.sub(r'<[^>]+>', '', text)
         text = re.sub(r'\*\*([^*]+)\*\*', r'\1', text)
         text = re.sub(r'\*([^*]+)\*', r'\1', text)
         
