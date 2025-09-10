@@ -111,7 +111,7 @@ except Exception as e:
     app.logger.error(f"모듈 로드 실패: {str(e)}")
     raise
 
-# ====== AI 답변 생성 클래스 (보수적 GPT-3.5-turbo 버전) ======
+# ====== AI 답변 생성 클래스 (개선된 GPT-3.5-turbo 버전) ======
 class AIAnswerGenerator:
     
     def __init__(self):
@@ -456,9 +456,7 @@ class AIAnswerGenerator:
         
         return text
 
-    # ★ 더 보수적인 GPT-3.5-turbo 생성 함수
-    @profile
-    def generate_with_gpt(self, query: str, similar_answers: list, context_analysis: dict) -> str:
+    def generate_with_enhanced_gpt(self, query: str, similar_answers: list, context_analysis: dict) -> str:
         """
         향상된 GPT 생성 - 컨텍스트 품질에 따른 차별화된 프롬프트
         """
@@ -548,7 +546,7 @@ class AIAnswerGenerator:
         except Exception as e:
             logging.error(f"향상된 GPT 생성 실패: {e}")
             return ""
-    
+
     def get_best_fallback_answer(self, similar_answers: list) -> str:
         """
         최적의 폴백 답변 선택
@@ -579,10 +577,98 @@ class AIAnswerGenerator:
         
         return best_answer
 
+    # ★ 더 보수적인 GPT-3.5-turbo 생성 함수 (기존 코드와의 호환성 유지)
+    @profile
+    def generate_with_gpt(self, query: str, similar_answers: list) -> str:
+        """보수적이고 참고 답변에 충실한 GPT-3.5-turbo 텍스트 생성"""
+        try:
+            with memory_cleanup():
+                # 컨텍스트 준비 (더 많은 참고 답변 사용)
+                context_answers = []
+                for ans in similar_answers[:5]:  # 3개 → 5개로 늘려서 더 많은 참고
+                    clean_ans = re.sub(r'[\b\r\f\v\x00-\x08\x0B\x0C\x0E-\x1F\x7F]|<[^>]+>', '', ans['answer'])
+                    if self.is_valid_korean_text(clean_ans):
+                        context_answers.append(clean_ans[:300])  # 200 → 300으로 늘림
+                
+                if not context_answers:
+                    logging.warning("유효한 한국어 컨텍스트가 없어 GPT 생성 중단")
+                    if similar_answers:
+                        return self.clean_generated_text(similar_answers[0]['answer'])
+                    return ""
+                
+                context = "\n\n---\n\n".join(context_answers)  # 구분자 명확히
+                
+                # ★ 더 제한적이고 보수적인 프롬프트
+                system_prompt = """당신은 GOODTV 바이블 애플 고객센터 상담원입니다.
+
+중요 규칙:
+1. 제공된 참고 답변들과 거의 동일한 스타일과 내용으로 답변해주세요
+2. 창의적인 답변보다는 참고 답변에 충실한 답변을 작성해주세요
+3. 참고 답변의 톤, 문체, 표현을 최대한 따라하세요
+4. 기술적 문제는 캡쳐나 영상을 요청하고 이메일(dev@goodtv.co.kr)로 문의하도록 안내하세요
+5. 고객 호칭은 반드시 '성도님'으로만 사용하세요 (고객님 사용 금지)
+6. HTML 태그나 마크다운 사용 금지, 일반 텍스트만 사용
+7. 인사말과 끝맺음말은 제외하고 본문만 작성하세요"""
+
+                user_prompt = f"""고객 질문: {query}
+
+참고 답변들 (이와 유사하게 답변해주세요):
+{context}
+
+위 참고 답변들의 스타일과 톤을 그대로 따라서, 고객의 질문에 적절한 답변을 작성해주세요. 
+창의적인 답변보다는 참고 답변과 유사한 답변을 작성하는 것이 중요합니다.
+고객은 반드시 '성도님'으로 호칭해주세요."""
+
+                # ★ 더 보수적인 API 설정
+                response = self.openai_client.chat.completions.create(
+                    model=GPT_MODEL,
+                    messages=[
+                        {"role": "system", "content": system_prompt},
+                        {"role": "user", "content": user_prompt}
+                    ],
+                    max_tokens=MAX_TOKENS,
+                    temperature=TEMPERATURE,  # 0.3으로 낮춤
+                    top_p=0.7,  # 0.9 → 0.7로 낮춤
+                    frequency_penalty=0.2,  # 0.1 → 0.2로 높임
+                    presence_penalty=0.2   # 0.1 → 0.2로 높임
+                )
+                
+                generated = response.choices[0].message.content.strip()
+                
+                # 메모리 해제
+                del response
+                
+                # 생성된 텍스트 정리 및 검증
+                generated = self.clean_generated_text(generated)
+                
+                # 한국어 텍스트 검증
+                if not self.is_valid_korean_text(generated):
+                    logging.warning("GPT가 무효한 텍스트를 생성했습니다. 폴백 사용.")
+                    if similar_answers:
+                        fallback = self.clean_generated_text(similar_answers[0]['answer'])
+                        if self.is_valid_korean_text(fallback):
+                            return fallback[:350]
+                    return ""
+                
+                return generated[:350]
+                
+        except Exception as e:
+            logging.error(f"GPT 모델 생성 실패: {e}")
+            # 폴백: 첫 번째 유사 답변 반환
+            if similar_answers:
+                fallback = self.clean_generated_text(similar_answers[0]['answer'])
+                if self.is_valid_korean_text(fallback):
+                    return fallback[:350]
+            return ""
+
     def generate_ai_answer(self, query: str, similar_answers: list, lang: str) -> str:
         """
         개선된 AI 답변 생성 메인 함수
         """
+        if not similar_answers:
+            default_msg = "<p>문의해주신 내용에 대해 정확한 답변을 드리기 위해 더 자세한 정보가 필요합니다.</p><p><br></p><p>고객센터로 문의해주시면 신속하게 도움을 드리겠습니다.</p>"
+            return default_msg
+        
         # 1. 컨텍스트 분석
         context_analysis = self.analyze_context_quality(similar_answers, query)
         
@@ -602,7 +688,7 @@ class AIAnswerGenerator:
                 
             elif approach in ['gpt_with_strong_context', 'gpt_with_weak_context']:
                 # GPT 생성
-                base_answer = self.generate_with_gpt(query, similar_answers, context_analysis)
+                base_answer = self.generate_with_enhanced_gpt(query, similar_answers, context_analysis)
                 
                 # GPT 실패 시 폴백
                 if not base_answer or not self.is_valid_korean_text(base_answer):
@@ -649,95 +735,6 @@ class AIAnswerGenerator:
             
         except Exception as e:
             logging.error(f"답변 생성 중 오류: {e}")
-            return "<p>죄송합니다. 현재 답변을 생성할 수 없습니다.</p><p><br></p><p>고객센터로 문의해주세요.</p>"
-        
-        try:
-            # ★ 유사도 임계값을 높여서 더 보수적으로 GPT 사용
-            if similar_answers[0]['score'] > 0.75:  # 0.85 → 0.75로 낮춤 (GPT 더 자주 사용 안함)
-                base_answer = similar_answers[0]['answer']
-                logging.info("높은 유사도로 인해 GPT 생성 생략")
-                
-                base_answer = self.clean_generated_text(base_answer)
-                if not self.is_valid_korean_text(base_answer):
-                    logging.warning("유사 답변이 무효한 텍스트입니다.")
-                    for ans in similar_answers[1:3]:
-                        candidate = self.clean_generated_text(ans['answer'])
-                        if self.is_valid_korean_text(candidate):
-                            base_answer = candidate
-                            break
-                    else:
-                        return "<p>문의해주신 내용에 대해 정확한 답변을 드리기 위해 더 자세한 정보가 필요합니다.</p><p><br></p><p>고객센터로 문의해주시면 신속하게 도움을 드리겠습니다.</p>"
-            else:
-                # 유사도가 낮을 때만 GPT 사용
-                base_answer = self.generate_with_gpt(query, similar_answers)
-                
-                # GPT 결과가 무효하면 폴백
-                if not base_answer or not self.is_valid_korean_text(base_answer):
-                    logging.warning("GPT 생성 결과가 무효합니다. 유사 답변 사용.")
-                    for ans in similar_answers[:3]:
-                        candidate = self.clean_generated_text(ans['answer'])
-                        if self.is_valid_korean_text(candidate):
-                            base_answer = candidate
-                            break
-                    else:
-                        return "<p>문의해주신 내용에 대해 정확한 답변을 드리기 위해 더 자세한 정보가 필요합니다.</p><p><br></p><p>고객센터로 문의해주시면 신속하게 도움을 드리겠습니다.</p>"
-            
-            # HTML 태그 제거 및 앱 이름 정리
-            base_answer = re.sub(r'<[^>]+>', '', base_answer)
-            base_answer = self.remove_old_app_name(base_answer)
-            
-            # ★ '고객님' → '성도님'으로 통일
-            base_answer = re.sub(r'고객님', '성도님', base_answer)
-            
-            # 최종 검증
-            if not self.is_valid_korean_text(base_answer):
-                logging.error("최종 답변이 무효한 텍스트입니다.")
-                return "<p>죄송합니다. 현재 답변을 생성할 수 없습니다.</p><p><br></p><p>고객센터로 문의해주세요.</p>"
-            
-            # ★ 고정된 인사말
-            final_answer = "안녕하세요. GOODTV 바이블 애플입니다. 바이블 애플을 애용해 주셔서 감사합니다. "
-            
-            # ★ 기존 인사말 완전 제거 (더 포괄적으로)
-            base_answer = re.sub(r'^안녕하세요[^.]*바이블\s*애플[^.]*\.\s*', '', base_answer)
-            base_answer = re.sub(r'^안녕하세요[^.]*GOODTV[^.]*\.\s*', '', base_answer)
-            base_answer = re.sub(r'^안녕하세요[^.]*\.\s*', '', base_answer)
-            base_answer = re.sub(r'^안녕[^.]*\.\s*', '', base_answer)
-            base_answer = re.sub(r'^바이블\s*애플[^.]*\.\s*', '', base_answer)
-            base_answer = re.sub(r'^GOODTV[^.]*\.\s*', '', base_answer)
-            
-            # ★ 기존 끝맺음말 완전 제거 (더 포괄적으로)
-            base_answer = re.sub(r'\s*항상[^.]*바이블\s*애플[^.]*\.\s*', '', base_answer)
-            base_answer = re.sub(r'\s*항상[^.]*성경앱[^.]*\.\s*', '', base_answer)
-            base_answer = re.sub(r'\s*항상[^.]*평안하세요[^.]*\.\s*', '', base_answer)
-            base_answer = re.sub(r'\s*감사합니다[^.]*평안하세요[^.]*\.\s*', '', base_answer)
-            base_answer = re.sub(r'\s*감사합니다[^.]*\.\s*$', '', base_answer)
-            base_answer = re.sub(r'\s*주님\s*안에서[^.]*\.\s*$', '', base_answer)
-            base_answer = re.sub(r'\s*평안하세요[^.]*\.\s*$', '', base_answer)
-            base_answer = re.sub(r'\s*함께[^.]*\.\s*$', '', base_answer)  # "함께." 제거
-            
-            # ★ 중복된 감사합니다 제거
-            base_answer = re.sub(r'(\s*감사합니다[^.]*\.\s*){2,}', ' 감사합니다. ', base_answer)
-            
-            final_answer += base_answer.strip()
-            
-            # 마지막 문장이 완전하지 않으면 마침표 추가
-            if final_answer and not final_answer.endswith(('.', '!', '?')):
-                final_answer += "."
-            
-            # ★ 고정된 끝맺음말 (중복 방지)
-            final_answer += " 항상 성도님께 좋은 성경앱을 제공하기 위해 노력하는 바이블 애플이 되겠습니다. 감사합니다. 주님 안에서 평안하세요."
-            
-            final_answer = self.clean_answer_text(final_answer)
-            
-            # 최종 검증
-            if not self.is_valid_korean_text(final_answer):
-                logging.error("최종 포맷된 답변이 무효합니다.")
-                return "<p>죄송합니다. 현재 답변을 생성할 수 없습니다.</p><p><br></p><p>고객센터로 문의해주세요.</p>"
-            
-            return final_answer
-            
-        except Exception as e:
-            logging.error(f"답변 생성 실패: {e}")
             return "<p>죄송합니다. 현재 답변을 생성할 수 없습니다.</p><p><br></p><p>고객센터로 문의해주세요.</p>"
 
     def process(self, seq: int, question: str, lang: str) -> dict:
@@ -1043,6 +1040,6 @@ if __name__ == "__main__":
     
     print(f"Flask API starting on port {port}")
     print("Services: AI Answer Generation + Pinecone Sync")
-    print(f"AI Model: {GPT_MODEL} (Conservative Mode)")
+    print(f"AI Model: {GPT_MODEL} (Enhanced Context Mode)")
     
     app.run(host='0.0.0.0', port=port, debug=False, threaded=True)
