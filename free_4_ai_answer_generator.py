@@ -857,13 +857,22 @@ class AIAnswerGenerator:
             base_answer = self.remove_old_app_name(base_answer)
             base_answer = re.sub(r'고객님', '성도님', base_answer)
             
+            # 기존 인사말/끝맺음말 완전 제거 (더 강력한 패턴 사용)
+            # 인사말 제거
+            base_answer = re.sub(r'^안녕하세요[^.]*\.\s*', '', base_answer, flags=re.IGNORECASE)
+            base_answer = re.sub(r'^GOODTV\s+바이블\s*애플[^.]*\.\s*', '', base_answer, flags=re.IGNORECASE)
+            base_answer = re.sub(r'^바이블\s*애플[^.]*\.\s*', '', base_answer, flags=re.IGNORECASE)
+            base_answer = re.sub(r'고객센터[^.]*\.\s*', '', base_answer, flags=re.IGNORECASE)
+            
+            # 끝맺음말 제거
+            base_answer = re.sub(r'\s*감사합니다[^.]*\.\s*$', '', base_answer, flags=re.IGNORECASE)
+            base_answer = re.sub(r'\s*평안하세요[^.]*\.\s*$', '', base_answer, flags=re.IGNORECASE)
+            base_answer = re.sub(r'\s*주님\s*안에서[^.]*\.\s*$', '', base_answer, flags=re.IGNORECASE)
+            base_answer = re.sub(r'\s*함께\s*기도하며[^.]*\.\s*$', '', base_answer, flags=re.IGNORECASE)
+            base_answer = re.sub(r'\s*항상[^.]*바이블\s*애플[^.]*\.\s*$', '', base_answer, flags=re.IGNORECASE)
+            
             # 고정된 인사말
             final_answer = "안녕하세요. GOODTV 바이블 애플입니다. 바이블 애플을 애용해 주셔서 감사합니다. "
-            
-            # 기존 인사말/끝맺음말 제거
-            base_answer = re.sub(r'^안녕하세요[^.]*\.\s*', '', base_answer)
-            base_answer = re.sub(r'\s*감사합니다[^.]*\.\s*$', '', base_answer)
-            base_answer = re.sub(r'\s*평안하세요[^.]*\.\s*$', '', base_answer)
             
             final_answer += base_answer.strip()
             
@@ -873,9 +882,6 @@ class AIAnswerGenerator:
             
             # 고정된 끝맺음말
             final_answer += " 항상 성도님께 좋은 성경앱을 제공하기 위해 노력하는 바이블 애플이 되겠습니다. 감사합니다. 주님 안에서 평안하세요."
-            
-            # HTML 포맷팅
-            final_answer = self.clean_answer_text(final_answer)
             
             logging.info(f"최종 답변 생성 완료: {len(final_answer)}자, 접근방식: {approach}")
             return final_answer
