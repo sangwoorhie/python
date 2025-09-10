@@ -165,8 +165,10 @@ class AIAnswerGenerator:
             logging.error(f"임베딩 생성 실패: {e}")
             return None
 
-    def search_similar_answers(self, query: str, top_k: int = 10, similarity_threshold: float = 0.6) -> list:
-        """메모리 최적화된 유사 답변 검색"""
+    def search_similar_answers(self, query: str, top_k: int = 15, similarity_threshold: float = 0.4) -> list:
+        """
+        개선된 유사 답변 검색 - 더 낮은 임계값으로 더 많은 후보 확보
+        """
         try:
             with memory_cleanup():
                 query_vector = self.create_embedding(query)
@@ -175,29 +177,130 @@ class AIAnswerGenerator:
                 
                 results = index.query(
                     vector=query_vector, 
-                    top_k=top_k, 
+                    top_k=top_k,  # 10 → 15로 증가
                     include_metadata=True
                 )
                 
-                filtered_results = [
-                    {
-                        'score': match['score'],
-                        'question': match['metadata'].get('question', ''),
-                        'answer': match['metadata'].get('answer', ''),
-                        'category': match['metadata'].get('category', '일반')
-                    }
-                    for match in results['matches'] if match['score'] >= similarity_threshold
-                ]
+                filtered_results = []
+                for i, match in enumerate(results['matches']):
+                    score = match['score']
+                    question = match['metadata'].get('question', '')
+                    answer = match['metadata'].get('answer', '')
+                    category = match['metadata'].get('category', '일반')
+                    
+                    # 유사도 0.4 이상이면 포함 (기존 0.6 → 0.4로 완화)
+                    if score >= similarity_threshold:
+                        filtered_results.append({
+                            'score': score,
+                            'question': question,
+                            'answer': answer,
+                            'category': category,
+                            'rank': i + 1
+                        })
+                        
+                        # 상세 로깅 추가
+                        logging.info(f"유사 답변 #{i+1}: 점수={score:.3f}, 카테고리={category}")
+                        logging.info(f"참고 질문: {question[:50]}...")
+                        logging.info(f"참고 답변: {answer[:100]}...")
                 
                 del results
                 del query_vector
                 
-                logging.info(f"유사 답변 {len(filtered_results)}개 검색 완료")
+                logging.info(f"총 {len(filtered_results)}개의 유사 답변 검색 완료")
                 return filtered_results
                 
         except Exception as e:
             logging.error(f"Pinecone 검색 실패: {str(e)}")
             return []
+
+    def analyze_context_quality(self, similar_answers: list, query: str) -> dict:
+        """
+        컨텍스트 품질 분석 - 참고 답변의 활용 가능성 평가
+        """
+        if not similar_answers:
+            return {
+                'has_good_context': False,
+                'best_score': 0.0,
+                'recommended_approach': 'fallback',
+                'context_summary': '유사 답변이 없습니다.'
+            }
+        
+        best_score = similar_answers[0]['score']
+        high_quality_count = len([ans for ans in similar_answers if ans['score'] >= 0.7])
+        medium_quality_count = len([ans for ans in similar_answers if 0.5 <= ans['score'] < 0.7])
+        
+        # 카테고리 분포 분석
+        categories = [ans['category'] for ans in similar_answers[:5]]
+        category_distribution = {cat: categories.count(cat) for cat in set(categories)}
+        
+        # 접근 방식 결정
+        if best_score >= 0.8:
+            approach = 'direct_use'  # 직접 사용
+        elif best_score >= 0.6 or high_quality_count >= 2:
+            approach = 'gpt_with_strong_context'  # 강한 컨텍스트로 GPT 사용
+        elif best_score >= 0.4 or medium_quality_count >= 3:
+            approach = 'gpt_with_weak_context'  # 약한 컨텍스트로 GPT 사용
+        else:
+            approach = 'fallback'  # 폴백 사용
+        
+        analysis = {
+            'has_good_context': best_score >= 0.4,
+            'best_score': best_score,
+            'high_quality_count': high_quality_count,
+            'medium_quality_count': medium_quality_count,
+            'category_distribution': category_distribution,
+            'recommended_approach': approach,
+            'context_summary': f"최고점수: {best_score:.3f}, 고품질: {high_quality_count}개, 중품질: {medium_quality_count}개"
+        }
+        
+        logging.info(f"컨텍스트 분석 결과: {analysis}")
+        return analysis
+
+    def create_enhanced_context(self, similar_answers: list, max_answers: int = 7) -> str:
+        """
+        향상된 컨텍스트 생성 - 다양한 품질의 답변을 조합
+        """
+        if not similar_answers:
+            return ""
+        
+        context_parts = []
+        used_answers = 0
+        
+        # 점수별로 그룹핑
+        high_score = [ans for ans in similar_answers if ans['score'] >= 0.7]
+        medium_score = [ans for ans in similar_answers if 0.5 <= ans['score'] < 0.7]
+        low_score = [ans for ans in similar_answers if 0.4 <= ans['score'] < 0.5]
+        
+        # 고품질 답변 우선 포함
+        for ans in high_score[:4]:
+            if used_answers >= max_answers:
+                break
+            clean_answer = re.sub(r'[\b\r\f\v\x00-\x08\x0B\x0C\x0E-\x1F\x7F]|<[^>]+>', '', ans['answer'])
+            if self.is_valid_korean_text(clean_answer) and len(clean_answer.strip()) > 20:
+                context_parts.append(f"[참고답변 {used_answers+1} - 점수: {ans['score']:.2f}]\n{clean_answer[:400]}")
+                used_answers += 1
+        
+        # 중품질 답변 보완
+        for ans in medium_score[:3]:
+            if used_answers >= max_answers:
+                break
+            clean_answer = re.sub(r'[\b\r\f\v\x00-\x08\x0B\x0C\x0E-\x1F\x7F]|<[^>]+>', '', ans['answer'])
+            if self.is_valid_korean_text(clean_answer) and len(clean_answer.strip()) > 20:
+                context_parts.append(f"[참고답변 {used_answers+1} - 점수: {ans['score']:.2f}]\n{clean_answer[:300]}")
+                used_answers += 1
+        
+        # 저품질 답변도 필요시 포함
+        if used_answers < 3:  # 너무 적으면 저품질도 포함
+            for ans in low_score[:2]:
+                if used_answers >= max_answers:
+                    break
+                clean_answer = re.sub(r'[\b\r\f\v\x00-\x08\x0B\x0C\x0E-\x1F\x7F]|<[^>]+>', '', ans['answer'])
+                if self.is_valid_korean_text(clean_answer) and len(clean_answer.strip()) > 20:
+                    context_parts.append(f"[참고답변 {used_answers+1} - 점수: {ans['score']:.2f}]\n{clean_answer[:250]}")
+                    used_answers += 1
+        
+        logging.info(f"컨텍스트 생성: {used_answers}개의 답변 포함")
+        return "\n\n" + "="*50 + "\n\n".join(context_parts)
 
     def remove_old_app_name(self, text: str) -> str:
         patterns_to_remove = [
@@ -355,92 +458,198 @@ class AIAnswerGenerator:
 
     # ★ 더 보수적인 GPT-3.5-turbo 생성 함수
     @profile
-    def generate_with_gpt(self, query: str, similar_answers: list) -> str:
-        """보수적이고 참고 답변에 충실한 GPT-3.5-turbo 텍스트 생성"""
+    def generate_with_gpt(self, query: str, similar_answers: list, context_analysis: dict) -> str:
+        """
+        향상된 GPT 생성 - 컨텍스트 품질에 따른 차별화된 프롬프트
+        """
         try:
             with memory_cleanup():
-                # 컨텍스트 준비 (더 많은 참고 답변 사용)
-                context_answers = []
-                for ans in similar_answers[:5]:  # 3개 → 5개로 늘려서 더 많은 참고
-                    clean_ans = re.sub(r'[\b\r\f\v\x00-\x08\x0B\x0C\x0E-\x1F\x7F]|<[^>]+>', '', ans['answer'])
-                    if self.is_valid_korean_text(clean_ans):
-                        context_answers.append(clean_ans[:300])  # 200 → 300으로 늘림
+                approach = context_analysis['recommended_approach']
+                context = self.create_enhanced_context(similar_answers)
                 
-                if not context_answers:
-                    logging.warning("유효한 한국어 컨텍스트가 없어 GPT 생성 중단")
-                    if similar_answers:
-                        return self.clean_generated_text(similar_answers[0]['answer'])
+                if not context:
+                    logging.warning("유효한 컨텍스트가 없어 GPT 생성 중단")
                     return ""
                 
-                context = "\n\n---\n\n".join(context_answers)  # 구분자 명확히
-                
-                # ★ 더 제한적이고 보수적인 프롬프트
-                system_prompt = """당신은 GOODTV 바이블 애플 고객센터 상담원입니다.
+                # 접근 방식별 차별화된 프롬프트
+                if approach == 'gpt_with_strong_context':
+                    # 강한 컨텍스트 - 참고 답변 충실히 따라하기
+                    system_prompt = """당신은 GOODTV 바이블 애플 고객센터 상담원입니다.
 
-중요 규칙:
-1. 제공된 참고 답변들과 거의 동일한 스타일과 내용으로 답변해주세요
-2. 창의적인 답변보다는 참고 답변에 충실한 답변을 작성해주세요
-3. 참고 답변의 톤, 문체, 표현을 최대한 따라하세요
-4. 기술적 문제는 캡쳐나 영상을 요청하고 이메일(dev@goodtv.co.kr)로 문의하도록 안내하세요
-5. 고객 호칭은 반드시 '성도님'으로만 사용하세요 (고객님 사용 금지)
-6. HTML 태그나 마크다운 사용 금지, 일반 텍스트만 사용
-7. 인사말과 끝맺음말은 제외하고 본문만 작성하세요"""
+강력한 지침:
+1. 제공된 참고 답변들의 스타일과 내용을 충실히 따라 작성하세요
+2. 참고 답변에서 유사한 상황의 해결책을 찾아 적용하세요
+3. 기술적 문제는 구체적인 해결 방법을 제시하되, 복잡한 경우 캡쳐/영상을 요청하세요
+4. 고객은 반드시 '성도님'으로 호칭하세요
+5. 앱 이름은 'GOODTV 바이블 애플' 또는 '바이블 애플'로 통일하세요
+6. HTML 태그 사용 금지, 자연스러운 문장으로 작성하세요"""
 
-                user_prompt = f"""고객 질문: {query}
+                    user_prompt = f"""고객 문의: {query}
 
-참고 답변들 (이와 유사하게 답변해주세요):
+참고 답변들 (높은 유사도 - 이 답변들과 매우 유사하게 작성하세요):
 {context}
 
-위 참고 답변들의 스타일과 톤을 그대로 따라서, 고객의 질문에 적절한 답변을 작성해주세요. 
-창의적인 답변보다는 참고 답변과 유사한 답변을 작성하는 것이 중요합니다.
-고객은 반드시 '성도님'으로 호칭해주세요."""
+위 참고 답변들의 해결 방식과 톤을 그대로 따라서 고객의 문제에 대한 구체적인 답변을 작성하세요."""
 
-                # ★ 더 보수적인 API 설정
+                    temperature = 0.2  # 매우 보수적
+                    max_tokens = 400
+
+                elif approach == 'gpt_with_weak_context':
+                    # 약한 컨텍스트 - 참고하되 보완 필요
+                    system_prompt = """당신은 GOODTV 바이블 애플 고객센터 상담원입니다.
+
+지침:
+1. 참고 답변들을 바탕으로 하되, 고객의 구체적 상황에 맞게 보완하세요
+2. 기술적 문제 해결을 위한 구체적 단계를 제시하세요
+3. 해결되지 않을 경우의 대안도 제시하세요
+4. 이메일(dev@goodtv.co.kr) 문의나 고객센터 안내도 포함하세요
+5. '성도님' 호칭 사용, 친근하고 도움이 되는 톤으로 작성하세요"""
+
+                    user_prompt = f"""고객 문의: {query}
+
+참고 답변들 (중간 유사도 - 참고하되 고객 상황에 맞게 보완하세요):
+{context}
+
+위 참고 답변들을 참고하여, 고객의 구체적인 문제 상황에 맞는 실용적인 해결책을 제시해주세요."""
+
+                    temperature = 0.4  # 적당한 창의성
+                    max_tokens = 450
+
+                else:  # fallback이나 기타
+                    return ""
+                
+                # GPT API 호출
                 response = self.openai_client.chat.completions.create(
                     model=GPT_MODEL,
                     messages=[
                         {"role": "system", "content": system_prompt},
                         {"role": "user", "content": user_prompt}
                     ],
-                    max_tokens=MAX_TOKENS,
-                    temperature=TEMPERATURE,  # 0.3으로 낮춤
-                    top_p=0.7,  # 0.9 → 0.7로 낮춤
-                    frequency_penalty=0.2,  # 0.1 → 0.2로 높임
-                    presence_penalty=0.2   # 0.1 → 0.2로 높임
+                    max_tokens=max_tokens,
+                    temperature=temperature,
+                    top_p=0.8,
+                    frequency_penalty=0.1,
+                    presence_penalty=0.1
                 )
                 
                 generated = response.choices[0].message.content.strip()
-                
-                # 메모리 해제
                 del response
                 
-                # 생성된 텍스트 정리 및 검증
+                # 생성된 텍스트 정리
                 generated = self.clean_generated_text(generated)
                 
-                # 한국어 텍스트 검증
                 if not self.is_valid_korean_text(generated):
-                    logging.warning("GPT가 무효한 텍스트를 생성했습니다. 폴백 사용.")
-                    if similar_answers:
-                        fallback = self.clean_generated_text(similar_answers[0]['answer'])
-                        if self.is_valid_korean_text(fallback):
-                            return fallback[:350]
+                    logging.warning(f"GPT가 무효한 텍스트 생성: {generated[:50]}...")
                     return ""
                 
-                return generated[:350]
+                logging.info(f"GPT 생성 성공 ({approach}): {len(generated)}자")
+                return generated[:450]
                 
         except Exception as e:
-            logging.error(f"GPT 모델 생성 실패: {e}")
-            # 폴백: 첫 번째 유사 답변 반환
-            if similar_answers:
-                fallback = self.clean_generated_text(similar_answers[0]['answer'])
-                if self.is_valid_korean_text(fallback):
-                    return fallback[:350]
+            logging.error(f"향상된 GPT 생성 실패: {e}")
             return ""
+    
+    def get_best_fallback_answer(self, similar_answers: list) -> str:
+        """
+        최적의 폴백 답변 선택
+        """
+        if not similar_answers:
+            return ""
+        
+        # 점수와 텍스트 품질을 종합 평가
+        best_answer = ""
+        best_score = 0
+        
+        for ans in similar_answers[:5]:  # 상위 5개만 검토
+            score = ans['score']
+            answer_text = self.clean_generated_text(ans['answer'])
+            
+            if not self.is_valid_korean_text(answer_text):
+                continue
+            
+            # 종합 점수 계산 (유사도 + 텍스트 길이 + 완성도)
+            length_score = min(len(answer_text) / 200, 1.0)  # 200자 기준 정규화
+            completeness_score = 1.0 if answer_text.endswith(('.', '!', '?')) else 0.8
+            
+            total_score = score * 0.7 + length_score * 0.2 + completeness_score * 0.1
+            
+            if total_score > best_score:
+                best_score = total_score
+                best_answer = answer_text
+        
+        return best_answer
 
     def generate_ai_answer(self, query: str, similar_answers: list, lang: str) -> str:
-        if not similar_answers:
-            default_msg = "<p>문의해주신 내용에 대해 정확한 답변을 드리기 위해 더 자세한 정보가 필요합니다.</p><p><br></p><p>고객센터로 문의해주시면 신속하게 도움을 드리겠습니다.</p>"
-            return default_msg
+        """
+        개선된 AI 답변 생성 메인 함수
+        """
+        # 1. 컨텍스트 분석
+        context_analysis = self.analyze_context_quality(similar_answers, query)
+        
+        if not context_analysis['has_good_context']:
+            logging.warning("유용한 컨텍스트가 없어 기본 메시지 반환")
+            return "<p>문의해주신 내용에 대해 정확한 답변을 드리기 위해 더 자세한 정보가 필요합니다.</p><p><br></p><p>고객센터로 문의해주시면 신속하게 도움을 드리겠습니다.</p>"
+        
+        try:
+            approach = context_analysis['recommended_approach']
+            logging.info(f"선택된 접근 방식: {approach}")
+            
+            # 2. 접근 방식에 따른 답변 생성
+            if approach == 'direct_use':
+                # 직접 사용 - 최고 점수 답변 활용
+                base_answer = self.get_best_fallback_answer(similar_answers[:3])
+                logging.info("높은 유사도로 직접 사용")
+                
+            elif approach in ['gpt_with_strong_context', 'gpt_with_weak_context']:
+                # GPT 생성
+                base_answer = self.generate_with_gpt(query, similar_answers, context_analysis)
+                
+                # GPT 실패 시 폴백
+                if not base_answer or not self.is_valid_korean_text(base_answer):
+                    logging.warning("GPT 생성 실패, 폴백 답변 사용")
+                    base_answer = self.get_best_fallback_answer(similar_answers)
+                    
+            else:
+                # 폴백
+                base_answer = self.get_best_fallback_answer(similar_answers)
+            
+            # 3. 최종 검증 및 폴백
+            if not base_answer or not self.is_valid_korean_text(base_answer):
+                logging.error("모든 답변 생성 방법 실패")
+                return "<p>문의해주신 내용에 대해 정확한 답변을 드리기 위해 더 자세한 정보가 필요합니다.</p><p><br></p><p>고객센터로 문의해주시면 신속하게 도움을 드리겠습니다.</p>"
+            
+            # 4. 최종 포맷팅
+            # HTML 태그 제거 및 앱 이름 정리
+            base_answer = re.sub(r'<[^>]+>', '', base_answer)
+            base_answer = self.remove_old_app_name(base_answer)
+            base_answer = re.sub(r'고객님', '성도님', base_answer)
+            
+            # 고정된 인사말
+            final_answer = "안녕하세요. GOODTV 바이블 애플입니다. 바이블 애플을 애용해 주셔서 감사합니다. "
+            
+            # 기존 인사말/끝맺음말 제거
+            base_answer = re.sub(r'^안녕하세요[^.]*\.\s*', '', base_answer)
+            base_answer = re.sub(r'\s*감사합니다[^.]*\.\s*$', '', base_answer)
+            base_answer = re.sub(r'\s*평안하세요[^.]*\.\s*$', '', base_answer)
+            
+            final_answer += base_answer.strip()
+            
+            # 마침표 추가
+            if final_answer and not final_answer.endswith(('.', '!', '?')):
+                final_answer += "."
+            
+            # 고정된 끝맺음말
+            final_answer += " 항상 성도님께 좋은 성경앱을 제공하기 위해 노력하는 바이블 애플이 되겠습니다. 감사합니다. 주님 안에서 평안하세요."
+            
+            # HTML 포맷팅
+            final_answer = self.clean_answer_text(final_answer)
+            
+            logging.info(f"최종 답변 생성 완료: {len(final_answer)}자, 접근방식: {approach}")
+            return final_answer
+            
+        except Exception as e:
+            logging.error(f"답변 생성 중 오류: {e}")
+            return "<p>죄송합니다. 현재 답변을 생성할 수 없습니다.</p><p><br></p><p>고객센터로 문의해주세요.</p>"
         
         try:
             # ★ 유사도 임계값을 높여서 더 보수적으로 GPT 사용
