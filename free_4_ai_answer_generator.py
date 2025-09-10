@@ -576,9 +576,10 @@ class AIAnswerGenerator:
         text = re.sub(r'\*\*([^*]+)\*\*', r'\1', text)
         text = re.sub(r'\*([^*]+)\*', r'\1', text)
         
-        text = re.sub(r'[ \t]+', ' ', text)
-        text = re.sub(r'\s+([,.!?])', r'\1', text)
-        text = re.sub(r'([,.!?])\s+', r'\1 ', text)
+        # HTML 태그 내부의 공백만 정리 (태그 자체는 유지)
+        text = re.sub(r'>\s+<', '><', text)  # 태그 사이 공백 제거
+        text = re.sub(r'<p>\s+', '<p>', text)  # <p> 태그 내부 앞 공백 제거
+        text = re.sub(r'\s+</p>', '</p>', text)  # </p> 태그 앞 공백 제거
         
         text = self.remove_old_app_name(text)
         text = self.format_answer_with_html_paragraphs(text)
@@ -885,13 +886,12 @@ class AIAnswerGenerator:
                 logging.error("모든 답변 생성 방법 실패")
                 return "<p>문의해주신 내용에 대해 정확한 답변을 드리기 위해 더 자세한 정보가 필요합니다.</p><p><br></p><p>고객센터로 문의해주시면 신속하게 도움을 드리겠습니다.</p>"
             
-            # 4. 최종 포맷팅
-            # HTML 태그 제거 및 앱 이름 정리
-            base_answer = re.sub(r'<[^>]+>', '', base_answer)
+            # 4. 최종 포맷팅 (Quill 에디터용 HTML 형식 유지)
+            # 앱 이름 정리 및 고객님 → 성도님 변경
             base_answer = self.remove_old_app_name(base_answer)
             base_answer = re.sub(r'고객님', '성도님', base_answer)
             
-            # 기존 인사말/끝맺음말 완전 제거 (더 강력한 패턴 사용)
+            # 기존 인사말/끝맺음말 제거 (일반 텍스트에서)
             # 인사말 제거
             base_answer = re.sub(r'^안녕하세요[^.]*\.\s*', '', base_answer, flags=re.IGNORECASE)
             base_answer = re.sub(r'^GOODTV\s+바이블\s*애플[^.]*\.\s*', '', base_answer, flags=re.IGNORECASE)
@@ -905,17 +905,17 @@ class AIAnswerGenerator:
             base_answer = re.sub(r'\s*함께\s*기도하며[^.]*\.\s*$', '', base_answer, flags=re.IGNORECASE)
             base_answer = re.sub(r'\s*항상[^.]*바이블\s*애플[^.]*\.\s*$', '', base_answer, flags=re.IGNORECASE)
             
-            # 고정된 인사말
-            final_answer = "안녕하세요. GOODTV 바이블 애플입니다. 바이블 애플을 애용해 주셔서 감사합니다. "
+            # 본문을 HTML 단락 형식으로 포맷팅
+            formatted_body = self.format_answer_with_html_paragraphs(base_answer.strip())
             
-            final_answer += base_answer.strip()
+            # 고정된 인사말 (HTML 형식으로)
+            final_answer = "<p>안녕하세요. GOODTV 바이블 애플입니다.</p><p><br></p><p>바이블 애플을 이용해주셔서 감사드립니다.</p><p><br></p>"
             
-            # 마침표 추가
-            if final_answer and not final_answer.endswith(('.', '!', '?')):
-                final_answer += "."
+            # 포맷팅된 본문 추가
+            final_answer += formatted_body
             
-            # 고정된 끝맺음말
-            final_answer += " 항상 성도님께 좋은 성경앱을 제공하기 위해 노력하는 바이블 애플이 되겠습니다. 감사합니다. 주님 안에서 평안하세요."
+            # 고정된 끝맺음말 (HTML 형식으로)
+            final_answer += "<p><br></p><p>항상 성도님께 좋은 성경앱을 제공하기 위해 노력하는 바이블 애플이 되겠습니다.</p><p><br></p><p>감사합니다. 주님 안에서 평안하세요.</p>"
             
             logging.info(f"최종 답변 생성 완료: {len(final_answer)}자, 접근방식: {approach}")
             return final_answer
