@@ -898,12 +898,22 @@ class AIAnswerGenerator:
             base_answer = re.sub(r'^바이블\s*애플[^.]*\.\s*', '', base_answer, flags=re.IGNORECASE)
             base_answer = re.sub(r'고객센터[^.]*\.\s*', '', base_answer, flags=re.IGNORECASE)
             
-            # 끝맺음말 제거
-            base_answer = re.sub(r'\s*감사합니다[^.]*\.\s*$', '', base_answer, flags=re.IGNORECASE)
-            base_answer = re.sub(r'\s*평안하세요[^.]*\.\s*$', '', base_answer, flags=re.IGNORECASE)
-            base_answer = re.sub(r'\s*주님\s*안에서[^.]*\.\s*$', '', base_answer, flags=re.IGNORECASE)
-            base_answer = re.sub(r'\s*함께\s*기도하며[^.]*\.\s*$', '', base_answer, flags=re.IGNORECASE)
-            base_answer = re.sub(r'\s*항상[^.]*바이블\s*애플[^.]*\.\s*$', '', base_answer, flags=re.IGNORECASE)
+            # 끝맺음말 제거 (더 강화된 패턴)
+            base_answer = re.sub(r'\s*감사합니다[^.]*\.?\s*$', '', base_answer, flags=re.IGNORECASE)
+            base_answer = re.sub(r'\s*평안하세요[^.]*\.?\s*$', '', base_answer, flags=re.IGNORECASE)
+            base_answer = re.sub(r'\s*주님\s*안에서[^.]*\.?\s*$', '', base_answer, flags=re.IGNORECASE)
+            base_answer = re.sub(r'\s*함께\s*기도하며[^.]*\.?\s*$', '', base_answer, flags=re.IGNORECASE)
+            base_answer = re.sub(r'\s*항상[^.]*바이블\s*애플[^.]*\.?\s*$', '', base_answer, flags=re.IGNORECASE)
+            
+            # 추가 끝맺음말 패턴들 (더 포괄적으로)
+            base_answer = re.sub(r'\s*항상\s*주님\s*안에서[^.]*\.?\s*$', '', base_answer, flags=re.IGNORECASE)
+            base_answer = re.sub(r'\s*주님\s*안에서\s*평안하세요[^.]*\.?\s*$', '', base_answer, flags=re.IGNORECASE)
+            base_answer = re.sub(r'\s*평안하세요[^.]*\.?\s*$', '', base_answer, flags=re.IGNORECASE)
+            
+            # 문장 끝의 끝맺음말들도 제거
+            base_answer = re.sub(r'[,.!?]\s*항상\s*주님\s*안에서[^.]*\.?\s*$', '', base_answer, flags=re.IGNORECASE)
+            base_answer = re.sub(r'[,.!?]\s*감사합니다[^.]*\.?\s*$', '', base_answer, flags=re.IGNORECASE)
+            base_answer = re.sub(r'[,.!?]\s*평안하세요[^.]*\.?\s*$', '', base_answer, flags=re.IGNORECASE)
             
             # 본문을 HTML 단락 형식으로 포맷팅
             formatted_body = self.format_answer_with_html_paragraphs(base_answer.strip())
