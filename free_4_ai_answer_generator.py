@@ -56,7 +56,7 @@ MAX_TEXT_LENGTH = 8000
 
 # ★ GPT 모델 설정 (더 보수적으로 변경)
 GPT_MODEL = 'gpt-3.5-turbo'
-MAX_TOKENS = 350  # 400 → 350으로 줄임
+MAX_TOKENS = 600  # 350 → 600으로 증가
 TEMPERATURE = 0.3  # 0.7 → 0.3으로 대폭 줄임 (창의성 억제)
 
 # 카테고리 매핑 (cate_idx → 카테고리명)
@@ -491,7 +491,7 @@ class AIAnswerGenerator:
 위 참고 답변들의 해결 방식과 톤을 그대로 따라서 고객의 문제에 대한 구체적인 답변을 작성하세요."""
 
                     temperature = 0.2  # 매우 보수적
-                    max_tokens = 400
+                    max_tokens = 600
 
                 elif approach == 'gpt_with_weak_context':
                     # 약한 컨텍스트 - 참고하되 보완 필요
@@ -512,7 +512,7 @@ class AIAnswerGenerator:
 위 참고 답변들을 참고하여, 고객의 구체적인 문제 상황에 맞는 실용적인 해결책을 제시해주세요."""
 
                     temperature = 0.4  # 적당한 창의성
-                    max_tokens = 450
+                    max_tokens = 650
 
                 else:  # fallback이나 기타
                     return ""
@@ -542,7 +542,7 @@ class AIAnswerGenerator:
                     return ""
                 
                 logging.info(f"GPT 생성 성공 ({approach}): {len(generated)}자")
-                return generated[:450]
+                return generated[:650]
                 
         except Exception as e:
             logging.error(f"향상된 GPT 생성 실패: {e}")
@@ -648,10 +648,10 @@ class AIAnswerGenerator:
                     if similar_answers:
                         fallback = self.clean_generated_text(similar_answers[0]['answer'])
                         if self.is_valid_korean_text(fallback):
-                            return fallback[:350]
+                            return fallback[:600]
                     return ""
                 
-                return generated[:350]
+                return generated[:600]
                 
         except Exception as e:
             logging.error(f"GPT 모델 생성 실패: {e}")
@@ -659,7 +659,7 @@ class AIAnswerGenerator:
             if similar_answers:
                 fallback = self.clean_generated_text(similar_answers[0]['answer'])
                 if self.is_valid_korean_text(fallback):
-                    return fallback[:350]
+                    return fallback[:600]
             return ""
 
     def generate_ai_answer(self, query: str, similar_answers: list, lang: str) -> str:
