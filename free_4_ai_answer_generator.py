@@ -475,16 +475,38 @@ class AIAnswerGenerator:
         
         text = self.remove_old_app_name(text)
         
+        # 문장을 마침표, 느낌표, 물음표로 분리
         sentences = re.split(r'(?<=[.!?])\s+', text)
         
         paragraphs = []
         current_paragraph = []
         
+        # 단락 분리 트리거 키워드들 (더 포괄적으로 확장)
         paragraph_triggers = [
-            '해당', '이', '만약', '혹시', '성도님', '고객님',
+            # 인사 및 감사
+            '안녕하세요', '감사합니다', '감사드립니다', '바이블 애플을',
+            # 접속어 및 연결어
+            '따라서', '그러므로', '또한', '그리고', '또는', '하지만', '그런데',
+            '이외', '이에', '이를', '이로', '이와', '이에', '이상', '이하',
+            # 상황 설명
+            '현재', '지금', '현재로', '현재까지', '현재로서는',
+            '내부적으로', '외부적으로', '기술적으로', '운영상',
+            # 조건 및 가정
+            '만약', '혹시', '만일', '만약에', '만약의',
+            '해당', '이', '그', '저', '이런', '그런', '저런',
+            # 요청 및 안내
+            '성도님', '고객님', '이용자', '사용자',
             '번거로우시', '불편하시', '죄송하지만', '참고로',
-            '항상', '늘', '앞으로도', '지속적으로',
-            '스피커', '버튼', '메뉴', '화면', '설정',
+            '양해부탁드립니다', '양해해주시기', '이해해주시기',
+            # 시간 관련
+            '항상', '늘', '앞으로도', '지속적으로', '계속적으로',
+            '시간이', '소요될', '걸릴', '필요한',
+            # 기능 관련
+            '기능', '기능은', '기능의', '기능이', '기능을',
+            '스피커', '버튼', '메뉴', '화면', '설정', '옵션',
+            # 의견 및 전달
+            '의견은', '의견을', '전달할', '전달하겠습니다', '전달드리겠습니다',
+            '토의가', '검토가', '검토를', '논의가', '논의를'
         ]
         
         for i, sentence in enumerate(sentences):
@@ -492,7 +514,8 @@ class AIAnswerGenerator:
             if not sentence:
                 continue
             
-            if i == 0 and any(greeting in sentence for greeting in ['안녕하세요', '안녕']):
+            # 첫 번째 문장 (인사말)은 항상 별도 단락
+            if i == 0:
                 if current_paragraph:
                     paragraphs.append(' '.join(current_paragraph))
                     current_paragraph = []
@@ -501,15 +524,22 @@ class AIAnswerGenerator:
             
             should_break = False
             
+            # 트리거 키워드로 시작하는 문장은 새 단락
             for trigger in paragraph_triggers:
                 if sentence.startswith(trigger):
                     should_break = True
                     break
             
+            # 현재 단락에 2개 이상 문장이 있으면 새 단락
             if current_paragraph and len(current_paragraph) >= 2:
                 should_break = True
             
-            if any(closing in sentence for closing in ['감사합니다', '감사드립니다', '평안하세요']):
+            # 끝맺음말이 포함된 문장은 새 단락
+            if any(closing in sentence for closing in ['감사합니다', '감사드립니다', '평안하세요', '주님 안에서']):
+                should_break = True
+            
+            # 문장이 너무 길면 (50자 이상) 새 단락 고려
+            if len(sentence) > 50 and current_paragraph:
                 should_break = True
             
             if should_break and current_paragraph:
@@ -518,16 +548,18 @@ class AIAnswerGenerator:
             else:
                 current_paragraph.append(sentence)
         
+        # 마지막 단락 처리
         if current_paragraph:
             paragraphs.append(' '.join(current_paragraph))
         
+        # HTML 단락으로 변환
         html_paragraphs = []
         for i, paragraph in enumerate(paragraphs):
             html_paragraphs.append(f"<p>{paragraph}</p>")
             
+            # 단락 사이에 빈 줄 추가 (마지막 단락 제외)
             if i < len(paragraphs) - 1:
-                if not any(keyword in paragraph for keyword in ['감사합니다', '감사드립니다', '평안하세요']):
-                    html_paragraphs.append("<p><br></p>")
+                html_paragraphs.append("<p><br></p>")
         
         return ''.join(html_paragraphs)
 
