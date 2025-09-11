@@ -1171,7 +1171,7 @@ Important: Do not include greetings or closings. Only write the main content."""
                 formatted_body = self.format_answer_with_html_paragraphs(base_answer.strip(), 'en')
                 
                 # 영어 고정 인사말과 끝맺음말
-                final_answer = "<p>Hello, this is GOODTV Bible Apple App customer service team.</p><p><br></p><p>Thank you so much for reaching out.</p><p><br></p>"
+                final_answer = "<p>Hello, this is GOODTV Bible Apple App customer service team.</p><p><br></p><p>Thank you very much for using our app and for taking the time to contact us.</p><p><br></p>"
                 final_answer += formatted_body
                 final_answer += "<p><br></p><p>Thank you once again for sharing your thoughts with us!</p><p><br></p><p>May God's peace and grace always be with you.</p>"
                 
