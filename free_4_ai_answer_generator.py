@@ -371,6 +371,57 @@ class AIAnswerGenerator:
         logging.info(f"컨텍스트 분석 결과: {analysis}")
         return analysis
 
+    # 참고 답변에서 인사말과 끝맺음말을 제거하는 메서드
+    def remove_greeting_and_closing(self, text: str) -> str:
+        """참고 답변에서 인사말과 끝맺음말을 제거하여 본문만 추출"""
+        if not text:
+            return ""
+        
+        # 인사말 제거 패턴들
+        greeting_patterns = [
+            r'^안녕하세요[^.]*\.\s*',
+            r'^GOODTV\s+바이블\s*애플[^.]*\.\s*',
+            r'^바이블\s*애플[^.]*\.\s*',
+            r'^성도님[^.]*\.\s*',
+            r'^고객님[^.]*\.\s*',
+            r'^감사합니다[^.]*\.\s*',
+            r'^감사드립니다[^.]*\.\s*',
+            r'^바이블\s*애플을\s*이용해주셔서[^.]*\.\s*',
+            r'^바이블\s*애플을\s*애용해\s*주셔서[^.]*\.\s*'
+        ]
+        
+        # 끝맺음말 제거 패턴들
+        closing_patterns = [
+            r'\s*감사합니다[^.]*\.?\s*$',
+            r'\s*감사드립니다[^.]*\.?\s*$',
+            r'\s*평안하세요[^.]*\.?\s*$',
+            r'\s*주님\s*안에서[^.]*\.?\s*$',
+            r'\s*함께\s*기도하며[^.]*\.?\s*$',
+            r'\s*항상[^.]*바이블\s*애플[^.]*\.?\s*$',
+            r'\s*항상\s*주님\s*안에서[^.]*\.?\s*$',
+            r'\s*주님\s*안에서\s*평안하세요[^.]*\.?\s*$',
+            r'\s*주님의\s*은총이[^.]*\.?\s*$',
+            r'\s*기도드리겠습니다[^.]*\.?\s*$'
+        ]
+        
+        # 인사말 제거
+        for pattern in greeting_patterns:
+            text = re.sub(pattern, '', text, flags=re.IGNORECASE)
+        
+        # 끝맺음말 제거
+        for pattern in closing_patterns:
+            text = re.sub(pattern, '', text, flags=re.IGNORECASE)
+        
+        # 문장 끝의 끝맺음말들도 제거
+        text = re.sub(r'[,.!?]\s*항상\s*주님\s*안에서[^.]*\.?\s*$', '', text, flags=re.IGNORECASE)
+        text = re.sub(r'[,.!?]\s*감사합니다[^.]*\.?\s*$', '', text, flags=re.IGNORECASE)
+        text = re.sub(r'[,.!?]\s*평안하세요[^.]*\.?\s*$', '', text, flags=re.IGNORECASE)
+        
+        # 앞뒤 공백 정리
+        text = text.strip()
+        
+        return text
+
     # GPT 답변 생성을 위한 향상된 컨텍스트 생성 메서드
     # 
     # 컨텍스트 생성 전략:
@@ -378,7 +429,7 @@ class AIAnswerGenerator:
     # 2. 고품질 답변 우선 선택 (최대 4개)
     # 3. 중품질 답변으로 보완 (최대 3개)
     # 4. 최소 개수 미달시 중간 품질 답변 추가
-    # 5. 텍스트 정제 및 길이 제한
+    # 5. 텍스트 정제 및 길이 제한 (인사말/끝맺음말 제거)
     # 
     # 이렇게 구성된 컨텍스트는 GPT에게 참고 자료로 제공되어
     # 일관된 스타일과 정확한 정보로 답변을 생성하게 함
@@ -407,6 +458,8 @@ class AIAnswerGenerator:
                 break
             # 제어 문자 및 HTML 태그 제거
             clean_answer = re.sub(r'[\b\r\f\v\x00-\x08\x0B\x0C\x0E-\x1F\x7F]|<[^>]+>', '', ans['answer'])
+            # 인사말과 끝맺음말 제거하여 본문만 추출
+            clean_answer = self.remove_greeting_and_closing(clean_answer)
             # 유효한 한국어 텍스트이고 충분한 길이인지 검증
             if self.is_valid_korean_text(clean_answer) and len(clean_answer.strip()) > 20:
                 context_parts.append(f"[참고답변 {used_answers+1} - 점수: {ans['score']:.2f}]\n{clean_answer[:400]}")
@@ -417,6 +470,7 @@ class AIAnswerGenerator:
             if used_answers >= max_answers:
                 break
             clean_answer = re.sub(r'[\b\r\f\v\x00-\x08\x0B\x0C\x0E-\x1F\x7F]|<[^>]+>', '', ans['answer'])
+            clean_answer = self.remove_greeting_and_closing(clean_answer)
             if self.is_valid_korean_text(clean_answer) and len(clean_answer.strip()) > 20:
                 context_parts.append(f"[참고답변 {used_answers+1} - 점수: {ans['score']:.2f}]\n{clean_answer[:300]}")
                 used_answers += 1
@@ -428,11 +482,12 @@ class AIAnswerGenerator:
                 if used_answers >= max_answers:
                     break
                 clean_answer = re.sub(r'[\b\r\f\v\x00-\x08\x0B\x0C\x0E-\x1F\x7F]|<[^>]+>', '', ans['answer'])
+                clean_answer = self.remove_greeting_and_closing(clean_answer)
                 if self.is_valid_korean_text(clean_answer) and len(clean_answer.strip()) > 20:
                     context_parts.append(f"[참고답변 {used_answers+1} - 점수: {ans['score']:.2f}]\n{clean_answer[:250]}")
                     used_answers += 1
         
-        logging.info(f"컨텍스트 생성: {used_answers}개의 답변 포함")
+        logging.info(f"컨텍스트 생성: {used_answers}개의 답변 포함 (인사말/끝맺음말 제거됨)")
         
         # 최종 컨텍스트 조합 (구분선으로 답변들 분리)
         return "\n\n" + "="*50 + "\n\n".join(context_parts)
@@ -662,15 +717,21 @@ class AIAnswerGenerator:
 
 5. 고객은 반드시 '성도님'으로 호칭하세요
 6. 앱 이름은 'GOODTV 바이블 애플' 또는 '바이블 애플'로 통일하세요
-7. 인삿말 및 끝맺음말이 중복되서 표현되지 않도록 하세요
-8. HTML 태그 사용 금지, 자연스러운 문장으로 작성하세요"""
+
+🚫 인사말 및 끝맺음말 생성 금지:
+- "안녕하세요", "감사합니다", "평안하세요" 등의 인사말을 절대 사용하지 마세요
+- "주님 안에서", "기도드리겠습니다" 등의 끝맺음말을 절대 사용하지 마세요
+- 오직 본문 내용만 작성하세요
+
+7. HTML 태그 사용 금지, 자연스러운 문장으로 작성하세요"""
 
         user_prompt = f"""고객 문의: {query}
 
-참고 답변들:
+참고 답변들 (인사말과 끝맺음말은 제거된 본문만 포함):
 {context}
 
-위 참고 답변들의 해결 방식과 톤을 그대로 따라서 고객의 문제에 대한 구체적인 답변을 작성하세요."""
+위 참고 답변들의 해결 방식과 톤을 그대로 따라서 고객의 문제에 대한 구체적인 답변을 작성하세요.
+중요: 인사말("안녕하세요", "감사합니다" 등)이나 끝맺음말("평안하세요", "주님 안에서" 등)을 절대 포함하지 마세요. 오직 본문 내용만 작성하세요."""
 
         return system_prompt, user_prompt
 
@@ -767,6 +828,8 @@ class AIAnswerGenerator:
                 context_answers = []
                 for ans in similar_answers[:5]:  # 3개 → 5개로 늘려서 더 많은 참고
                     clean_ans = re.sub(r'[\b\r\f\v\x00-\x08\x0B\x0C\x0E-\x1F\x7F]|<[^>]+>', '', ans['answer'])
+                    # 인사말과 끝맺음말 제거하여 본문만 추출
+                    clean_ans = self.remove_greeting_and_closing(clean_ans)
                     if self.is_valid_korean_text(clean_ans):
                         context_answers.append(clean_ans[:300])  # 200 → 300으로 늘림
                 
@@ -788,16 +851,21 @@ class AIAnswerGenerator:
 4. 기술적 문제는 캡쳐나 영상을 요청하고 이메일(dev@goodtv.co.kr)로 문의하도록 안내하세요
 5. 고객 호칭은 반드시 '성도님'으로만 사용하세요 (고객님 사용 금지)
 6. HTML 태그나 마크다운 사용 금지, 일반 텍스트만 사용
-7. 인사말과 끝맺음말은 제외하고 본문만 작성하세요"""
+
+🚫 인사말 및 끝맺음말 생성 금지:
+- "안녕하세요", "감사합니다", "평안하세요" 등의 인사말을 절대 사용하지 마세요
+- "주님 안에서", "기도드리겠습니다" 등의 끝맺음말을 절대 사용하지 마세요
+- 오직 본문 내용만 작성하세요"""
 
                 user_prompt = f"""고객 질문: {query}
 
-참고 답변들 (이와 유사하게 답변해주세요):
+참고 답변들 (인사말과 끝맺음말은 제거된 본문만 포함):
 {context}
 
 위 참고 답변들의 스타일과 톤을 그대로 따라서, 고객의 질문에 적절한 답변을 작성해주세요. 
 창의적인 답변보다는 참고 답변과 유사한 답변을 작성하는 것이 중요합니다.
-고객은 반드시 '성도님'으로 호칭해주세요."""
+고객은 반드시 '성도님'으로 호칭해주세요.
+중요: 인사말("안녕하세요", "감사합니다" 등)이나 끝맺음말("평안하세요", "주님 안에서" 등)을 절대 포함하지 마세요. 오직 본문 내용만 작성하세요."""
 
                 # ★ 더 보수적인 API 설정
                 response = self.openai_client.chat.completions.create(
