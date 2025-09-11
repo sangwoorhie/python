@@ -1,29 +1,30 @@
 #!/usr/bin/env python
 # -*- coding: utf-8 -*-
 """
-=== AI 답변 생성 Flask API 서버 ===
+=== AI 답변 생성 Flask API 서버 (다국어 지원) ===
 파일명: free_4_ai_answer_generator.py
 목적: ASP Classic에서 호출하는 AI 답변 생성 API + Pinecone 벡터DB 동기화
 주요 기능:
-1. OpenAI GPT-3.5-turbo를 이용한 자연어 답변 생성
+1. OpenAI GPT-3.5-turbo를 이용한 자연어 답변 생성 (한국어/영어)
 2. Pinecone 벡터 데이터베이스에서 유사 답변 검색
 3. MSSQL 데이터베이스와 Pinecone 동기화
 4. 메모리 최적화 및 모니터링
+5. 다국어 지원 (한국어, 영어)
 """
 
 # ==================================================
 # 1. 필수 라이브러리 임포트 구간
 # ==================================================
 # 기본 Python 모듈들
-import os              # 환경변수 및 파일 시스템 작업
-import sys             # 시스템 관련 기능
-import json            # JSON 데이터 처리
-import json as json_module  # JSON 모듈의 별칭 (코드 내 중복 방지)
-import re              # 정규표현식 패턴 매칭
-import html            # HTML 엔티티 처리
-import unicodedata     # 유니코드 문자 정규화
-import logging         # 로그 기록 시스템
-import gc              # 가비지 컬렉션 (메모리 관리)
+import os                   # 환경변수 및 파일 시스템 작업
+import sys                  # 시스템 관련 기능
+import json                 # JSON 데이터 처리
+import json as json_module  # JSON 모듈의 별칭 (일리아스, 코드 내 중복 방지)
+import re                   # 정규표현식 패턴 매칭
+import html                 # HTML 엔티티 처리
+import unicodedata          # 유니코드 문자 정규화
+import logging              # 로그 기록 시스템
+import gc                   # 가비지 컬렉션 (메모리 관리)
 
 # 웹 프레임워크 관련
 from flask import Flask, request, jsonify  # Flask 웹 프레임워크
@@ -40,10 +41,11 @@ from datetime import datetime      # 날짜/시간 처리
 from typing import Optional, Dict, Any, List  # 타입 힌팅
 
 # 성능 모니터링 관련
-from memory_profiler import profile        # 메모리 사용량 프로파일링
-import tracemalloc                         # 메모리 추적
-import threading                           # 멀티스레딩
-from contextlib import contextmanager      # 컨텍스트 매니저 (with문 사용)
+from memory_profiler import profile                  # 메모리 사용량 프로파일링
+import tracemalloc                                   # 메모리 추적
+import threading                                     # 멀티스레딩
+from contextlib import contextmanager                # 컨텍스트 매니저 (with문 사용)
+from langdetect import detect, LangDetectException   # 언어 감지
 
 # ==================================================
 # 2. 시스템 초기화 및 설정
@@ -55,7 +57,7 @@ tracemalloc.start()
 # __name__: 현재 모듈명을 전달하여 Flask가 리소스 위치를 찾을 수 있게 함
 app = Flask(__name__)
 
-# CORS 설정 - 모든 엔드포인트에서 cross-origin 요청청을 허용 (ASP Classic에서 호출하기 위함)
+# CORS 설정 - 모든 엔드포인트에서 cross-origin 요청을 허용 (ASP Classic에서 호출하기 위함)
 CORS(app)
 
 # ==================================================
@@ -66,7 +68,7 @@ CORS(app)
 logging.basicConfig(
     filename='/home/ec2-user/python/logs/ai_generator.log',  # 로그 파일 경로
     level=logging.INFO,                                      # INFO 레벨 이상 로그 기록
-    format='%(asctime)s - %(levelname)s - %(message)s',     # 로그 포맷
+    format='%(asctime)s - %(levelname)s - %(message)s',      # 로그 포맷
     encoding='utf-8'                                         # 한글 지원을 위한 UTF-8 인코딩
 )
 
@@ -99,6 +101,18 @@ CATEGORY_MAPPING = {
     '6': '불만',                        
     '7': '오탈자제보',                   
     '0': '사용 문의(기타)'               
+}
+
+# 영어 카테고리 매핑 추가
+CATEGORY_MAPPING_EN = {
+    '1': 'Sponsorship/Cancellation',
+    '2': 'Bible Reading(Read,Listen,Record)',
+    '3': 'Bible Reading Race',
+    '4': 'Improvement/Suggestion',
+    '5': 'Error/Failure',
+    '6': 'Complaint',
+    '7': 'Typo Report',
+    '0': 'Usage Inquiry(Other)'
 }
 
 # ==================================================
@@ -161,9 +175,10 @@ except Exception as e:
     raise  # 예외를 다시 발생시켜 프로그램 중단
 
 # ==================================================
-# 7. AI 답변 생성 메인 클래스 (객체지향 프로그래밍)
+# 7. AI 답변 생성 메인 클래스 (객체 지향 프로그래밍, 다국어 지원 추가)
 # ==================================================
     # AI 답변 생성을 담당하는 메인 클래스
+    # 객체지향 설계로 관련 기능들을 하나의 클래스에 캡슐화
     
     # 주요 기능:
     # 1. 텍스트 전처리 및 정제
@@ -171,17 +186,38 @@ except Exception as e:
     # 3. Pinecone에서 유사 답변 검색
     # 4. GPT를 이용한 맞춤형 답변 생성
     # 5. 한국어 텍스트 검증 및 포맷팅
-    
-    # 객체지향 설계로 관련 기능들을 하나의 클래스에 캡슐화
 
 class AIAnswerGenerator:
-
+    
     # 클래스 초기화 메서드
     # OpenAI 클라이언트를 인스턴스 변수로 설정. 이는 의존성 주입 패턴의 간소화된 형태
     def __init__(self):
-        
         self.openai_client = openai_client
     
+    # ☆ 텍스트의 언어를 감지하는 메서드
+    def detect_language(self, text: str) -> str:
+        try:
+            # langdetect 라이브러리 사용
+            detected = detect(text)
+            
+            # 영어와 한국어만 지원
+            if detected == 'en':
+                return 'en'
+            elif detected == 'ko':
+                return 'ko'
+            else:
+                # 기본값은 한국어
+                return 'ko'
+        except LangDetectException:
+            # 감지 실패시 텍스트 내 한글 비율로 판단
+            korean_chars = len(re.findall(r'[가-힣]', text))
+            english_chars = len(re.findall(r'[a-zA-Z]', text))
+            
+            if korean_chars > english_chars:
+                return 'ko'
+            else:
+                return 'en'
+
     # ☆ 입력 텍스트를 AI 처리에 적합하게 전처리하는 메서드
     # Args:
     #     text (str): 원본 텍스트
@@ -189,7 +225,7 @@ class AIAnswerGenerator:
     # Returns:
     #     str: 정제된 텍스트
     def preprocess_text(self, text: str) -> str:
-        
+
         # null 체크
         if not text:
             return ""
@@ -222,18 +258,11 @@ class AIAnswerGenerator:
         escaped = json_module.dumps(text, ensure_ascii=False) # ensure_ascii=False: 한글 깨짐 방지
         return escaped[1:-1]  # 앞뒤 따옴표 제거
 
-
     # ☆ OpenAI API를 사용하여 텍스트를 벡터로 변환하는 메서드
     # 벡터 임베딩: 텍스트의 의미를 수치 배열로 표현하여 유사도 계산 가능
-        
-    # Args:
-    #     text (str): 임베딩할 텍스트
-            
-    # Returns:
-    #     Optional[list]: 1536차원 벡터 배열 또는 None(실패시)
     def create_embedding(self, text: str) -> Optional[list]:
-        
-        # 이중 검증을 수행. 빈 문자열뿐만 아니라 공백만 있는 문자열도 걸러냄. 이는 텍스트 비교 시 예상치 못한 오류를 방지하기 위함
+
+        # 빈 문자열뿐만 아니라 공백만 있는 문자열도 걸러냄 (이런 경우 JSON 변환 불가)
         if not text or not text.strip():
             return None
             
@@ -241,7 +270,7 @@ class AIAnswerGenerator:
             with memory_cleanup(): # 메모리 누수 방지 (블록 종료 시 가비지 컬렉션)
                 # OpenAI Embedding API 호출
                 response = self.openai_client.embeddings.create(
-                    model='text-embedding-3-small',    # 작고 빠른 임베딩 모델
+                    model='text-embedding-3-small',    # 벡터 임베딩 모델명
                     input=text[:8000]                  # 텍스트 길이 제한 (토큰 제한 방지지)
                 )
                 
@@ -262,12 +291,23 @@ class AIAnswerGenerator:
             
     # Returns:
     #     list: 유사 답변 리스트 [{'score': float, 'question': str, 'answer': str, ...}, ...]
-    def search_similar_answers(self, query: str, top_k: int = 5, similarity_threshold: float = 0.6) -> list:
-        
+    def search_similar_answers(self, query: str, top_k: int = 5, similarity_threshold: float = 0.6, lang: str = 'ko') -> list:
+        """언어별 유사 답변 검색"""
         try:
             with memory_cleanup():
-                # 1. 검색 질문을 벡터로 변환
-                query_vector = self.create_embedding(query)
+                # 영어 질문인 경우 번역하여 한국어로도 검색
+                if lang == 'en':
+                    # 1. 검색 질문을 벡터로 변환
+                    query_vector = self.create_embedding(query)
+                    
+                    # 한국어로 번역하여 추가 검색 (선택적)
+                    translated_query = self.translate_text(query, 'en', 'ko')
+                    if translated_query:
+                        korean_vector = self.create_embedding(translated_query)
+                else:
+                    query_vector = self.create_embedding(query)
+                    korean_vector = None
+                
                 if query_vector is None:
                     return []
                 
@@ -279,10 +319,26 @@ class AIAnswerGenerator:
                     include_metadata=True          # 메타데이터 포함 (질문, 답변, 카테고리 등)
                 )
                 
+                # 한국어 벡터로 추가 검색 (영어 질문인 경우)
+                if lang == 'en' and korean_vector:
+                    korean_results = index.query(
+                        vector=korean_vector,       # 검색할 벡터
+                        top_k=3,                    # 보조 검색은 적게 (3개)
+                        include_metadata=True       # 메타데이터 포함 (질문, 답변, 카테고리 등)
+                    )
+                    # 결과 병합 (중복 제거)
+                    seen_ids = set()
+                    merged_matches = []
+                    for match in results['matches'] + korean_results['matches']:
+                        if match['id'] not in seen_ids:
+                            seen_ids.add(match['id'])
+                            merged_matches.append(match)
+                    results['matches'] = sorted(merged_matches, key=lambda x: x['score'], reverse=True)[:top_k]
+                
                 # 3. 결과 필터링 및 구조화
                 filtered_results = []
                 for i, match in enumerate(results['matches']): # enumerate로 순위(rank) 생성
-                    score = match['score']  # 유사도 점수 (0~1, 높을수록 유사)
+                    score = match['score'] # 유사도 점수 (0~1, 높을수록 유사)
                     question = match['metadata'].get('question', '')
                     answer = match['metadata'].get('answer', '')
                     category = match['metadata'].get('category', '일반')
@@ -294,24 +350,64 @@ class AIAnswerGenerator:
                             'question': question,
                             'answer': answer,
                             'category': category,
-                            'rank': i + 1
+                            'rank': i + 1,
+                            'lang': 'ko'  # 원본 데이터는 한국어
                         })
                         
                         # 디버깅을 위한 상세 로깅
-                        logging.info(f"유사 답변 #{i+1}: 점수={score:.3f}, 카테고리={category}")
+                        logging.info(f"유사 답변 #{i+1}: 점수={score:.3f}, 카테고리={category}, 언어={lang}")
                         logging.info(f"참고 질문: {question[:50]}...")
                         logging.info(f"참고 답변: {answer[:100]}...")
-                
+                        logging.info(f"유사도 임계값: {similarity_threshold:.2f}")
+                        logging.info(f"검색 질문: {query[:50]}...")
+                        logging.info(f"검색 언어: {lang}")
+                        
                 # 4. 메모리 정리
                 del results # 원본 응답 객체 즉시 삭제 (메모리 해제)
+                if korean_vector:
+                    del korean_vector # 한국어 벡터 즉시 삭제 (메모리 해제)
                 del query_vector # 검색 벡터 즉시 삭제 (메모리 해제)
                 
-                logging.info(f"총 {len(filtered_results)}개의 유사 답변 검색 완료")
+                logging.info(f"총 {len(filtered_results)}개의 유사 답변 검색 완료 (언어: {lang})")
                 return filtered_results
                 
         except Exception as e:
             logging.error(f"Pinecone 검색 실패: {str(e)}")
             return []
+
+    # ☆ GPT를 사용한 번역
+    # Args:
+    #     text (str): 번역할 텍스트
+    #     source_lang (str): 원본 언어
+    #     target_lang (str): 번역 언어
+            
+    # Returns:
+    #     str: 번역된 텍스트
+    def translate_text(self, text: str, source_lang: str, target_lang: str) -> str:
+        try:
+            # 언어 매핑
+            lang_map = {
+                'ko': 'Korean',
+                'en': 'English'
+            }
+            
+            system_prompt = f"You are a professional translator. Translate the following text from {lang_map[source_lang]} to {lang_map[target_lang]}. Keep the same tone and style. Only provide the translation without any explanation."
+            
+            response = self.openai_client.chat.completions.create(
+                model='gpt-3.5-turbo',
+                messages=[
+                    {"role": "system", "content": system_prompt},
+                    {"role": "user", "content": text}
+                ],
+                max_tokens=500,
+                temperature=0.3
+            )
+            
+            return response.choices[0].message.content.strip()
+            
+        except Exception as e:
+            logging.error(f"번역 실패: {e}")
+            return text
 
     # ☆ 검색된 유사 답변들의 품질을 분석하여 최적의 답변 생성 전략을 결정하는 메서드
 
@@ -322,7 +418,7 @@ class AIAnswerGenerator:
     # Returns:
     #     dict: 분석 결과 및 권장 접근 방식
     def analyze_context_quality(self, similar_answers: list, query: str) -> dict:
-        # 유사 답변이 없는 경우
+        # 유사 답변이 없으면 기본값 반환
         if not similar_answers:
             return {
                 'has_good_context': False,
@@ -345,8 +441,8 @@ class AIAnswerGenerator:
         
         # 의사 결정 트리 : 최적의 답변 생성 전략을 결정하는 알고리즘
         # 최고 유사도 점수가 0.8 이상이면 기존 답변 직접 활용
-        # 최고 유사도 점수가 0.7 이상이고 고품질 답변이 2개 이상이면 고품질 컨텍스트로 GPT 생성
-        # 최고 유사도 점수가 0.6 이상이고 중품질 답변이 3개 이상이면 약한 컨텍스트로 GPT 생성
+        # 최고 유사도 점수가 0.7 이상이거나 고품질 답변이 2개 이상이면 고품질 컨텍스트로 GPT 생성
+        # 최고 유사도 점수가 0.6 이상이거나 중품질 답변이 3개 이상이면 약한 컨텍스트로 GPT 생성
         # 그 외는 품질이 낮아 폴백 처리
         if best_score >= 0.8:
             approach = 'direct_use'                # 매우 유사 → 기존 답변 직접 활용
@@ -371,38 +467,65 @@ class AIAnswerGenerator:
         logging.info(f"컨텍스트 분석 결과: {analysis}")
         return analysis
 
-    # 참고 답변에서 인사말과 끝맺음말을 제거하는 메서드
-    def remove_greeting_and_closing(self, text: str) -> str:
-        """참고 답변에서 인사말과 끝맺음말을 제거하여 본문만 추출"""
+    # ☆ 참고 답변에서 인사말과 끝맺음말을 제거하는 메서드
+    # Args:
+    #     text (str): 제거할 텍스트
+    #     lang (str): 언어 (기본값: 한국어)
+            
+    # Returns:
+    #     str: 제거된 텍스트
+    def remove_greeting_and_closing(self, text: str, lang: str = 'ko') -> str:
+        # null 체크
         if not text:
             return ""
         
-        # 인사말 제거 패턴들
-        greeting_patterns = [
-            r'^안녕하세요[^.]*\.\s*',
-            r'^GOODTV\s+바이블\s*애플[^.]*\.\s*',
-            r'^바이블\s*애플[^.]*\.\s*',
-            r'^성도님[^.]*\.\s*',
-            r'^고객님[^.]*\.\s*',
-            r'^감사합니다[^.]*\.\s*',
-            r'^감사드립니다[^.]*\.\s*',
-            r'^바이블\s*애플을\s*이용해주셔서[^.]*\.\s*',
-            r'^바이블\s*애플을\s*애용해\s*주셔서[^.]*\.\s*'
-        ]
-        
-        # 끝맺음말 제거 패턴들
-        closing_patterns = [
-            r'\s*감사합니다[^.]*\.?\s*$',
-            r'\s*감사드립니다[^.]*\.?\s*$',
-            r'\s*평안하세요[^.]*\.?\s*$',
-            r'\s*주님\s*안에서[^.]*\.?\s*$',
-            r'\s*함께\s*기도하며[^.]*\.?\s*$',
-            r'\s*항상[^.]*바이블\s*애플[^.]*\.?\s*$',
-            r'\s*항상\s*주님\s*안에서[^.]*\.?\s*$',
-            r'\s*주님\s*안에서\s*평안하세요[^.]*\.?\s*$',
-            r'\s*주님의\s*은총이[^.]*\.?\s*$',
-            r'\s*기도드리겠습니다[^.]*\.?\s*$'
-        ]
+        if lang == 'ko':
+            # 한국어 인사말 제거 패턴
+            greeting_patterns = [
+                r'^안녕하세요[^.]*\.\s*',
+                r'^GOODTV\s+바이블\s*애플[^.]*\.\s*',
+                r'^바이블\s*애플[^.]*\.\s*',
+                r'^성도님[^.]*\.\s*',
+                r'^고객님[^.]*\.\s*',
+                r'^감사합니다[^.]*\.\s*',
+                r'^감사드립니다[^.]*\.\s*',
+                r'^바이블\s*애플을\s*이용해주셔서[^.]*\.\s*',
+                r'^바이블\s*애플을\s*애용해\s*주셔서[^.]*\.\s*'
+            ]
+            
+            # 한국어 끝맺음말 제거 패턴들
+            closing_patterns = [
+                r'\s*감사합니다[^.]*\.?\s*$',
+                r'\s*감사드립니다[^.]*\.?\s*$',
+                r'\s*평안하세요[^.]*\.?\s*$',
+                r'\s*주님\s*안에서[^.]*\.?\s*$',
+                r'\s*함께\s*기도하며[^.]*\.?\s*$',
+                r'\s*항상[^.]*바이블\s*애플[^.]*\.?\s*$',
+                r'\s*항상\s*주님\s*안에서[^.]*\.?\s*$',
+                r'\s*주님\s*안에서\s*평안하세요[^.]*\.?\s*$',
+                r'\s*주님의\s*은총이[^.]*\.?\s*$',
+                r'\s*기도드리겠습니다[^.]*\.?\s*$'
+            ]
+
+        else:  # 영어 인사말 제거 패턴
+            greeting_patterns = [
+                r'^Hello[^.]*\.\s*',
+                r'^Hi[^.]*\.\s*',
+                r'^Dear[^.]*\.\s*',
+                r'^Thank you[^.]*\.\s*',
+                r'^Thanks[^.]*\.\s*',
+                r'^This is GOODTV Bible App[^.]*\.\s*',
+            ]
+            
+            # 영어 끝맺음말 제거 패턴
+            closing_patterns = [
+                r'\s*Thank you[^.]*\.?\s*$',
+                r'\s*Thanks[^.]*\.?\s*$',
+                r'\s*Best regards[^.]*\.?\s*$',
+                r'\s*Sincerely[^.]*\.?\s*$',
+                r'\s*God bless[^.]*\.?\s*$',
+                r'\s*May God[^.]*\.?\s*$',
+            ]
         
         # 인사말 제거
         for pattern in greeting_patterns:
@@ -422,7 +545,7 @@ class AIAnswerGenerator:
         
         return text
 
-    # GPT 답변 생성을 위한 향상된 컨텍스트 생성 메서드
+        # GPT 답변 생성을 위한 향상된 컨텍스트 생성 메서드
     # 
     # 컨텍스트 생성 전략:
     # 1. 품질별 답변 그룹핑 (고/중/낮은 품질)
@@ -440,28 +563,33 @@ class AIAnswerGenerator:
     #     
     # Returns:
     #     str: GPT용 컨텍스트 문자열
-    def create_enhanced_context(self, similar_answers: list, max_answers: int = 7) -> str:
+    def create_enhanced_context(self, similar_answers: list, max_answers: int = 7, target_lang: str = 'ko') -> str:
         if not similar_answers:
             return ""
         
-        context_parts = []  # 컨텍스트 구성 요소들
-        used_answers = 0    # 사용된 답변 개수
+        context_parts = [] # 컨텍스트 부분들을 저장할 리스트
+        used_answers = 0 # 사용된 답변 개수
         
         # 유사도 점수에 따른 답변 그룹핑
+        # 계층적 그룹핑으로 품질별 답변을 분류: 이는 나중에 우선순위에 따라 선택하기 위함
         high_score = [ans for ans in similar_answers if ans['score'] >= 0.7]      # 고품질 (70% 이상 유사)
         medium_score = [ans for ans in similar_answers if 0.5 <= ans['score'] < 0.7]  # 중품질 (50-70%)
-        low_score = [ans for ans in similar_answers if 0.4 <= ans['score'] < 0.5]     # 낮은 품질 (40-50%)
-        
+        medium_low_score = [ans for ans in similar_answers if 0.5 <= ans['score'] < 0.6] # 낮은 품질 (50-60%)
+
         # 1단계: 고품질 답변 우선 포함 (최대 4개)
         for ans in high_score[:4]:
             if used_answers >= max_answers:
                 break
-            # 제어 문자 및 HTML 태그 제거
+            # 제어 문자(줄바꿈, 탭, 개행 등) 및 HTML 태그 제거
             clean_answer = re.sub(r'[\b\r\f\v\x00-\x08\x0B\x0C\x0E-\x1F\x7F]|<[^>]+>', '', ans['answer'])
-            # 인사말과 끝맺음말 제거하여 본문만 추출
-            clean_answer = self.remove_greeting_and_closing(clean_answer)
-            # 유효한 한국어 텍스트이고 충분한 길이인지 검증
-            if self.is_valid_korean_text(clean_answer) and len(clean_answer.strip()) > 20:
+            clean_answer = self.remove_greeting_and_closing(clean_answer, 'ko') # 인사말과 끝맺음말 제거하여 본문만 추출
+            
+            # 영어 질문인 경우 답변을 번역
+            if target_lang == 'en' and ans.get('lang', 'ko') == 'ko':
+                clean_answer = self.translate_text(clean_answer, 'ko', 'en')
+            
+            # 유효성 검사 및 길이 제한 (최소 20자 이상확인, 400자로 잘라서 컨텍스트 길이 제한 방지)
+            if self.is_valid_text(clean_answer, target_lang) and len(clean_answer.strip()) > 20:
                 context_parts.append(f"[참고답변 {used_answers+1} - 점수: {ans['score']:.2f}]\n{clean_answer[:400]}")
                 used_answers += 1
         
@@ -469,30 +597,45 @@ class AIAnswerGenerator:
         for ans in medium_score[:3]:
             if used_answers >= max_answers:
                 break
+            # 제어 문자(줄바꿈, 탭, 개행 등) 및 HTML 태그 제거
             clean_answer = re.sub(r'[\b\r\f\v\x00-\x08\x0B\x0C\x0E-\x1F\x7F]|<[^>]+>', '', ans['answer'])
-            clean_answer = self.remove_greeting_and_closing(clean_answer)
-            if self.is_valid_korean_text(clean_answer) and len(clean_answer.strip()) > 20:
+            clean_answer = self.remove_greeting_and_closing(clean_answer, 'ko') # 인사말과 끝맺음말 제거하여 본문만 추출
+            
+            # 영어 질문인 경우 답변을 번역
+            if target_lang == 'en' and ans.get('lang', 'ko') == 'ko':
+                clean_answer = self.translate_text(clean_answer, 'ko', 'en')
+            
+            if self.is_valid_text(clean_answer, target_lang) and len(clean_answer.strip()) > 20:
                 context_parts.append(f"[참고답변 {used_answers+1} - 점수: {ans['score']:.2f}]\n{clean_answer[:300]}")
                 used_answers += 1
-        
+
         # 3단계: 답변이 부족한 경우 중간 품질 답변 추가 (50-60% 구간)
         if used_answers < 3:  # 최소 3개 이상 확보하기 위함
-            medium_low_score = [ans for ans in similar_answers if 0.5 <= ans['score'] < 0.6]
             for ans in medium_low_score[:2]:
                 if used_answers >= max_answers:
                     break
                 clean_answer = re.sub(r'[\b\r\f\v\x00-\x08\x0B\x0C\x0E-\x1F\x7F]|<[^>]+>', '', ans['answer'])
-                clean_answer = self.remove_greeting_and_closing(clean_answer)
-                if self.is_valid_korean_text(clean_answer) and len(clean_answer.strip()) > 20:
+                clean_answer = self.remove_greeting_and_closing(clean_answer, 'ko')
+                
+                # 영어 질문인 경우 답변을 번역
+                if target_lang == 'en' and ans.get('lang', 'ko') == 'ko':
+                    clean_answer = self.translate_text(clean_answer, 'ko', 'en')
+                
+                if self.is_valid_text(clean_answer, target_lang) and len(clean_answer.strip()) > 20:
                     context_parts.append(f"[참고답변 {used_answers+1} - 점수: {ans['score']:.2f}]\n{clean_answer[:250]}")
                     used_answers += 1
         
-        logging.info(f"컨텍스트 생성: {used_answers}개의 답변 포함 (인사말/끝맺음말 제거됨)")
+        logging.info(f"컨텍스트 생성: {used_answers}개의 답변 포함 (언어: {target_lang})")
         
         # 최종 컨텍스트 조합 (구분선으로 답변들 분리)
         return "\n\n" + "="*50 + "\n\n".join(context_parts)
 
-    # 이전 앱 이름을 제거하는 메서드 (구 다번역성경찬송 등)
+    # ☆ 이전 앱 이름을 제거하는 메서드 (구 다번역성경찬송 등)
+    # Args:
+    #     text (str): 제거할 텍스트
+            
+    # Returns:
+    #     str: 제거된 텍스트
     def remove_old_app_name(self, text: str) -> str:
         patterns_to_remove = [
             r'\s*\(구\)\s*다번역성경찬송',
@@ -508,8 +651,8 @@ class AIAnswerGenerator:
         
         return text
 
-    # 답변 텍스트를 HTML 단락 형식으로 포맷팅하는 메서드
-    def format_answer_with_html_paragraphs(self, text: str) -> str:
+    # ☆ 답변 텍스트를 HTML 단락 형식으로 포맷팅하는 메서드
+    def format_answer_with_html_paragraphs(self, text: str, lang: str = 'ko') -> str:
         if not text:
             return ""
         
@@ -518,36 +661,103 @@ class AIAnswerGenerator:
         # 문장을 마침표, 느낌표, 물음표로 분리
         sentences = re.split(r'(?<=[.!?])\s+', text)
         
-        paragraphs = []
-        current_paragraph = []
+        paragraphs = [] # 단락들을 저장할 리스트
+        current_paragraph = [] # 현재 단락을 저장할 리스트
         
         # 단락 분리 트리거 키워드들 (더 포괄적으로 확장)
-        paragraph_triggers = [
-            # 인사 및 감사
-            '안녕하세요', '감사합니다', '감사드립니다', '바이블 애플을',
-            # 접속어 및 연결어
-            '따라서', '그러므로', '또한', '그리고', '또는', '하지만', '그런데',
-            '이외', '이에', '이를', '이로', '이와', '이에', '이상', '이하',
-            # 상황 설명
-            '현재', '지금', '현재로', '현재까지', '현재로서는',
-            '내부적으로', '외부적으로', '기술적으로', '운영상',
-            # 조건 및 가정
-            '만약', '혹시', '만일', '만약에', '만약의',
-            '해당', '이', '그', '저', '이런', '그런', '저런',
-            # 요청 및 안내
-            '성도님', '고객님', '이용자', '사용자',
-            '번거로우시', '불편하시', '죄송하지만', '참고로',
-            '양해부탁드립니다', '양해해주시기', '이해해주시기',
-            # 시간 관련
-            '항상', '늘', '앞으로도', '지속적으로', '계속적으로',
-            '시간이', '소요될', '걸릴', '필요한',
-            # 기능 관련
-            '기능', '기능은', '기능의', '기능이', '기능을',
-            '스피커', '버튼', '메뉴', '화면', '설정', '옵션',
-            # 의견 및 전달
-            '의견은', '의견을', '전달할', '전달하겠습니다', '전달드리겠습니다',
-            '토의가', '검토가', '검토를', '논의가', '논의를'
-        ]
+        # 접속사나 인사말로 시작하는 문장은 들여쓰기를 통해 새 단락으로 분리
+        if lang == 'ko':
+            paragraph_triggers = [
+                # 인사 및 감사
+                '안녕하세요', '감사합니다', '감사드립니다', '바이블 애플을',
+                # 접속어 및 연결어
+                '따라서', '그러므로', '또한', '그리고', '또는', '하지만', '그런데',
+                '이외', '이에', '이를', '이로', '이와', '이에', '이상', '이하',
+                # 상황 설명
+                '현재', '지금', '현재로', '현재까지', '현재로서는',
+                '내부적으로', '외부적으로', '기술적으로', '운영상',
+                # 조건 및 가정
+                '만약', '혹시', '만일', '만약에', '만약의',
+                '해당', '이', '그', '저', '이런', '그런', '저런',
+                # 요청 및 안내
+                '성도님', '고객님', '이용자', '사용자',
+                '번거로우시', '불편하시', '죄송하지만', '참고로',
+                '양해부탁드립니다', '양해해주시기', '이해해주시기',
+                # 시간 관련
+                '항상', '늘', '앞으로도', '지속적으로', '계속적으로',
+                '시간이', '소요될', '걸릴', '필요한',
+                # 기능 관련
+                '기능', '기능은', '기능의', '기능이', '기능을',
+                '스피커', '버튼', '메뉴', '화면', '설정', '옵션',
+                # 의견 및 전달
+                '의견은', '의견을', '전달할', '전달하겠습니다', '전달드리겠습니다',
+                '토의가', '검토가', '검토를', '논의가', '논의를'
+            ]
+        else:  # 영어
+            paragraph_triggers = [
+                # Greetings and appreciation
+                'Hello', 'Hi', 'Dear', 'Thank', 'Thanks', 'Appreciate',
+                'Grateful', 'Welcome', 'Greetings',
+                
+                # Conjunctions and transitions
+                'Therefore', 'However', 'Additionally', 'Furthermore', 
+                'Moreover', 'Nevertheless', 'Nonetheless', 'Meanwhile',
+                'Subsequently', 'Consequently', 'Hence', 'Thus', 'Besides',
+                'Although', 'Though', 'While', 'Whereas', 'Instead',
+                
+                # Situation descriptions
+                'Currently', 'Presently', 'At the moment', 'Now',
+                'At this time', 'As of now', 'Recently', 'Lately',
+                'Technically', 'Internally', 'Externally', 'Generally',
+                'Specifically', 'Basically', 'Essentially', 'Fundamentally',
+                
+                # Conditions and assumptions
+                'If', 'When', 'Where', 'Whether', 'Unless', 'Provided',
+                'Assuming', 'Suppose', 'In case', 'Should', 'Would',
+                'Could', 'Might', 'May',
+                
+                # Requests and guidance
+                'Please', 'Kindly', 'We recommend', 'We suggest',
+                'You can', 'You may', 'You should', 'You might',
+                'Try', 'Consider', 'Note that', 'Be aware',
+                'Remember', 'Keep in mind', 'Important',
+                
+                # Apologies and understanding
+                'Sorry', 'Apologize', 'Apologies', 'Unfortunately',
+                'Regret', 'Understand', 'Realize', 'Acknowledge',
+                'We know', 'We understand', 'We appreciate',
+                
+                # Time-related
+                'Always', 'Usually', 'Often', 'Sometimes', 'Occasionally',
+                'Frequently', 'Regularly', 'Continuously', 'Constantly',
+                'Soon', 'Shortly', 'Eventually', 'Later', 'Previously',
+                
+                # Feature and function related
+                'Feature', 'Function', 'Option', 'Setting', 'Button',
+                'Menu', 'Screen', 'Tab', 'Page', 'Section', 'Tool',
+                'Service', 'System', 'Application', 'Update', 'Version',
+                
+                # Problem-solving related
+                'To fix', 'To solve', 'To resolve', 'To address',
+                'Solution', 'Resolution', 'Workaround', 'Alternative',
+                'Issue', 'Problem', 'Error', 'Bug', 'Trouble',
+                
+                # Feedback and communication
+                'Your feedback', 'Your suggestion', 'Your opinion',
+                'We will', 'We are', 'We have', 'Our team',
+                'Will be', 'Has been', 'Have been', 'Working on',
+                'Looking into', 'Reviewing', 'Considering', 'Planning',
+                
+                # Instructions and steps
+                'First', 'Second', 'Third', 'Next', 'Then', 'After',
+                'Before', 'Finally', 'Lastly', 'To begin', 'To start',
+                'Step', 'Follow', 'Navigate', 'Click', 'Tap', 'Select',
+                
+                # Emphasis and clarification
+                'Indeed', 'In fact', 'Actually', 'Certainly', 'Definitely',
+                'Clearly', 'Obviously', 'Importantly', 'Notably',
+                'Particularly', 'Especially', 'Specifically'
+            ]
         
         for i, sentence in enumerate(sentences):
             sentence = sentence.strip()
@@ -573,26 +783,28 @@ class AIAnswerGenerator:
             # 현재 단락에 2개 이상 문장이 있으면 새 단락
             if current_paragraph and len(current_paragraph) >= 2:
                 should_break = True
-            
+
             # 끝맺음말이 포함된 문장은 새 단락
             if any(closing in sentence for closing in ['감사합니다', '감사드립니다', '평안하세요', '주님 안에서']):
                 should_break = True
             
-            # 문장이 너무 길면 (50자 이상) 새 단락 고려
+            # 문장 길이가 50자 이상이고 현재 단락이 있으면 새 단락
             if len(sentence) > 50 and current_paragraph:
                 should_break = True
             
+            # 새 단락 분리
             if should_break and current_paragraph:
                 paragraphs.append(' '.join(current_paragraph))
                 current_paragraph = [sentence]
             else:
                 current_paragraph.append(sentence)
         
-        # 마지막 단락 처리
+        # 마지막 단락 추가
         if current_paragraph:
             paragraphs.append(' '.join(current_paragraph))
         
-        # HTML 단락으로 변환
+        # Quill 에디터 호환을 위한 HTML 단락으로 변환
+        # 각 단락을 <p> 태그로 감싸고, 단락 사이에 <p><br></p> 태그로 빈 줄 추가
         html_paragraphs = []
         for i, paragraph in enumerate(paragraphs):
             html_paragraphs.append(f"<p>{paragraph}</p>")
@@ -603,7 +815,7 @@ class AIAnswerGenerator:
         
         return ''.join(html_paragraphs)
 
-    # 답변 텍스트를 정리하고 포맷팅하는 메서드 (Quill 에디터용)
+    # ☆ 답변 텍스트를 정리하고 포맷팅하는 메서드 (Quill 에디터용)
     def clean_answer_text(self, text: str) -> str:
         if not text:
             return ""
@@ -611,8 +823,8 @@ class AIAnswerGenerator:
         # 제어 문자만 제거하고 HTML 태그는 유지
         text = re.sub(r'[\b\r\f\v]', '', text)
         text = re.sub(r'[\x00-\x08\x0B\x0C\x0E-\x1F\x7F]', '', text)
+
         # HTML 태그 제거하지 않음 (Quill 에디터용)
-        # text = re.sub(r'<[^>]+>', '', text)
         text = re.sub(r'\*\*([^*]+)\*\*', r'\1', text)
         text = re.sub(r'\*([^*]+)\*', r'\1', text)
         
@@ -626,7 +838,17 @@ class AIAnswerGenerator:
         
         return text
 
-    # 한국어 텍스트의 유효성을 검증하는 메서드
+    # ☆ 텍스트 유효성 검증 메서드
+    def is_valid_text(self, text: str, lang: str = 'ko') -> bool:
+        if not text or len(text.strip()) < 3:
+            return False
+        
+        if lang == 'ko':
+            return self.is_valid_korean_text(text)
+        else:  # 영어
+            return self.is_valid_english_text(text)
+
+    # ☆ 한국어 텍스트의 유효성을 검증하는 메서드
     def is_valid_korean_text(self, text: str) -> bool:
         if not text or len(text.strip()) < 3:
             return False
@@ -642,19 +864,21 @@ class AIAnswerGenerator:
         if korean_ratio < 0.3:
             return False
         
+        # 무의미한 패턴 감지 (GPT 할루시네이션 방지)
         meaningless_patterns = [
-            r'^[a-z\s\.,;:\(\)\[\]\-_&\/\'"]+$',
-            r'^[A-Z\s\.,;:\(\)\[\]\-_&\/\'"]+$',
-            r'^[\s\.,;:\(\)\[\]\-_&\/\'"]+$',
-            r'^[0-9\s\.,;:\(\)\[\]\-_&\/\'"]+$',
-            r'.*[а-я].*',
-            r'.*[α-ω].*',
+            r'^[a-z\s\.,;:\(\)\[\]\-_&\/\'"]+$', # 영어
+            r'^[A-Z\s\.,;:\(\)\[\]\-_&\/\'"]+$', # 영어 대문자
+            r'^[\s\.,;:\(\)\[\]\-_&\/\'"]+$',    # 공백
+            r'^[0-9\s\.,;:\(\)\[\]\-_&\/\'"]+$', # 숫자
+            r'.*[а-я].*',                        # 러시아어
+            r'.*[α-ω].*',                        # 그리스어
         ]
         
         for pattern in meaningless_patterns:
             if re.match(pattern, text, re.IGNORECASE):
                 return False
         
+        # 반복 문자 감지: 같은 문자가 5번 이상 연속으로 나타나면 비정상 텍스트로 간주
         if re.search(r'(.)\1{5,}', text):
             return False
         
@@ -664,39 +888,93 @@ class AIAnswerGenerator:
         
         return True
 
-    # 생성된 텍스트를 정리하고 검증하는 메서드
+    # ☆ 영어 텍스트의 유효성을 검증하는 메서드
+    def is_valid_english_text(self, text: str) -> bool:
+        if not text or len(text.strip()) < 3:
+            return False
+        
+        english_chars = len(re.findall(r'[a-zA-Z]', text))
+        total_chars = len(re.sub(r'\s', '', text))
+        
+        if total_chars == 0:
+            return False
+            
+        english_ratio = english_chars / total_chars
+        
+        if english_ratio < 0.7:  # 영어 비율이 70% 미만이면 무효
+            return False
+        
+        # 반복 문자 감지
+        if re.search(r'(.)\1{5,}', text):
+            return False
+        
+        return True
+
+    # ☆ 생성된 텍스트를 정리하고 검증하는 메서드
     def clean_generated_text(self, text: str) -> str:
         if not text:
             return ""
-        
+        # 제어 문자 제거
         text = re.sub(r'[\x00-\x08\x0B\x0C\x0E-\x1F\x7F]', '', text)
         text = re.sub(r'[\b\r\f\v]', '', text)
-        
+
+        # 영어 약어 제거
         text = re.sub(r'\b[a-z]{1,2}\b(?:\s+[a-z]{1,2}\b)*', '', text, flags=re.IGNORECASE)
         text = re.sub(r'[а-я]+', '', text)
         text = re.sub(r'[α-ω]+', '', text)
-        
+
+        # 한글 문자 제거
         text = re.sub(r'[^\w\s가-힣.,!?()"\'-]{3,}', '', text)
         text = re.sub(r'[.,;:!?]{3,}', '.', text)
-        
+
+        # 공백 정리
         text = re.sub(r'\s+', ' ', text)
         text = text.strip()
         
         return text
 
-    # 통일된 GPT 프롬프트 생성 메서드 (모듈화)
-    def get_gpt_prompts(self, query: str, context: str) -> tuple:
-        """
-        통일된 GPT 프롬프트를 생성하는 메서드
-        
-        Args:
-            query (str): 고객 질문
-            context (str): 참고 답변 컨텍스트
-            
-        Returns:
-            tuple: (system_prompt, user_prompt)
-        """
-        system_prompt = """당신은 GOODTV 바이블 애플 고객센터 상담원입니다.
+    # ☆ 통일된 GPT 프롬프트 생성 메서드 (모듈화)
+    def get_gpt_prompts(self, query: str, context: str, lang: str = 'ko') -> tuple:
+        """언어별 GPT 프롬프트 생성"""
+        if lang == 'en': # 영어
+            system_prompt = """You are a GOODTV Bible App customer service representative.
+
+Guidelines:
+1. Follow the style and content of the provided reference answers faithfully
+2. Find and apply solutions from similar situations in the reference answers
+3. Adapt to the customer's specific situation while maintaining the tone and style of the reference answers
+
+⚠️ Absolute Prohibitions:
+- Do not guide non-existent features or menus
+- Do not create specific settings methods or button locations
+- If a feature is not in the reference answers, say "Sorry, this feature is currently not available"
+- If uncertain, respond with "We will review this internally"
+
+4. For feature requests or improvement suggestions, use:
+   - "Thank you for your valuable feedback"
+   - "We will discuss/review this internally"
+   - "We will forward this as an improvement"
+
+5. Address customers as 'Dear user' or similar polite forms
+6. Use 'GOODTV Bible App' or 'Bible App' as the app name
+
+🚫 Do NOT generate greetings or closings:
+- Do not use "Hello", "Thank you", "Best regards", etc.
+- Do not use "God bless", "In Christ", etc.
+- Only write the main content
+
+7. Do not use HTML tags, write in natural sentences"""
+
+            user_prompt = f"""Customer inquiry: {query}
+
+Reference answers (main content only, greetings and closings removed):
+{context}
+
+Based on the reference answers' solution methods and tone, write a specific answer to the customer's problem.
+Important: Do not include greetings or closings. Only write the main content."""
+
+        else:  # 한국어
+            system_prompt = """당신은 GOODTV 바이블 애플 고객센터 상담원입니다.
 
 지침:
 1. 제공된 참고 답변들의 스타일과 내용을 충실히 따라 작성하세요
@@ -725,7 +1003,7 @@ class AIAnswerGenerator:
 
 7. HTML 태그 사용 금지, 자연스러운 문장으로 작성하세요"""
 
-        user_prompt = f"""고객 문의: {query}
+            user_prompt = f"""고객 문의: {query}
 
 참고 답변들 (인사말과 끝맺음말은 제거된 본문만 포함):
 {context}
@@ -736,27 +1014,27 @@ class AIAnswerGenerator:
         return system_prompt, user_prompt
 
     # 향상된 GPT 생성 - 통일된 프롬프트 사용
-    def generate_with_enhanced_gpt(self, query: str, similar_answers: list, context_analysis: dict) -> str:
+    def generate_with_enhanced_gpt(self, query: str, similar_answers: list, context_analysis: dict, lang: str = 'ko') -> str:
         try:
             with memory_cleanup():
                 approach = context_analysis['recommended_approach']
-                context = self.create_enhanced_context(similar_answers)
+                context = self.create_enhanced_context(similar_answers, target_lang=lang)
                 
                 if not context:
                     logging.warning("유효한 컨텍스트가 없어 GPT 생성 중단")
                     return ""
                 
                 # 통일된 프롬프트 생성
-                system_prompt, user_prompt = self.get_gpt_prompts(query, context)
+                system_prompt, user_prompt = self.get_gpt_prompts(query, context, lang)
                 
                 # 접근 방식별 temperature와 max_tokens 설정
                 if approach == 'gpt_with_strong_context':
-                    temperature = 0.2  # 매우 보수적
+                    temperature = 0.2 # 창의성: 매우 보수적적
                     max_tokens = 600
                 elif approach == 'gpt_with_weak_context':
-                    temperature = 0.4  # 적당한 창의성
+                    temperature = 0.4 # 창의성: 적당한 창의성
                     max_tokens = 650
-                else:  # fallback이나 기타
+                else: # fallback이나 기타
                     return ""
                 
                 # GPT API 호출
@@ -779,19 +1057,20 @@ class AIAnswerGenerator:
                 # 생성된 텍스트 정리
                 generated = self.clean_generated_text(generated)
                 
-                if not self.is_valid_korean_text(generated):
+                # 텍스트 유효성 검증
+                if not self.is_valid_text(generated, lang):
                     logging.warning(f"GPT가 무효한 텍스트 생성: {generated[:50]}...")
                     return ""
                 
-                logging.info(f"GPT 생성 성공 ({approach}): {len(generated)}자")
+                logging.info(f"GPT 생성 성공 ({approach}, 언어: {lang}): {len(generated)}자")
                 return generated[:650]
                 
         except Exception as e:
             logging.error(f"향상된 GPT 생성 실패: {e}")
             return ""
 
-    # 최적의 폴백 답변 선택 메서드
-    def get_best_fallback_answer(self, similar_answers: list) -> str:
+    # ☆ 최적의 폴백 답변 선택 메서드
+    def get_best_fallback_answer(self, similar_answers: list, lang: str = 'ko') -> str:
         if not similar_answers:
             return ""
         
@@ -799,15 +1078,19 @@ class AIAnswerGenerator:
         best_answer = ""
         best_score = 0
         
-        for ans in similar_answers[:5]:  # 상위 5개만 검토
+        for ans in similar_answers[:5]: # 상위 5개만 검토
             score = ans['score']
             answer_text = self.clean_generated_text(ans['answer'])
             
-            if not self.is_valid_korean_text(answer_text):
+            # 영어 질문인 경우 답변을 번역
+            if lang == 'en' and ans.get('lang', 'ko') == 'ko':
+                answer_text = self.translate_text(answer_text, 'ko', 'en')
+            
+            if not self.is_valid_text(answer_text, lang):
                 continue
             
             # 종합 점수 계산 (유사도 + 텍스트 길이 + 완성도)
-            length_score = min(len(answer_text) / 200, 1.0)  # 200자 기준 정규화
+            length_score = min(len(answer_text) / 200, 1.0) # 200자 기준 정규화
             completeness_score = 1.0 if answer_text.endswith(('.', '!', '?')) else 0.8
             
             total_score = score * 0.7 + length_score * 0.2 + completeness_score * 0.1
@@ -821,184 +1104,130 @@ class AIAnswerGenerator:
     # 더 보수적인 GPT-3.5-turbo 생성 메서드 (기존 코드와의 호환성 유지)
     # 보수적이고 참고 답변에 충실한 GPT-3.5-turbo 텍스트 생성
     @profile
-    def generate_with_gpt(self, query: str, similar_answers: list) -> str:
-        try:
-            with memory_cleanup():
-                # 컨텍스트 준비 (더 많은 참고 답변 사용)
-                context_answers = []
-                for ans in similar_answers[:5]:  # 3개 → 5개로 늘려서 더 많은 참고
-                    clean_ans = re.sub(r'[\b\r\f\v\x00-\x08\x0B\x0C\x0E-\x1F\x7F]|<[^>]+>', '', ans['answer'])
-                    # 인사말과 끝맺음말 제거하여 본문만 추출
-                    clean_ans = self.remove_greeting_and_closing(clean_ans)
-                    if self.is_valid_korean_text(clean_ans):
-                        context_answers.append(clean_ans[:300])  # 200 → 300으로 늘림
-                
-                if not context_answers:
-                    logging.warning("유효한 한국어 컨텍스트가 없어 GPT 생성 중단")
-                    if similar_answers:
-                        return self.clean_generated_text(similar_answers[0]['answer'])
-                    return ""
-                
-                context = "\n\n---\n\n".join(context_answers)  # 구분자 명확히
-                
-                # ★ 더 제한적이고 보수적인 프롬프트
-                system_prompt = """당신은 GOODTV 바이블 애플 고객센터 상담원입니다.
-
-중요 규칙:
-1. 제공된 참고 답변들과 거의 동일한 스타일과 내용으로 답변해주세요
-2. 창의적인 답변보다는 참고 답변에 충실한 답변을 작성해주세요
-3. 참고 답변의 톤, 문체, 표현을 최대한 따라하세요
-4. 기술적 문제는 캡쳐나 영상을 요청하고 이메일(dev@goodtv.co.kr)로 문의하도록 안내하세요
-5. 고객 호칭은 반드시 '성도님'으로만 사용하세요 (고객님 사용 금지)
-6. HTML 태그나 마크다운 사용 금지, 일반 텍스트만 사용
-
-🚫 인사말 및 끝맺음말 생성 금지:
-- "안녕하세요", "감사합니다", "평안하세요" 등의 인사말을 절대 사용하지 마세요
-- "주님 안에서", "기도드리겠습니다" 등의 끝맺음말을 절대 사용하지 마세요
-- 오직 본문 내용만 작성하세요"""
-
-                user_prompt = f"""고객 질문: {query}
-
-참고 답변들 (인사말과 끝맺음말은 제거된 본문만 포함):
-{context}
-
-위 참고 답변들의 스타일과 톤을 그대로 따라서, 고객의 질문에 적절한 답변을 작성해주세요. 
-창의적인 답변보다는 참고 답변과 유사한 답변을 작성하는 것이 중요합니다.
-고객은 반드시 '성도님'으로 호칭해주세요.
-중요: 인사말("안녕하세요", "감사합니다" 등)이나 끝맺음말("평안하세요", "주님 안에서" 등)을 절대 포함하지 마세요. 오직 본문 내용만 작성하세요."""
-
-                # ★ 더 보수적인 API 설정
-                response = self.openai_client.chat.completions.create(
-                    model=GPT_MODEL,
-                    messages=[
-                        {"role": "system", "content": system_prompt},
-                        {"role": "user", "content": user_prompt}
-                    ],
-                    max_tokens=MAX_TOKENS,
-                    temperature=TEMPERATURE,  # 0.3으로 낮춤
-                    top_p=0.7,  # 0.9 → 0.7로 낮춤
-                    frequency_penalty=0.2,  # 0.1 → 0.2로 높임
-                    presence_penalty=0.2   # 0.1 → 0.2로 높임
-                )
-                
-                generated = response.choices[0].message.content.strip()
-                
-                # 메모리 해제
-                del response
-                
-                # 생성된 텍스트 정리 및 검증
-                generated = self.clean_generated_text(generated)
-                
-                # 한국어 텍스트 검증
-                if not self.is_valid_korean_text(generated):
-                    logging.warning("GPT가 무효한 텍스트를 생성했습니다. 폴백 사용.")
-                    if similar_answers:
-                        fallback = self.clean_generated_text(similar_answers[0]['answer'])
-                        if self.is_valid_korean_text(fallback):
-                            return fallback[:600]
-                    return ""
-                
-                return generated[:600]
-                
-        except Exception as e:
-            logging.error(f"GPT 모델 생성 실패: {e}")
-            # 폴백: 첫 번째 유사 답변 반환
-            if similar_answers:
-                fallback = self.clean_generated_text(similar_answers[0]['answer'])
-                if self.is_valid_korean_text(fallback):
-                    return fallback[:600]
-            return ""
-
-    # 개선된 AI 답변 생성 메인 메서드
     def generate_ai_answer(self, query: str, similar_answers: list, lang: str) -> str:
+        
+        # 1. 언어 감지 (lang 파라미터가 없거나 'auto'인 경우)
+        if not lang or lang == 'auto':
+            detected_lang = self.detect_language(query)
+            lang = detected_lang
+            logging.info(f"감지된 언어: {lang}")
+        
+        # 2. 유사 답변이 없는 경우
         if not similar_answers:
-            default_msg = "<p>문의해주신 내용에 대해 정확한 답변을 드리기 위해 더 자세한 정보가 필요합니다.</p><p><br></p><p>고객센터로 문의해주시면 신속하게 도움을 드리겠습니다.</p>"
+            if lang == 'en':
+                default_msg = "<p>We need more detailed information to provide an accurate answer to your inquiry.</p><p><br></p><p>Please contact our customer service center for prompt assistance.</p>"
+            else:
+                default_msg = "<p>문의해주신 내용에 대해 정확한 답변을 드리기 위해 더 자세한 정보가 필요합니다.</p><p><br></p><p>고객센터로 문의해주시면 신속하게 도움을 드리겠습니다.</p>"
             return default_msg
         
-        # 1. 컨텍스트 분석
+        # 3. 컨텍스트 분석
         context_analysis = self.analyze_context_quality(similar_answers, query)
         
+        # 4. 유용한 컨텍스트가 없는 경우
         if not context_analysis['has_good_context']:
             logging.warning("유용한 컨텍스트가 없어 기본 메시지 반환")
-            return "<p>문의해주신 내용에 대해 정확한 답변을 드리기 위해 더 자세한 정보가 필요합니다.</p><p><br></p><p>고객센터로 문의해주시면 신속하게 도움을 드리겠습니다.</p>"
+            if lang == 'en':
+                return "<p>We need more detailed information to provide an accurate answer to your inquiry.</p><p><br></p><p>Please contact our customer service center for prompt assistance.</p>"
+            else:
+                return "<p>문의해주신 내용에 대해 정확한 답변을 드리기 위해 더 자세한 정보가 필요합니다.</p><p><br></p><p>고객센터로 문의해주시면 신속하게 도움을 드리겠습니다.</p>"
         
         try:
             approach = context_analysis['recommended_approach']
-            logging.info(f"선택된 접근 방식: {approach}")
+            logging.info(f"선택된 접근 방식: {approach}, 언어: {lang}")
             
-            # 2. 접근 방식에 따른 답변 생성
             if approach == 'direct_use':
-                # 직접 사용 - 최고 점수 답변 활용
-                base_answer = self.get_best_fallback_answer(similar_answers[:3])
+                base_answer = self.get_best_fallback_answer(similar_answers[:3], lang)
                 logging.info("높은 유사도로 직접 사용")
                 
             elif approach in ['gpt_with_strong_context', 'gpt_with_weak_context']:
-                # GPT 생성
-                base_answer = self.generate_with_enhanced_gpt(query, similar_answers, context_analysis)
+                base_answer = self.generate_with_enhanced_gpt(query, similar_answers, context_analysis, lang)
                 
-                # GPT 실패 시 폴백
-                if not base_answer or not self.is_valid_korean_text(base_answer):
+                if not base_answer or not self.is_valid_text(base_answer, lang):
                     logging.warning("GPT 생성 실패, 폴백 답변 사용")
-                    base_answer = self.get_best_fallback_answer(similar_answers)
+                    base_answer = self.get_best_fallback_answer(similar_answers, lang)
                     
             else:
-                # 폴백
-                base_answer = self.get_best_fallback_answer(similar_answers)
+                base_answer = self.get_best_fallback_answer(similar_answers, lang)
             
-            # 3. 최종 검증 및 폴백
-            if not base_answer or not self.is_valid_korean_text(base_answer):
+            if not base_answer or not self.is_valid_text(base_answer, lang):
                 logging.error("모든 답변 생성 방법 실패")
-                return "<p>문의해주신 내용에 대해 정확한 답변을 드리기 위해 더 자세한 정보가 필요합니다.</p><p><br></p><p>고객센터로 문의해주시면 신속하게 도움을 드리겠습니다.</p>"
+                if lang == 'en':
+                    return "<p>We need more detailed information to provide an accurate answer to your inquiry.</p><p><br></p><p>Please contact our customer service center for prompt assistance.</p>"
+                else:
+                    return "<p>문의해주신 내용에 대해 정확한 답변을 드리기 위해 더 자세한 정보가 필요합니다.</p><p><br></p><p>고객센터로 문의해주시면 신속하게 도움을 드리겠습니다.</p>"
             
-            # 4. 최종 포맷팅 (Quill 에디터용 HTML 형식 유지)
-            # 앱 이름 정리 및 고객님 → 성도님 변경
-            base_answer = self.remove_old_app_name(base_answer)
-            base_answer = re.sub(r'고객님', '성도님', base_answer)
+            # 언어별 포맷팅
+            if lang == 'en':
+                # 영어 답변 포맷팅
+                base_answer = self.remove_old_app_name(base_answer)
+                
+                # 기존 인사말/끝맺음말 제거
+                base_answer = re.sub(r'^Hello[^.]*\.\s*', '', base_answer, flags=re.IGNORECASE)
+                base_answer = re.sub(r'^This is GOODTV Bible App[^.]*\.\s*', '', base_answer, flags=re.IGNORECASE)
+                base_answer = re.sub(r'\s*Thank you[^.]*\.?\s*$', '', base_answer, flags=re.IGNORECASE)
+                base_answer = re.sub(r'\s*Best regards[^.]*\.?\s*$', '', base_answer, flags=re.IGNORECASE)
+                base_answer = re.sub(r'\s*God bless[^.]*\.?\s*$', '', base_answer, flags=re.IGNORECASE)
+                
+                formatted_body = self.format_answer_with_html_paragraphs(base_answer.strip(), 'en')
+                
+                # 영어 고정 인사말과 끝맺음말
+                final_answer = "<p>Hello, this is GOODTV Bible Apple App customer service team.</p><p><br></p><p>Thank you so much for reaching out.</p><p><br></p>"
+                final_answer += formatted_body
+                final_answer += "<p><br></p><p>Thank you once again for sharing your thoughts with us!</p><p><br></p><p>May God's peace and grace always be with you.</p>"
+                
+            else:  # 한국어
+                # 한국어 답변 최종 포맷팅 (Quill 에디터용 HTML 형식 유지)
+                # 앱 이름 정리 및 고객님 → 성도님 변경
+                base_answer = self.remove_old_app_name(base_answer)
+                base_answer = re.sub(r'고객님', '성도님', base_answer)
+                
+                # 기존 인사말/끝맺음말 제거 (일반 텍스트에서)
+                # 인사말 제거
+                base_answer = re.sub(r'^안녕하세요[^.]*\.\s*', '', base_answer, flags=re.IGNORECASE)
+                base_answer = re.sub(r'^GOODTV\s+바이블\s*애플[^.]*\.\s*', '', base_answer, flags=re.IGNORECASE)
+                base_answer = re.sub(r'^바이블\s*애플[^.]*\.\s*', '', base_answer, flags=re.IGNORECASE)
+                base_answer = re.sub(r'고객센터[^.]*\.\s*', '', base_answer, flags=re.IGNORECASE)
+                
+                # 끝맺음말 제거 (더 강화된 패턴)
+                base_answer = re.sub(r'\s*감사합니다[^.]*\.?\s*$', '', base_answer, flags=re.IGNORECASE)
+                base_answer = re.sub(r'\s*평안하세요[^.]*\.?\s*$', '', base_answer, flags=re.IGNORECASE)
+                base_answer = re.sub(r'\s*주님\s*안에서[^.]*\.?\s*$', '', base_answer, flags=re.IGNORECASE)
+                base_answer = re.sub(r'\s*함께\s*기도하며[^.]*\.?\s*$', '', base_answer, flags=re.IGNORECASE)
+                base_answer = re.sub(r'\s*항상[^.]*바이블\s*애플[^.]*\.?\s*$', '', base_answer, flags=re.IGNORECASE)
+                
+                # 추가 끝맺음말 패턴들 (더 포괄적으로)
+                base_answer = re.sub(r'\s*항상\s*주님\s*안에서[^.]*\.?\s*$', '', base_answer, flags=re.IGNORECASE)
+                base_answer = re.sub(r'\s*주님\s*안에서\s*평안하세요[^.]*\.?\s*$', '', base_answer, flags=re.IGNORECASE)
+                base_answer = re.sub(r'\s*평안하세요[^.]*\.?\s*$', '', base_answer, flags=re.IGNORECASE)
+                
+                # 문장 끝의 끝맺음말들도 제거
+                base_answer = re.sub(r'[,.!?]\s*항상\s*주님\s*안에서[^.]*\.?\s*$', '', base_answer, flags=re.IGNORECASE)
+                base_answer = re.sub(r'[,.!?]\s*감사합니다[^.]*\.?\s*$', '', base_answer, flags=re.IGNORECASE)
+                base_answer = re.sub(r'[,.!?]\s*평안하세요[^.]*\.?\s*$', '', base_answer, flags=re.IGNORECASE)
+                
+                # 본문을 HTML 단락 형식으로 포맷팅
+                formatted_body = self.format_answer_with_html_paragraphs(base_answer.strip(), 'ko')
+                
+                # 한국어 고정 인사말 (HTML 형식으로)
+                final_answer = "<p>안녕하세요. GOODTV 바이블 애플입니다.</p><p><br></p><p>바이블 애플을 이용해주셔서 감사드립니다.</p><p><br></p>"
+                
+                # 포맷팅된 본문 추가
+                final_answer += formatted_body
+                
+                # 고정된 끝맺음말 (HTML 형식으로)
+                final_answer += "<p><br></p><p>항상 성도님께 좋은 성경앱을 제공하기 위해 노력하는 바이블 애플이 되겠습니다.</p><p><br></p><p>감사합니다. 주님 안에서 평안하세요.</p>"
             
-            # 기존 인사말/끝맺음말 제거 (일반 텍스트에서)
-            # 인사말 제거
-            base_answer = re.sub(r'^안녕하세요[^.]*\.\s*', '', base_answer, flags=re.IGNORECASE)
-            base_answer = re.sub(r'^GOODTV\s+바이블\s*애플[^.]*\.\s*', '', base_answer, flags=re.IGNORECASE)
-            base_answer = re.sub(r'^바이블\s*애플[^.]*\.\s*', '', base_answer, flags=re.IGNORECASE)
-            base_answer = re.sub(r'고객센터[^.]*\.\s*', '', base_answer, flags=re.IGNORECASE)
-            
-            # 끝맺음말 제거 (더 강화된 패턴)
-            base_answer = re.sub(r'\s*감사합니다[^.]*\.?\s*$', '', base_answer, flags=re.IGNORECASE)
-            base_answer = re.sub(r'\s*평안하세요[^.]*\.?\s*$', '', base_answer, flags=re.IGNORECASE)
-            base_answer = re.sub(r'\s*주님\s*안에서[^.]*\.?\s*$', '', base_answer, flags=re.IGNORECASE)
-            base_answer = re.sub(r'\s*함께\s*기도하며[^.]*\.?\s*$', '', base_answer, flags=re.IGNORECASE)
-            base_answer = re.sub(r'\s*항상[^.]*바이블\s*애플[^.]*\.?\s*$', '', base_answer, flags=re.IGNORECASE)
-            
-            # 추가 끝맺음말 패턴들 (더 포괄적으로)
-            base_answer = re.sub(r'\s*항상\s*주님\s*안에서[^.]*\.?\s*$', '', base_answer, flags=re.IGNORECASE)
-            base_answer = re.sub(r'\s*주님\s*안에서\s*평안하세요[^.]*\.?\s*$', '', base_answer, flags=re.IGNORECASE)
-            base_answer = re.sub(r'\s*평안하세요[^.]*\.?\s*$', '', base_answer, flags=re.IGNORECASE)
-            
-            # 문장 끝의 끝맺음말들도 제거
-            base_answer = re.sub(r'[,.!?]\s*항상\s*주님\s*안에서[^.]*\.?\s*$', '', base_answer, flags=re.IGNORECASE)
-            base_answer = re.sub(r'[,.!?]\s*감사합니다[^.]*\.?\s*$', '', base_answer, flags=re.IGNORECASE)
-            base_answer = re.sub(r'[,.!?]\s*평안하세요[^.]*\.?\s*$', '', base_answer, flags=re.IGNORECASE)
-            
-            # 본문을 HTML 단락 형식으로 포맷팅
-            formatted_body = self.format_answer_with_html_paragraphs(base_answer.strip())
-            
-            # 고정된 인사말 (HTML 형식으로)
-            final_answer = "<p>안녕하세요. GOODTV 바이블 애플입니다.</p><p><br></p><p>바이블 애플을 이용해주셔서 감사드립니다.</p><p><br></p>"
-            
-            # 포맷팅된 본문 추가
-            final_answer += formatted_body
-            
-            # 고정된 끝맺음말 (HTML 형식으로)
-            final_answer += "<p><br></p><p>항상 성도님께 좋은 성경앱을 제공하기 위해 노력하는 바이블 애플이 되겠습니다.</p><p><br></p><p>감사합니다. 주님 안에서 평안하세요.</p>"
-            
-            logging.info(f"최종 답변 생성 완료: {len(final_answer)}자, 접근방식: {approach}")
+            logging.info(f"최종 답변 생성 완료: {len(final_answer)}자, 접근방식: {approach}, 언어: {lang}")
             return final_answer
             
         except Exception as e:
             logging.error(f"답변 생성 중 오류: {e}")
-            return "<p>죄송합니다. 현재 답변을 생성할 수 없습니다.</p><p><br></p><p>고객센터로 문의해주세요.</p>"
+            if lang == 'en':
+                return "<p>Sorry, we cannot generate an answer at this moment.</p><p><br></p><p>Please contact our customer service center.</p>"
+            else:
+                return "<p>죄송합니다. 현재 답변을 생성할 수 없습니다.</p><p><br></p><p>고객센터로 문의해주세요.</p>"
 
-    # 메모리 최적화된 메인 처리 메서드
+    # ☆ 메모리 최적화된 메인 처리 메서드
     def process(self, seq: int, question: str, lang: str) -> dict:
         try:
             with memory_cleanup():
@@ -1006,12 +1235,17 @@ class AIAnswerGenerator:
                 if not processed_question:
                     return {"success": False, "error": "질문이 비어있습니다."}
                 
-                logging.info(f"처리 시작 - SEQ: {seq}, 질문: {processed_question[:50]}...")
+                # 언어 자동 감지
+                if not lang or lang == 'auto':
+                    lang = self.detect_language(processed_question)
+                    logging.info(f"자동 감지된 언어: {lang}")
                 
-                # 유사 답변 검색
-                similar_answers = self.search_similar_answers(processed_question)
+                logging.info(f"처리 시작 - SEQ: {seq}, 언어: {lang}, 질문: {processed_question[:50]}...")
                 
-                # AI 답변 생성
+                # 유사 답변 검색 (언어 파라미터 전달)
+                similar_answers = self.search_similar_answers(processed_question, lang=lang)
+                
+                # AI 답변 생성 (언어 파라미터 전달)
                 ai_answer = self.generate_ai_answer(processed_question, similar_answers, lang)
                 
                 # 특수문자 정리
@@ -1023,10 +1257,11 @@ class AIAnswerGenerator:
                     "answer": ai_answer,
                     "similar_count": len(similar_answers),
                     "embedding_model": "text-embedding-3-small",
-                    "generation_model": "gpt-3.5-turbo"
+                    "generation_model": "gpt-3.5-turbo",
+                    "detected_language": lang
                 }
                 
-                logging.info(f"처리 완료 - SEQ: {seq}, HTML 답변 생성됨")
+                logging.info(f"처리 완료 - SEQ: {seq}, 언어: {lang}, HTML 답변 생성됨")
                 return result
                 
         except Exception as e:
@@ -1056,7 +1291,7 @@ class PineconeSyncManager:
         self.index = index                    # Pinecone 벡터 인덱스
         self.openai_client = openai_client    # OpenAI API 클라이언트
     
-    # AI를 이용한 한국어 오타 수정 메서드
+    # ☆ AI를 이용한 한국어 오타 수정 메서드
     def fix_korean_typos_with_ai(self, text: str) -> str:
         if not text or len(text.strip()) < 3:
             return text
@@ -1101,7 +1336,7 @@ class PineconeSyncManager:
                 )
                 
                 corrected_text = response.choices[0].message.content.strip()
-                del response
+                del response # 메모리 해제
                 
                 # 결과 검증
                 if not corrected_text or len(corrected_text) == 0:
@@ -1179,6 +1414,7 @@ class PineconeSyncManager:
         return CATEGORY_MAPPING.get(str(cate_idx), '사용 문의(기타)')
     
     # MSSQL에서 데이터 조회하는 메서드
+    # 파라미터화된 쿼리로 SQL 인젝션 방지, ? 플레이스홀더를 사용하여 안전하게 값을 바인딩
     def get_mssql_data(self, seq: int) -> Optional[Dict]:
         try:
             with memory_cleanup():
@@ -1232,7 +1468,7 @@ class PineconeSyncManager:
                 
                 # 텍스트 전처리 (질문에 AI 오타 수정 적용)
                 raw_question = self.preprocess_text(data['contents'])
-                question = self.fix_korean_typos_with_ai(raw_question)  # AI 오타 수정 적용
+                question = self.fix_korean_typos_with_ai(raw_question)
                 answer = self.preprocess_text(data['reply_contents'])
                 
                 # 임베딩 생성 (질문 기반)
@@ -1246,7 +1482,7 @@ class PineconeSyncManager:
                 # 메타데이터 구성 (질문은 오타 수정된 버전 사용)
                 metadata = {
                     "seq": int(data['seq']),
-                    "question": question,  # 오타 수정된 질문 사용
+                    "question": question,
                     "answer": self.preprocess_text(data['reply_contents'], for_metadata=True),
                     "category": category,
                     "name": data['name'] if data['name'] else "익명",
@@ -1298,27 +1534,8 @@ sync_manager = PineconeSyncManager() # Pinecone 동기화 매니저
 # ==================================================
 # 10. Flask RESTful API 엔드포인트 정의
 # ==================================================
-
-# AI 답변 생성 API 엔드포인트 (메인 기능)
-#
+# ★ AI 답변 생성 API 엔드포인트 (메인 기능)
 # ASP Classic에서 호출하는 주요 API로, 고객 질문에 대한 AI 답변을 생성
-#
-# 요청 형식 (JSON POST):
-# {
-#     "seq": 123,           # 문의 시퀀스 번호 (선택)
-#     "question": "앱이 안되요",  # 고객 질문 (필수)
-#     "lang": "kr"          # 언어 (선택, 기본값: kr)
-# }
-#
-# 응답 형식:
-# {
-#     "success": true,
-#     "answer": "<p>안녕하세요...</p>",  # HTML 형식 답변
-#     "similar_count": 5,               # 검색된 유사 답변 개수
-#     "embedding_model": "text-embedding-3-small",
-#     "generation_model": "gpt-3.5-turbo"
-# }
-#
 # 처리 과정:
 # 1. 질문 전처리 및 검증
 # 2. Pinecone에서 유사 답변 검색
@@ -1332,7 +1549,7 @@ def generate_answer():
             data = request.get_json()
             seq = data.get('seq', 0)
             question = data.get('question', '')
-            lang = data.get('lang', 'kr')
+            lang = data.get('lang', 'auto')  # 기본값을 'auto'로 변경 (자동 감지)
             
             if not question:
                 return jsonify({"success": False, "error": "질문이 필요합니다."}), 400
@@ -1342,13 +1559,13 @@ def generate_answer():
             response = jsonify(result)
             response.headers['Content-Type'] = 'application/json; charset=utf-8'
 
-            # ★ 메모리 사용량 모니터링
-            snapshot = tracemalloc.take_snapshot()
-            top_stats = snapshot.statistics('lineno')
-            memory_usage = sum(stat.size for stat in top_stats) / 1024 / 1024  # MB
+            # 메모리 사용량 모니터링
+            snapshot = tracemalloc.take_snapshot() # 각 요청 후 메모리 스냅샷 촬영
+            top_stats = snapshot.statistics('lineno') # 각 요청 후 메모리 사용량 통계
+            memory_usage = sum(stat.size for stat in top_stats) / 1024 / 1024  # MB로 반환
             logging.info(f"현재 메모리 사용량: {memory_usage:.2f}MB")
             
-            if memory_usage > 500:  # 500MB 초과시 경고
+            if memory_usage > 500: # 500MB 초과시 경고 및 가비지 컬렉션 강제 실행
                 logging.warning(f"높은 메모리 사용량 감지: {memory_usage:.2f}MB")
                 gc.collect()
 
@@ -1358,25 +1575,8 @@ def generate_answer():
         logging.error(f"API 호출 오류: {str(e)}")
         return jsonify({"success": False, "error": str(e)}), 500
 
-# MSSQL 데이터를 Pinecone에 동기화하는 API 엔드포인트
-#
+# ★ MSSQL 데이터를 Pinecone에 동기화하는 API 엔드포인트
 # 운영 시스템에서 새로운 Q&A 데이터가 생성되거나 수정될 때 호출
-#
-# 요청 형식 (JSON POST):
-# {
-#     "seq": 12345,        # MSSQL의 문의 시퀀스 번호 (필수)
-#     "mode": "upsert"     # 동작 모드: "upsert"(생성/수정) 또는 "delete"(삭제)
-# }
-#
-# 응답 형식:
-# {
-#     "success": true,
-#     "message": "Pinecone 생성 완료",
-#     "seq": 12345,
-#     "vector_id": "qa_bible_12345",
-#     "is_update": false
-# }
-#
 # 처리 과정:
 # 1. MSSQL에서 해당 seq 데이터 조회
 # 2. AI로 질문 오타 수정
@@ -1412,28 +1612,8 @@ def sync_to_pinecone():
         logging.error(f"Pinecone 동기화 API 오류: {str(e)}")
         return jsonify({"success": False, "error": str(e)}), 500
 
-# 시스템 상태 확인을 위한 헬스체크 API 엔드포인트
-#
-# 로드밸런서나 모니터링 시스템에서 호출하여 서비스 상태 확인
-#
-# 요청: GET /health
-#
-# 응답 형식 (정상):
-# {
-#     "status": "healthy",
-#     "pinecone_vectors": 1500,
-#     "timestamp": "2024-01-01T12:00:00",
-#     "services": {
-#         "ai_answer": "active",
-#         "pinecone_sync": "active"
-#     }
-# }
-#
-# 응답 형식 (오류):
-# {
-#     "status": "unhealthy",
-#     "error": "Pinecone connection failed"
-# }
+# ★ 시스템 상태 확인을 위한 헬스체크 API 엔드포인트
+# 로드밸런서나 모니터링 시스템에서 호출하여 서버 상태 확인
 @app.route('/health', methods=['GET'])
 def health_check():
     try:
@@ -1445,7 +1625,8 @@ def health_check():
             "timestamp": datetime.now().isoformat(),
             "services": {
                 "ai_answer": "active",
-                "pinecone_sync": "active"
+                "pinecone_sync": "active",
+                "multilingual_support": "active"  # 다국어 지원 상태 추가
             }
         }), 200
     except Exception as e:
@@ -1455,7 +1636,7 @@ def health_check():
         }), 500
 
 # ==================================================
-# 11. 메인 실행 부분 (절차적 프로그래밍)
+# 11. 메인 실행 부분
 # ==================================================
 # Flask 웹 서버 시작점
 # 
@@ -1480,6 +1661,7 @@ if __name__ == "__main__":
     print(f"🤖 AI 모델: {GPT_MODEL} (Enhanced Context Mode)")
     print(f"🔍 임베딩 모델: {MODEL_NAME}")
     print(f"🗃️  벡터 DB: Pinecone ({INDEX_NAME})")
+    print(f"🌏 다국어 지원: 한국어(ko), 영어(en)")
     print("🔧 제공 서비스:")
     print("   ├── AI 답변 생성 (/generate_answer)")
     print("   ├── Pinecone 동기화 (/sync_to_pinecone)")
