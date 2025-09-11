@@ -218,12 +218,7 @@ class AIAnswerGenerator:
             else:
                 return 'en'
 
-    # ☆ 입력 텍스트를 AI 처리에 적합하게 전처리하는 메서드
-    # Args:
-    #     text (str): 원본 텍스트
-            
-    # Returns:
-    #     str: 정제된 텍스트
+    # ☆ 입력 텍스트를 AI 처리에 적합하게 전처리하는 메서드 (원본 텍스트 -> 정제된 텍스트)
     def preprocess_text(self, text: str) -> str:
 
         # null 체크
@@ -249,8 +244,7 @@ class AIAnswerGenerator:
         
         return text
 
-    # ☆ JSON 문자열 이스케이프 처리
-    # 특수문자가 포함된 텍스트를 JSON으로 안전하게 변환
+    # ☆ JSON 문자열 이스케이프 처리 (특수문자가 포함된 텍스트를 JSON으로 안전하게 변환)
     def escape_json_string(self, text: str) -> str:
         
         if not text:
@@ -292,7 +286,6 @@ class AIAnswerGenerator:
     # Returns:
     #     list: 유사 답변 리스트 [{'score': float, 'question': str, 'answer': str, ...}, ...]
     def search_similar_answers(self, query: str, top_k: int = 5, similarity_threshold: float = 0.6, lang: str = 'ko') -> list:
-        """언어별 유사 답변 검색"""
         try:
             with memory_cleanup():
                 # 영어 질문인 경우 번역하여 한국어로도 검색
@@ -545,7 +538,7 @@ class AIAnswerGenerator:
         
         return text
 
-        # GPT 답변 생성을 위한 향상된 컨텍스트 생성 메서드
+    # ☆ GPT 답변 생성을 위한 향상된 컨텍스트 생성 메서드
     # 
     # 컨텍스트 생성 전략:
     # 1. 품질별 답변 그룹핑 (고/중/낮은 품질)
@@ -1013,7 +1006,7 @@ Important: Do not include greetings or closings. Only write the main content."""
 
         return system_prompt, user_prompt
 
-    # 향상된 GPT 생성 - 통일된 프롬프트 사용
+    # ☆ 향상된 GPT 생성 - 통일된 프롬프트 사용
     def generate_with_enhanced_gpt(self, query: str, similar_answers: list, context_analysis: dict, lang: str = 'ko') -> str:
         try:
             with memory_cleanup():
@@ -1101,7 +1094,7 @@ Important: Do not include greetings or closings. Only write the main content."""
         
         return best_answer
 
-    # 더 보수적인 GPT-3.5-turbo 생성 메서드 (기존 코드와의 호환성 유지)
+    # ☆ 더 보수적인 GPT-3.5-turbo 생성 메서드 (기존 코드와의 호환성 유지)
     # 보수적이고 참고 답변에 충실한 GPT-3.5-turbo 텍스트 생성
     @profile
     def generate_ai_answer(self, query: str, similar_answers: list, lang: str) -> str:
@@ -1359,7 +1352,7 @@ class PineconeSyncManager:
             # AI 실패 시 원문 그대로 반환
             return text
         
-    # 텍스트 전처리 메서드
+    # ☆ 텍스트 전처리 메서드
     def preprocess_text(self, text: str, for_metadata: bool = False) -> str:
         if not text or text == 'None':
             return ""
@@ -1392,7 +1385,7 @@ class PineconeSyncManager:
         
         return text
     
-    # OpenAI로 임베딩 생성하는 메서드
+    # ☆ OpenAI로 임베딩 생성하는 메서드
     def create_embedding(self, text: str) -> Optional[list]:
         try:
             if not text or not text.strip():
@@ -1409,11 +1402,11 @@ class PineconeSyncManager:
             logging.error(f"임베딩 생성 실패: {e}")
             return None
     
-    # 카테고리 인덱스를 이름으로 변환하는 메서드
+    # ☆ 카테고리 인덱스를 이름으로 변환하는 메서드
     def get_category_name(self, cate_idx: str) -> str:
         return CATEGORY_MAPPING.get(str(cate_idx), '사용 문의(기타)')
     
-    # MSSQL에서 데이터 조회하는 메서드
+    # ☆ MSSQL에서 데이터 조회하는 메서드
     # 파라미터화된 쿼리로 SQL 인젝션 방지, ? 플레이스홀더를 사용하여 안전하게 값을 바인딩
     def get_mssql_data(self, seq: int) -> Optional[Dict]:
         try:
@@ -1450,7 +1443,7 @@ class PineconeSyncManager:
             logging.error(f"MSSQL 조회 실패: {e}")
             return None
     
-    # MSSQL 데이터를 Pinecone에 동기화하는 메서드
+    # ☆ MSSQL 데이터를 Pinecone에 동기화하는 메서드
     def sync_to_pinecone(self, seq: int, mode: str = 'upsert') -> Dict[str, Any]:
         try:
             with memory_cleanup():
