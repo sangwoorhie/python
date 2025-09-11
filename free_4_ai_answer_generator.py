@@ -48,20 +48,21 @@ from contextlib import contextmanager      # 컨텍스트 매니저 (with문 사
 # ==================================================
 # 2. 시스템 초기화 및 설정
 # ==================================================
-# 메모리 추적 시작 - 메모리 누수 및 사용량을 모니터링하기 위함
+# 메모리 추적 시작 - 메모리 누수 및 사용량을 모니터링하기 위함 (이 시점부터 모든 메모리 할당이 기록되어 나중에 메모리 사용량 분석이 가능해짐)
 tracemalloc.start() 
 
 # Flask 웹 애플리케이션 인스턴스 생성
 # __name__: 현재 모듈명을 전달하여 Flask가 리소스 위치를 찾을 수 있게 함
 app = Flask(__name__)
 
-# CORS 설정 - 모든 도메인에서의 API 호출을 허용 (ASP Classic에서 호출하기 위함)
+# CORS 설정 - 모든 엔드포인트에서 cross-origin 요청청을 허용 (ASP Classic에서 호출하기 위함)
 CORS(app)
 
 # ==================================================
 # 3. 로깅 시스템 설정
 # ==================================================
 # 운영환경에서 로그를 파일로 저장하여 디버깅 및 모니터링 가능
+# 로깅 설정에서 중요한 것은 encoding='utf-8'. 한글 에러 메시지나 디버그 정보가 깨지지 않고 로그 파일에 기록되도록 함
 logging.basicConfig(
     filename='/home/ec2-user/python/logs/ai_generator.log',  # 로그 파일 경로
     level=logging.INFO,                                      # INFO 레벨 이상 로그 기록
@@ -72,22 +73,23 @@ logging.basicConfig(
 # ==================================================
 # 4. 환경변수 로드 및 시스템 상수 정의
 # ==================================================
-# .env 파일에서 API 키 및 데이터베이스 설정 로드 [[memory:8074246]]
+# .env 파일에서 API 키 및 데이터베이스 설정 로드
 load_dotenv()
 
-# AI 모델 및 벡터 데이터베이스 설정 상수들
+# AI 임베딩 모델 및 벡터 데이터베이스 설정 상수들
 MODEL_NAME = 'text-embedding-3-small'          # OpenAI 임베딩 모델명
 INDEX_NAME = "bible-app-support-1536-openai"   # Pinecone 인덱스명
 EMBEDDING_DIMENSION = 1536                      # 임베딩 벡터 차원수
 MAX_TEXT_LENGTH = 8000                          # 텍스트 최대 길이 제한
 
-# GPT 모델 설정 - 보수적 설정으로 일관성 있는 답변 생성
+# GPT 자연어 모델 설정 - 보수적 설정으로 일관성 있는 답변 생성
 GPT_MODEL = 'gpt-3.5-turbo'     # 사용할 GPT 모델
 MAX_TOKENS = 600                 # 생성할 최대 토큰 수 (답변 길이 제한)
 TEMPERATURE = 0.3                # 창의성 수준 (낮을수록 일관된 답변)
 
 # 고객 문의 카테고리 매핑 테이블
-# MSSQL의 cate_idx(숫자)를 사람이 읽기 쉬운 카테고리명으로 변환
+# 카테고리 매핑 딕셔너리는 MSSQL의 숫자 인덱스를 사람이 읽을 수 있는 한글 카테고리명으로 변환합니다. 
+# 이는 Pinecone 메타데이터에 저장되어 검색 결과의 가독성을 높입니다.
 CATEGORY_MAPPING = {
     '1': '후원/해지',                   
     '2': '성경 통독(읽기,듣기,녹음)',   
@@ -103,8 +105,13 @@ CATEGORY_MAPPING = {
 # 5. 유틸리티 함수 정의
 # ==================================================
 # 메모리 정리를 위한 컨텍스트 매니저
-# with문과 함께 사용하여 블록 실행 후 자동으로 가비지 컬렉션 수행
-# 대용량 데이터 처리 시 메모리 누수 방지를 위해 사용
+# with문 진입시 try 블록 실행
+# yield에서 일시정지하고 with 블록 내부 코드 실행
+# yield는 파이썬에서 제너레이터를 만들때 사용하는 키워드로써, 함수 내에서 yield를 사용하면 그 함수는 제너레이터 함수가 됩니다.
+# 제너레이터 함수는 값을 반환하는 대신 값을 하나씩 생성하여 반환합니다. (파이썬에서 대용량 데이터 처리를 위해 사용)
+# with 블록 종료시 finally에서 gc.collect() 실행
+
+# 이렇게 하면 대용량 데이터 처리 후 자동으로 가비지 컬렉션이 실행됩니다.
 @contextmanager
 def memory_cleanup():
     try:
@@ -123,6 +130,7 @@ try:
     
     # OpenAI API 클라이언트 초기화
     # GPT 모델 및 임베딩 생성을 위한 클라이언트
+    # openai.api_key = ... 방식보다 객체지향적으로 설계
     openai_client = openai.OpenAI(api_key=os.getenv('OPENAI_API_KEY'))
     
     # MSSQL 데이터베이스 연결 설정
@@ -134,8 +142,8 @@ try:
         'password': os.getenv('MSSQL_PASSWORD')    # DB 비밀번호
     }
     
-    # ODBC 연결 문자열 구성
-    # SQL Server 표준 ODBC 드라이버를 사용한 연결 문자열
+    # MSSQL Server 연결 문자열 구성
+    # MSSQL Server 표준 ODBC 드라이버를 사용한 연결 문자열
     connection_string = (
             f"DRIVER={{ODBC Driver 17 for SQL Server}};"  # ODBC 드라이버 버전
             f"SERVER={mssql_config['server']},1433;"      # 서버 주소와 포트
@@ -169,19 +177,12 @@ except Exception as e:
 class AIAnswerGenerator:
 
     # 클래스 초기화 메서드
-    # OpenAI 클라이언트를 인스턴스 변수로 설정
+    # OpenAI 클라이언트를 인스턴스 변수로 설정. 이는 의존성 주입 패턴의 간소화된 형태
     def __init__(self):
         
         self.openai_client = openai_client
     
-    # 입력 텍스트를 AI 처리에 적합하게 전처리하는 메서드
-        
-    # 처리 과정:
-    # 1. HTML 엔티티 디코딩 (&amp; → & 등)
-    # 2. HTML 태그 제거 및 변환
-    # 3. 공백 및 줄바꿈 정규화
-    # 4. 불필요한 문자 제거
-        
+    # ☆ 입력 텍스트를 AI 처리에 적합하게 전처리하는 메서드
     # Args:
     #     text (str): 원본 텍스트
             
@@ -197,7 +198,7 @@ class AIAnswerGenerator:
         text = str(text)
         text = html.unescape(text)  # &amp; → &, &lt; → < 등
         
-        # HTML 태그를 텍스트 형태로 변환 (구조 유지)
+        # HTML 태그 제거 및및 텍스트 형태로 변환 (구조 유지)
         text = re.sub(r'<br\s*/?>', '\n', text, flags=re.IGNORECASE)      # <br> → 줄바꿈
         text = re.sub(r'</p>', '\n\n', text, flags=re.IGNORECASE)         # </p> → 단락 구분
         text = re.sub(r'<p[^>]*>', '\n', text, flags=re.IGNORECASE)       # <p> → 줄바꿈
@@ -205,30 +206,25 @@ class AIAnswerGenerator:
         text = re.sub(r'</li>', '', text, flags=re.IGNORECASE)            # </li> 제거
         text = re.sub(r'<[^>]+>', '', text)                               # 나머지 HTML 태그 모두 제거
         
-        # 공백 정규화 - 일관된 형태로 변환
+        # 공백 및 줄바꿈 정규화 - 일관된 형태로 변환
         text = re.sub(r'\n{3,}', '\n\n', text)    # 3개 이상 줄바꿈 → 2개로 제한
         text = re.sub(r'[ \t]+', ' ', text)       # 연속 공백/탭 → 단일 공백
         text = text.strip()                       # 앞뒤 공백 제거
         
         return text
 
-    # JSON 문자열 이스케이프 처리
+    # ☆ JSON 문자열 이스케이프 처리
     # 특수문자가 포함된 텍스트를 JSON으로 안전하게 변환
     def escape_json_string(self, text: str) -> str:
         
         if not text:
             return ""
-        escaped = json_module.dumps(text, ensure_ascii=False)
+        escaped = json_module.dumps(text, ensure_ascii=False) # ensure_ascii=False: 한글 깨짐 방지
         return escaped[1:-1]  # 앞뒤 따옴표 제거
 
 
-    # OpenAI API를 사용하여 텍스트를 벡터로 변환하는 메서드
+    # ☆ OpenAI API를 사용하여 텍스트를 벡터로 변환하는 메서드
     # 벡터 임베딩: 텍스트의 의미를 수치 배열로 표현하여 유사도 계산 가능
-        
-    # 메모리 최적화:
-    # - with memory_cleanup() 사용으로 메모리 누수 방지
-    # - 응답 객체 명시적 삭제
-    # - 임베딩 벡터만 복사하여 반환
         
     # Args:
     #     text (str): 임베딩할 텍스트
@@ -237,42 +233,36 @@ class AIAnswerGenerator:
     #     Optional[list]: 1536차원 벡터 배열 또는 None(실패시)
     def create_embedding(self, text: str) -> Optional[list]:
         
+        # 이중 검증을 수행. 빈 문자열뿐만 아니라 공백만 있는 문자열도 걸러냄. 이는 텍스트 비교 시 예상치 못한 오류를 방지하기 위함
         if not text or not text.strip():
             return None
             
         try:
-            with memory_cleanup():
+            with memory_cleanup(): # 메모리 누수 방지 (블록 종료 시 가비지 컬렉션)
                 # OpenAI Embedding API 호출
                 response = self.openai_client.embeddings.create(
                     model='text-embedding-3-small',    # 작고 빠른 임베딩 모델
-                    input=text[:8000]                   # 텍스트 길이 제한 (8000자)
+                    input=text[:8000]                  # 텍스트 길이 제한 (토큰 제한 방지지)
                 )
                 
                 # 메모리 효율성을 위해 벡터만 복사 후 응답 객체 삭제
-                embedding = response.data[0].embedding.copy()
-                del response  # 메모리 해제
+                embedding = response.data[0].embedding.copy() # 임베딩 벡터만 복사하여 반환 (깊은 복사로 독립적인 리스트 생성)
+                del response  # 원본 응답 객체 즉시 삭제 (메모리 해제)
                 return embedding
                 
         except Exception as e:
             logging.error(f"임베딩 생성 실패: {e}")
             return None
 
-    # Pinecone 벡터 데이터베이스에서 유사한 답변을 검색하는 메서드
-        
-    # 검색 과정:
-    # 1. 질문을 벡터로 변환
-    # 2. Pinecone에서 코사인 유사도 기반 검색
-    # 3. 임계값 이상의 결과만 필터링
-    # 4. 메타데이터와 함께 구조화된 결과 반환
-        
+    # ☆ Pinecone 벡터 데이터베이스에서 유사한 답변을 검색하는 메서드
     # Args:
     #     query (str): 검색할 질문
-    #     top_k (int): 검색할 최대 개수 (기본값: 15)
+    #     top_k (int): 검색할 최대 개수 (기본값: 5)
     #     similarity_threshold (float): 유사도 임계값 (기본값: 0.6)
             
     # Returns:
     #     list: 유사 답변 리스트 [{'score': float, 'question': str, 'answer': str, ...}, ...]
-    def search_similar_answers(self, query: str, top_k: int = 15, similarity_threshold: float = 0.6) -> list:
+    def search_similar_answers(self, query: str, top_k: int = 5, similarity_threshold: float = 0.6) -> list:
         
         try:
             with memory_cleanup():
@@ -282,21 +272,22 @@ class AIAnswerGenerator:
                     return []
                 
                 # 2. Pinecone에서 벡터 유사도 검색 수행
+                # Pinecone 쿼리에서 include_metadata=True는 벡터뿐만 아니라 저장된 메타데이터(질문, 답변, 카테고리)도 함께 반환받음
                 results = index.query(
                     vector=query_vector,           # 검색할 벡터
-                    top_k=top_k,                   # 상위 15개 결과
+                    top_k=top_k,                   # 상위 5개 결과
                     include_metadata=True          # 메타데이터 포함 (질문, 답변, 카테고리 등)
                 )
                 
                 # 3. 결과 필터링 및 구조화
                 filtered_results = []
-                for i, match in enumerate(results['matches']):
+                for i, match in enumerate(results['matches']): # enumerate로 순위(rank) 생성
                     score = match['score']  # 유사도 점수 (0~1, 높을수록 유사)
                     question = match['metadata'].get('question', '')
                     answer = match['metadata'].get('answer', '')
                     category = match['metadata'].get('category', '일반')
                     
-                    # 유사도 임계값(0.6) 이상만 포함하여 정확도 향상
+                    # 유사도 임계값(0.6) 이상만 포함하여 정확도 향상, 임계값 이하는 버림 (노이즈 제거)
                     if score >= similarity_threshold:
                         filtered_results.append({
                             'score': score,
@@ -312,8 +303,8 @@ class AIAnswerGenerator:
                         logging.info(f"참고 답변: {answer[:100]}...")
                 
                 # 4. 메모리 정리
-                del results
-                del query_vector
+                del results # 원본 응답 객체 즉시 삭제 (메모리 해제)
+                del query_vector # 검색 벡터 즉시 삭제 (메모리 해제)
                 
                 logging.info(f"총 {len(filtered_results)}개의 유사 답변 검색 완료")
                 return filtered_results
@@ -322,20 +313,8 @@ class AIAnswerGenerator:
             logging.error(f"Pinecone 검색 실패: {str(e)}")
             return []
 
-    # 검색된 유사 답변들의 품질을 분석하여 최적의 답변 생성 전략을 결정하는 메서드
-    # 
-    # 분석 기준:
-    # 1. 최고 유사도 점수
-    # 2. 고품질(0.7+) 답변 개수
-    # 3. 중품질(0.5-0.7) 답변 개수
-    # 4. 카테고리 분포 분석
-    # 
-    # 전략 결정 로직:
-    # - 0.8+ : 직접 사용 (매우 유사한 기존 답변 활용)
-    # - 0.7+ : 강한 컨텍스트로 GPT 생성
-    # - 0.6+ : 약한 컨텍스트로 GPT 생성
-    # - 0.6- : 폴백 처리
-    # 
+    # ☆ 검색된 유사 답변들의 품질을 분석하여 최적의 답변 생성 전략을 결정하는 메서드
+
     # Args:
     #     similar_answers (list): 검색된 유사 답변 리스트
     #     query (str): 원본 질문
@@ -353,16 +332,22 @@ class AIAnswerGenerator:
             }
         
         # 품질 지표 계산
+        # 리스트 컴프리헨션 (리스트를 쉽게, 짧게 한 줄로 만들 수 있는 파이썬의 문법)을 사용한 효율적인 카운팅: 한 번의 순회로 조건에 맞는 항목 수를 계산
+        # [ ( 변수를 활용한 값 ) for ( 사용할 변수 이름 ) in ( 순회할 수 있는 값 ) if ( 조건 ) ]
         best_score = similar_answers[0]['score']  # 가장 높은 유사도 점수
-        high_quality_count = len([ans for ans in similar_answers if ans['score'] >= 0.7])    # 고품질 답변 개수
-        medium_quality_count = len([ans for ans in similar_answers if 0.5 <= ans['score'] < 0.7])  # 중품질 답변 개수
+        high_quality_count = len([ans for ans in similar_answers if ans['score'] >= 0.7])    # 고품질(0.7+) 답변 개수
+        medium_quality_count = len([ans for ans in similar_answers if 0.5 <= ans['score'] < 0.7])  # 중품질(0.5-0.7) 답변 개수
         
-        # 카테고리 분포 분석 (상위 5개 답변 기준)
-        # 비슷한 카테고리가 많으면 도메인 특화된 답변 가능
-        categories = [ans['category'] for ans in similar_answers[:5]]
-        category_distribution = {cat: categories.count(cat) for cat in set(categories)}
+        # 상위 5개에서 카테고리 추출하여 분포 계산 (비슷한 카테고리가 많으면 도메인 특화된 답변 가능)
+        # 딕셔너리 컴프리헨션: { 키: 값 for 키, 값 in 순회할 수 있는 값 if 조건 }
+        categories = [ans['category'] for ans in similar_answers[:5]] # 상위 5개 답변의 카테고리 추출 (리스트 컴프리헨션)
+        category_distribution = {cat: categories.count(cat) for cat in set(categories)} # 카테고리별 개수 계산 (딕셔너리 컴프리헨션), set()으로 중복 제거, 카운트 메서드 사용
         
-        # 답변 생성 접근 방식 결정 (규칙 기반)
+        # 의사 결정 트리 : 최적의 답변 생성 전략을 결정하는 알고리즘
+        # 최고 유사도 점수가 0.8 이상이면 기존 답변 직접 활용
+        # 최고 유사도 점수가 0.7 이상이고 고품질 답변이 2개 이상이면 고품질 컨텍스트로 GPT 생성
+        # 최고 유사도 점수가 0.6 이상이고 중품질 답변이 3개 이상이면 약한 컨텍스트로 GPT 생성
+        # 그 외는 품질이 낮아 폴백 처리
         if best_score >= 0.8:
             approach = 'direct_use'                # 매우 유사 → 기존 답변 직접 활용
         elif best_score >= 0.7 or high_quality_count >= 2:
@@ -644,7 +629,52 @@ class AIAnswerGenerator:
         
         return text
 
-    # 향상된 GPT 생성 - 컨텍스트 품질에 따른 차별화된 프롬프트
+    # 통일된 GPT 프롬프트 생성 메서드 (모듈화)
+    def get_gpt_prompts(self, query: str, context: str) -> tuple:
+        """
+        통일된 GPT 프롬프트를 생성하는 메서드
+        
+        Args:
+            query (str): 고객 질문
+            context (str): 참고 답변 컨텍스트
+            
+        Returns:
+            tuple: (system_prompt, user_prompt)
+        """
+        system_prompt = """당신은 GOODTV 바이블 애플 고객센터 상담원입니다.
+
+지침:
+1. 제공된 참고 답변들의 스타일과 내용을 충실히 따라 작성하세요
+2. 참고 답변에서 유사한 상황의 해결책을 찾아 적용하세요
+3. 고객의 구체적 상황에 맞게 보완하되, 참고 답변의 톤과 스타일을 유지하세요
+
+⚠️ 절대 금지사항:
+- 존재하지 않는 기능이나 메뉴를 안내하지 마세요
+- 구체적인 설정 방법이나 버튼 위치를 창작하지 마세요
+- 참고 답변에 없는 기능은 "죄송하지만 현재 제공되지 않는 기능"으로 안내하세요
+- 불확실한 경우 "내부적으로 검토하겠다"고 답변하세요
+
+4. 기능 요청이나 개선 제안의 경우:
+   - "좋은 의견 감사합니다"
+   - "내부적으로 논의/검토하겠습니다"
+   - "개선 사항으로 전달하겠습니다"
+   위 표현들을 사용하세요
+
+5. 고객은 반드시 '성도님'으로 호칭하세요
+6. 앱 이름은 'GOODTV 바이블 애플' 또는 '바이블 애플'로 통일하세요
+7. 인삿말 및 끝맺음말이 중복되서 표현되지 않도록 하세요
+8. HTML 태그 사용 금지, 자연스러운 문장으로 작성하세요"""
+
+        user_prompt = f"""고객 문의: {query}
+
+참고 답변들:
+{context}
+
+위 참고 답변들의 해결 방식과 톤을 그대로 따라서 고객의 문제에 대한 구체적인 답변을 작성하세요."""
+
+        return system_prompt, user_prompt
+
+    # 향상된 GPT 생성 - 통일된 프롬프트 사용
     def generate_with_enhanced_gpt(self, query: str, similar_answers: list, context_analysis: dict) -> str:
         try:
             with memory_cleanup():
@@ -655,50 +685,16 @@ class AIAnswerGenerator:
                     logging.warning("유효한 컨텍스트가 없어 GPT 생성 중단")
                     return ""
                 
-                # 접근 방식별 차별화된 프롬프트
+                # 통일된 프롬프트 생성
+                system_prompt, user_prompt = self.get_gpt_prompts(query, context)
+                
+                # 접근 방식별 temperature와 max_tokens 설정
                 if approach == 'gpt_with_strong_context':
-                    # 강한 컨텍스트 - 참고 답변 충실히 따라하기
-                    system_prompt = """당신은 GOODTV 바이블 애플 고객센터 상담원입니다.
-
-강력한 지침:
-1. 제공된 참고 답변들의 스타일과 내용을 충실히 따라 작성하세요
-2. 참고 답변에서 유사한 상황의 해결책을 찾아 적용하세요
-3. 기술적 문제는 구체적인 해결 방법을 제시하되, 복잡한 경우 캡쳐/영상을 요청하세요
-4. 고객은 반드시 '성도님'으로 호칭하세요
-5. 앱 이름은 'GOODTV 바이블 애플' 또는 '바이블 애플'로 통일하세요
-6. HTML 태그 사용 금지, 자연스러운 문장으로 작성하세요"""
-
-                    user_prompt = f"""고객 문의: {query}
-
-참고 답변들 (높은 유사도 - 이 답변들과 매우 유사하게 작성하세요):
-{context}
-
-위 참고 답변들의 해결 방식과 톤을 그대로 따라서 고객의 문제에 대한 구체적인 답변을 작성하세요."""
-
                     temperature = 0.2  # 매우 보수적
                     max_tokens = 600
-
                 elif approach == 'gpt_with_weak_context':
-                    # 약한 컨텍스트 - 참고하되 보완 필요
-                    system_prompt = """당신은 GOODTV 바이블 애플 고객센터 상담원입니다.
-
-지침:
-1. 참고 답변들을 바탕으로 하되, 고객의 구체적 상황에 맞게 보완하세요
-2. 기술적 문제 해결을 위한 구체적 단계를 제시하세요
-3. 해결되지 않을 경우의 대안도 제시하세요
-4. 기술적 문제는 구체적인 해결 방법을 제시하되, 복잡한 경우 캡쳐/영상을 요청하세요
-5. '성도님' 호칭 사용, 친근하고 도움이 되는 톤으로 작성하세요"""
-
-                    user_prompt = f"""고객 문의: {query}
-
-참고 답변들 (중간 유사도 - 참고하되 고객 상황에 맞게 보완하세요):
-{context}
-
-위 참고 답변들을 참고하여, 고객의 구체적인 문제 상황에 맞는 실용적인 해결책을 제시해주세요."""
-
                     temperature = 0.4  # 적당한 창의성
                     max_tokens = 650
-
                 else:  # fallback이나 기타
                     return ""
                 
@@ -1395,7 +1391,7 @@ def health_check():
 # ==================================================
 # Flask 웹 서버 시작점
 # 
-# 이 부분은 스크립트가 직접 실행될 때만 실행되는 절차적 코드
+# 이 부분은 이 파일(스크립트)가 직접 실행될 때만 실행되는 절차적 코드
 # 다른 모듈에서 import할 때는 실행되지 않음
 # 
 # 설정:
@@ -1425,5 +1421,5 @@ if __name__ == "__main__":
     # Flask 웹 서버 시작
     # host='0.0.0.0': 모든 네트워크 인터페이스에서 접근 허용
     # debug=False: 운영 모드 (보안상 중요)
-    # threaded=True: 멀티스레딩으로 동시 요청 처리 가능
+    # threaded=True: 멀티스레딩 활성화, 동시 요청 처리 가능
     app.run(host='0.0.0.0', port=port, debug=False, threaded=True)
