@@ -193,6 +193,74 @@ class AIAnswerGenerator:
     # OpenAI 클라이언트를 인스턴스 변수로 설정. 이는 의존성 주입 패턴의 간소화된 형태
     def __init__(self):
         self.openai_client = openai_client
+
+    # ☆ 한국어 오타 수정 메서드
+    def fix_korean_typos_with_ai(self, text: str) -> str:
+        if not text or len(text.strip()) < 3:
+            return text
+        
+        # 너무 긴 텍스트는 처리하지 않음 (비용 절약)
+        if len(text) > 500:
+            logging.warning(f"텍스트가 너무 길어 오타 수정 건너뜀: {len(text)}자")
+            return text
+        
+        try:
+            with memory_cleanup():
+                system_prompt = """당신은 한국어 맞춤법 및 오타 교정 전문가입니다.
+
+지침:
+1. 입력된 한국어 텍스트의 맞춤법과 오타만 수정하세요
+2. 원문의 의미와 어조는 절대 변경하지 마세요
+3. 띄어쓰기, 맞춤법, 조사 사용법을 정확히 교정하세요
+4. 앱/어플리케이션 관련 기술 용어는 표준 용어로 통일하세요
+5. 수정이 필요없다면 원문 그대로 반환하세요
+6. 수정된 텍스트만 반환하고 추가 설명은 하지 마세요
+
+예시:
+- "어플이 안됀다" → "앱이 안 돼요"
+- "다운받기가 안되요" → "다운로드가 안 돼요"
+- "삭재하고싶어요" → "삭제하고 싶어요"
+- "업데이드해주세요" → "업데이트해주세요"
+"""
+
+                user_prompt = f"다음 텍스트의 맞춤법과 오타를 수정해주세요:\n\n{text}"
+
+                response = self.openai_client.chat.completions.create(
+                    model='gpt-3.5-turbo',
+                    messages=[
+                        {"role": "system", "content": system_prompt},
+                        {"role": "user", "content": user_prompt}
+                    ],
+                    max_tokens=600,
+                    temperature=0.1,  # 매우 보수적으로 설정
+                    top_p=0.8,
+                    frequency_penalty=0.0,
+                    presence_penalty=0.0
+                )
+                
+                corrected_text = response.choices[0].message.content.strip()
+                del response # 메모리 해제
+                
+                # 결과 검증
+                if not corrected_text or len(corrected_text) == 0:
+                    logging.warning("AI 오타 수정 결과가 비어있음, 원문 반환")
+                    return text
+                
+                # 너무 많이 변경된 경우 의심스러우므로 원문 반환
+                if len(corrected_text) > len(text) * 2:
+                    logging.warning("AI 오타 수정 결과가 원문보다 너무 길어짐, 원문 반환")
+                    return text
+                
+                # 수정 내용이 있으면 로그 기록
+                if corrected_text != text:
+                    logging.info(f"AI 오타 수정: '{text[:50]}...' → '{corrected_text[:50]}...'")
+                
+                return corrected_text
+                
+        except Exception as e:
+            logging.error(f"AI 오타 수정 실패: {e}")
+            # AI 실패 시 원문 그대로 반환
+            return text
     
     # ☆ 텍스트의 언어를 감지하는 메서드
     def detect_language(self, text: str) -> str:
@@ -285,32 +353,36 @@ class AIAnswerGenerator:
             
     # Returns:
     #     list: 유사 답변 리스트 [{'score': float, 'question': str, 'answer': str, ...}, ...]
-    def search_similar_answers(self, query: str, top_k: int = 5, similarity_threshold: float = 0.1, lang: str = 'ko') -> list:
+    def search_similar_answers(self, query: str, top_k: int = 5, similarity_threshold: float = 0.3, lang: str = 'ko') -> list:
         try:
             with memory_cleanup():
-                # 영어 질문인 경우 번역하여 한국어로도 검색
-                if lang == 'en':
-                    # 1. 검색 질문을 벡터로 변환
-                    query_vector = self.create_embedding(query)
-                    
-                    # 한국어로 번역하여 추가 검색 (선택적)
-                    translated_query = self.translate_text(query, 'en', 'ko')
-                    if translated_query:
-                        korean_vector = self.create_embedding(translated_query)
+                # ★ 디버깅 로그 추가
+                logging.info(f"=== 검색 시작 ===")
+                logging.info(f"원본 질문: {query[:100]}")
+                
+                # ★ 오타 수정 적용 (동기화와 동일하게!)
+                if lang == 'ko':
+                    corrected_query = self.fix_korean_typos_with_ai(query)
+                    logging.info(f"오타 수정 후: {corrected_query[:100]}")
+                    query_to_embed = corrected_query
                 else:
-                    query_vector = self.create_embedding(query)
-                    korean_vector = None
+                    query_to_embed = query
+                
+                # 임베딩 생성
+                query_vector = self.create_embedding(query_to_embed)
                 
                 if query_vector is None:
+                    logging.error("임베딩 생성 실패")
                     return []
                 
-                # 2. Pinecone에서 벡터 유사도 검색 수행
-                # Pinecone 쿼리에서 include_metadata=True는 벡터뿐만 아니라 저장된 메타데이터(질문, 답변, 카테고리)도 함께 반환받음
+                # Pinecone 검색
                 results = index.query(
-                    vector=query_vector,           # 검색할 벡터
-                    top_k=top_k,                   # 상위 5개 결과
-                    include_metadata=True          # 메타데이터 포함 (질문, 답변, 카테고리 등)
+                    vector=query_vector,
+                    top_k=top_k * 2,  # 더 많이 검색
+                    include_metadata=True
                 )
+                
+                logging.info(f"Pinecone 검색 결과: {len(results['matches'])}개")
                 
                 # 한국어 벡터로 추가 검색 (영어 질문인 경우)
                 if lang == 'en' and korean_vector:
@@ -1106,12 +1178,13 @@ Important: Do not include greetings or closings. Only write the main content."""
             logging.info(f"감지된 언어: {lang}")
         
         # 2. 유사 답변이 없는 경우
-        # if not similar_answers:
-        #     if lang == 'en':
-        #         default_msg = "<p>We need more detailed information to provide an accurate answer to your inquiry.</p><p><br></p><p>Please contact our customer service center for prompt assistance.</p>"
-        #     else:
-        #         default_msg = "<p>문의해주신 내용에 대해 정확한 답변을 드리기 위해 더 자세한 정보가 필요합니다.</p><p><br></p><p>고객센터로 문의해주시면 신속하게 도움을 드리겠습니다.</p>"
-        #     return default_msg
+        if not similar_answers:
+            logging.warning("유사 답변이 전혀 없음")
+            if lang == 'en':
+                default_msg = "<p>We need more detailed information to provide an accurate answer to your inquiry.</p><p><br></p><p>Please contact our customer service center for prompt assistance.</p>"
+            else:
+                default_msg = "<p>문의해주신 내용에 대해 정확한 답변을 드리기 위해 더 자세한 정보가 필요합니다.</p><p><br></p><p>고객센터로 문의해주시면 신속하게 도움을 드리겠습니다.</p>"
+            return default_msg
         
         # 3. 컨텍스트 분석
         context_analysis = self.analyze_context_quality(similar_answers, query)
@@ -1233,7 +1306,14 @@ Important: Do not include greetings or closings. Only write the main content."""
     def process(self, seq: int, question: str, lang: str) -> dict:
         try:
             with memory_cleanup():
+                # 1. 전처리
                 processed_question = self.preprocess_text(question)
+
+                # 2. 오타 수정 추가 (Pinecone 저장 시와 동일하게!)
+                if lang == 'ko' or lang == 'auto':
+                    processed_question = self.fix_korean_typos_with_ai(processed_question)
+                    logging.info(f"오타 수정 적용: {question[:50]} → {processed_question[:50]}")
+                
                 if not processed_question:
                     return {"success": False, "error": "질문이 비어있습니다."}
                 
@@ -1244,7 +1324,7 @@ Important: Do not include greetings or closings. Only write the main content."""
                 
                 logging.info(f"처리 시작 - SEQ: {seq}, 언어: {lang}, 질문: {processed_question[:50]}...")
                 
-                # 유사 답변 검색 (언어 파라미터 전달)
+                # 3. 유사 답변 검색 (이제 오타 수정된 질문으로 검색)
                 similar_answers = self.search_similar_answers(processed_question, lang=lang)
                 
                 # AI 답변 생성 (언어 파라미터 전달)
