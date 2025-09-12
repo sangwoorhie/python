@@ -285,7 +285,7 @@ class AIAnswerGenerator:
             
     # Returns:
     #     list: 유사 답변 리스트 [{'score': float, 'question': str, 'answer': str, ...}, ...]
-    def search_similar_answers(self, query: str, top_k: int = 5, similarity_threshold: float = 0.3, lang: str = 'ko') -> list:
+    def search_similar_answers(self, query: str, top_k: int = 5, similarity_threshold: float = 0.1, lang: str = 'ko') -> list:
         try:
             with memory_cleanup():
                 # 영어 질문인 경우 번역하여 한국어로도 검색
@@ -337,7 +337,7 @@ class AIAnswerGenerator:
                     category = match['metadata'].get('category', '일반')
                     
                     # 유사도 임계값(0.6) 이상만 포함하여 정확도 향상, 임계값 이하는 버림 (노이즈 제거)
-                    if score >= 0.3:# similarity_threshold:
+                    if score >= similarity_threshold:
                         filtered_results.append({
                             'score': score,
                             'question': question,
@@ -448,7 +448,7 @@ class AIAnswerGenerator:
         
         # 분석 결과 구조화
         analysis = {
-            'has_good_context': best_score >= 0.5,
+            'has_good_context': len(similar_answers) > 0,
             'best_score': best_score,
             'high_quality_count': high_quality_count,
             'medium_quality_count': medium_quality_count,
@@ -1117,13 +1117,22 @@ Important: Do not include greetings or closings. Only write the main content."""
         context_analysis = self.analyze_context_quality(similar_answers, query)
         
         # 4. 유용한 컨텍스트가 없는 경우
-        if not context_analysis['has_good_context']:
-            logging.warning("유용한 컨텍스트가 없어 기본 메시지 반환")
+        # if not context_analysis['has_good_context']:
+        #     logging.warning("유용한 컨텍스트가 없어 기본 메시지 반환")
+        #     if lang == 'en':
+        #         return "<p>We need more detailed information to provide an accurate answer to your inquiry.</p><p><br></p><p>Please contact our customer service center for prompt assistance.</p>"
+        #     else:
+        #         return "<p>문의해주신 내용에 대해 정확한 답변을 드리기 위해 더 자세한 정보가 필요합니다.</p><p><br></p><p>고객센터로 문의해주시면 신속하게 도움을 드리겠습니다.</p>"
+        
+        if not similar_answers:
+        # 답변이 전혀 없을 때만 기본 메시지
+            logging.warning("검색 결과가 전혀 없음")
             if lang == 'en':
                 return "<p>We need more detailed information to provide an accurate answer to your inquiry.</p><p><br></p><p>Please contact our customer service center for prompt assistance.</p>"
             else:
                 return "<p>문의해주신 내용에 대해 정확한 답변을 드리기 위해 더 자세한 정보가 필요합니다.</p><p><br></p><p>고객센터로 문의해주시면 신속하게 도움을 드리겠습니다.</p>"
         
+
         try:
             approach = context_analysis['recommended_approach']
             logging.info(f"선택된 접근 방식: {approach}, 언어: {lang}")
