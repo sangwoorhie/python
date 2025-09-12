@@ -87,7 +87,7 @@ MAX_TEXT_LENGTH = 8000                          # 텍스트 최대 길이 제한
 # GPT 자연어 모델 설정 - 보수적 설정으로 일관성 있는 답변 생성
 GPT_MODEL = 'gpt-3.5-turbo'     # 사용할 GPT 모델
 MAX_TOKENS = 600                 # 생성할 최대 토큰 수 (답변 길이 제한)
-TEMPERATURE = 0.4                # 창의성 수준 (낮을수록 일관된 답변)
+TEMPERATURE = 0.5                # 창의성 수준 (낮을수록 일관된 답변)
 
 # 고객 문의 카테고리 매핑 테이블
 # 카테고리 매핑 딕셔너리는 MSSQL의 숫자 인덱스를 사람이 읽을 수 있는 한글 카테고리명으로 변환합니다. 
@@ -393,7 +393,7 @@ class AIAnswerGenerator:
                     {"role": "user", "content": text}
                 ],
                 max_tokens=600,
-                temperature=0.4
+                temperature=0.5
             )
             
             return response.choices[0].message.content.strip()
@@ -1022,10 +1022,10 @@ Important: Do not include greetings or closings. Only write the main content."""
                 
                 # 접근 방식별 temperature와 max_tokens 설정
                 if approach == 'gpt_with_strong_context':
-                    temperature = 0.3 # 창의성: 매우 보수적
+                    temperature = 0.5 # 창의성: 매우 보수적
                     max_tokens = 600
                 elif approach == 'gpt_with_weak_context':
-                    temperature = 0.4 # 창의성: 적당한 창의성
+                    temperature = 0.6 # 창의성: 적당한 창의성
                     max_tokens = 650
                 else: # fallback이나 기타
                     return ""
