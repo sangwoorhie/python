@@ -281,11 +281,11 @@ class AIAnswerGenerator:
     # Args:
     #     query (str): 검색할 질문
     #     top_k (int): 검색할 최대 개수 (기본값: 5)
-    #     similarity_threshold (float): 유사도 임계값 (기본값: 0.5)
+    #     similarity_threshold (float): 유사도 임계값 (기본값: 0.3)
             
     # Returns:
     #     list: 유사 답변 리스트 [{'score': float, 'question': str, 'answer': str, ...}, ...]
-    def search_similar_answers(self, query: str, top_k: int = 5, similarity_threshold: float = 0.5, lang: str = 'ko') -> list:
+    def search_similar_answers(self, query: str, top_k: int = 5, similarity_threshold: float = 0.3, lang: str = 'ko') -> list:
         try:
             with memory_cleanup():
                 # 영어 질문인 경우 번역하여 한국어로도 검색
@@ -337,7 +337,7 @@ class AIAnswerGenerator:
                     category = match['metadata'].get('category', '일반')
                     
                     # 유사도 임계값(0.6) 이상만 포함하여 정확도 향상, 임계값 이하는 버림 (노이즈 제거)
-                    if score >= similarity_threshold:
+                    if score >= 0.3:# similarity_threshold:
                         filtered_results.append({
                             'score': score,
                             'question': question,
@@ -414,7 +414,7 @@ class AIAnswerGenerator:
         # 유사 답변이 없으면 기본값 반환
         if not similar_answers:
             return {
-                'has_good_context': False,
+                'has_good_context': len(similar_answers) > 0,
                 'best_score': 0.0,
                 'recommended_approach': 'fallback',
                 'context_summary': '유사 답변이 없습니다.'
@@ -1106,12 +1106,12 @@ Important: Do not include greetings or closings. Only write the main content."""
             logging.info(f"감지된 언어: {lang}")
         
         # 2. 유사 답변이 없는 경우
-        if not similar_answers:
-            if lang == 'en':
-                default_msg = "<p>We need more detailed information to provide an accurate answer to your inquiry.</p><p><br></p><p>Please contact our customer service center for prompt assistance.</p>"
-            else:
-                default_msg = "<p>문의해주신 내용에 대해 정확한 답변을 드리기 위해 더 자세한 정보가 필요합니다.</p><p><br></p><p>고객센터로 문의해주시면 신속하게 도움을 드리겠습니다.</p>"
-            return default_msg
+        # if not similar_answers:
+        #     if lang == 'en':
+        #         default_msg = "<p>We need more detailed information to provide an accurate answer to your inquiry.</p><p><br></p><p>Please contact our customer service center for prompt assistance.</p>"
+        #     else:
+        #         default_msg = "<p>문의해주신 내용에 대해 정확한 답변을 드리기 위해 더 자세한 정보가 필요합니다.</p><p><br></p><p>고객센터로 문의해주시면 신속하게 도움을 드리겠습니다.</p>"
+        #     return default_msg
         
         # 3. 컨텍스트 분석
         context_analysis = self.analyze_context_quality(similar_answers, query)
