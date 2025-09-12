@@ -281,11 +281,11 @@ class AIAnswerGenerator:
     # Args:
     #     query (str): 검색할 질문
     #     top_k (int): 검색할 최대 개수 (기본값: 5)
-    #     similarity_threshold (float): 유사도 임계값 (기본값: 0.6)
+    #     similarity_threshold (float): 유사도 임계값 (기본값: 0.5)
             
     # Returns:
     #     list: 유사 답변 리스트 [{'score': float, 'question': str, 'answer': str, ...}, ...]
-    def search_similar_answers(self, query: str, top_k: int = 5, similarity_threshold: float = 0.6, lang: str = 'ko') -> list:
+    def search_similar_answers(self, query: str, top_k: int = 5, similarity_threshold: float = 0.5, lang: str = 'ko') -> list:
         try:
             with memory_cleanup():
                 # 영어 질문인 경우 번역하여 한국어로도 검색
@@ -448,7 +448,7 @@ class AIAnswerGenerator:
         
         # 분석 결과 구조화
         analysis = {
-            'has_good_context': best_score >= 0.6,
+            'has_good_context': best_score >= 0.5,
             'best_score': best_score,
             'high_quality_count': high_quality_count,
             'medium_quality_count': medium_quality_count,
@@ -854,7 +854,7 @@ class AIAnswerGenerator:
             
         korean_ratio = korean_chars / total_chars
         
-        if korean_ratio < 0.3:
+        if korean_ratio < 0.2:
             return False
         
         # 무의미한 패턴 감지 (GPT 할루시네이션 방지)
