@@ -385,20 +385,25 @@ class AIAnswerGenerator:
                 logging.info(f"Pinecone 검색 결과: {len(results['matches'])}개")
                 
                 # 한국어 벡터로 추가 검색 (영어 질문인 경우)
-                if lang == 'en' and korean_vector:
-                    korean_results = index.query(
-                        vector=korean_vector,       # 검색할 벡터
-                        top_k=3,                    # 보조 검색은 적게 (3개)
-                        include_metadata=True       # 메타데이터 포함 (질문, 답변, 카테고리 등)
-                    )
-                    # 결과 병합 (중복 제거)
-                    seen_ids = set()
-                    merged_matches = []
-                    for match in results['matches'] + korean_results['matches']:
-                        if match['id'] not in seen_ids:
-                            seen_ids.add(match['id'])
-                            merged_matches.append(match)
-                    results['matches'] = sorted(merged_matches, key=lambda x: x['score'], reverse=True)[:top_k]
+                korean_vector = None  # 초기화하여 NameError 방지
+                if lang == 'en':
+                    # 영어 쿼리를 한국어로 번역 후 임베딩 생성 (누락된 로직 추가)
+                    korean_query = self.translate_text(query_to_embed, 'en', 'ko')
+                    korean_vector = self.create_embedding(korean_query)
+                    if korean_vector:
+                        korean_results = index.query(
+                            vector=korean_vector,       # 검색할 벡터
+                            top_k=3,                    # 보조 검색은 적게 (3개)
+                            include_metadata=True       # 메타데이터 포함 (질문, 답변, 카테고리 등)
+                        )
+                        # 결과 병합 (중복 제거)
+                        seen_ids = set()
+                        merged_matches = []
+                        for match in results['matches'] + korean_results['matches']:
+                            if match['id'] not in seen_ids:
+                                seen_ids.add(match['id'])
+                                merged_matches.append(match)
+                        results['matches'] = sorted(merged_matches, key=lambda x: x['score'], reverse=True)[:top_k]
                 
                 # 3. 결과 필터링 및 구조화
                 filtered_results = []
@@ -429,7 +434,7 @@ class AIAnswerGenerator:
                         
                 # 4. 메모리 정리
                 del results # 원본 응답 객체 즉시 삭제 (메모리 해제)
-                if korean_vector:
+                if korean_vector is not None:
                     del korean_vector # 한국어 벡터 즉시 삭제 (메모리 해제)
                 del query_vector # 검색 벡터 즉시 삭제 (메모리 해제)
                 
@@ -437,7 +442,7 @@ class AIAnswerGenerator:
                 return filtered_results
                 
         except Exception as e:
-            logging.error(f"Pinecone 검색 실패: {str(e)}")
+            logging.error(f"Pinecone 검색 실패: {str(e)}, query: {query[:50]}..., lang: {lang}")
             return []
 
     # ☆ GPT를 사용한 번역
