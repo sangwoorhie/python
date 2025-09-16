@@ -513,6 +513,67 @@ class AIAnswerGenerator:
             logging.error(f"번역 실패: {e}")
             return text
 
+    # ☆ AI 기반 질문 의도 분석 메서드 (개선된 버전)
+    def analyze_question_intent(self, query: str) -> dict:
+        """AI를 이용해 질문의 의도와 핵심 내용을 분석"""
+        try:
+            with memory_cleanup():
+                system_prompt = """당신은 고객 문의 분석 전문가입니다. 
+고객의 질문을 분석하여 다음 정보를 JSON 형태로 반환하세요:
+
+{
+  "intent_type": "문의 유형 (예: 오탈자신고, 기능문의, 기술지원, 개선제안, 일반문의)",
+  "main_topic": "주요 주제 (예: 성경본문, 음원재생, 검색기능, 번역본, 앱기능)",
+  "specific_request": "구체적 요청사항 요약",
+  "keywords": ["핵심", "키워드", "목록"],
+  "urgency": "긴급도 (low/medium/high)"
+}
+
+분석 시 주의사항:
+- 질문의 핵심 의도를 정확히 파악하세요
+- 구체적인 문제나 요청사항을 식별하세요
+- 기존 카테고리에 얽매이지 말고 유연하게 분석하세요"""
+
+                user_prompt = f"다음 고객 문의를 분석해주세요: {query}"
+
+                response = self.openai_client.chat.completions.create(
+                    model='gpt-3.5-turbo',
+                    messages=[
+                        {"role": "system", "content": system_prompt},
+                        {"role": "user", "content": user_prompt}
+                    ],
+                    max_tokens=300,
+                    temperature=0.3
+                )
+                
+                result_text = response.choices[0].message.content.strip()
+                
+                # JSON 파싱 시도
+                try:
+                    import json
+                    result = json.loads(result_text)
+                    logging.info(f"AI 의도 분석 결과: {result}")
+                    return result
+                except json.JSONDecodeError:
+                    logging.warning(f"JSON 파싱 실패, 기본값 반환: {result_text}")
+                    return {
+                        "intent_type": "일반문의",
+                        "main_topic": "기타",
+                        "specific_request": query[:100],
+                        "keywords": [query[:20]],
+                        "urgency": "medium"
+                    }
+                
+        except Exception as e:
+            logging.error(f"AI 의도 분석 실패: {e}")
+            return {
+                "intent_type": "일반문의", 
+                "main_topic": "기타",
+                "specific_request": query[:100],
+                "keywords": [query[:20]],
+                "urgency": "medium"
+            }
+
     # ☆ 검색된 유사 답변들의 품질을 분석하여 최적의 답변 생성 전략을 결정하는 메서드
 
     # Args:
@@ -528,51 +589,171 @@ class AIAnswerGenerator:
                 'has_good_context': False,
                 'best_score': 0.0,
                 'recommended_approach': 'fallback',
-                'context_summary': '유사 답변이 없습니다.'
+                'context_summary': '유사 답변이 없습니다.',
+                'question_type': '일반문의',
+                'context_relevance': 'none'
             }
         
+        # 🔥 AI 기반 질문 의도 분석 추가
+        question_analysis = self.analyze_question_intent(query)
+        question_type = question_analysis.get('intent_type', '일반문의')
+        logging.info(f"AI 분석 결과: {question_analysis}")
+        
         # 품질 지표 계산
-        # 리스트 컴프리헨션 (리스트를 쉽게, 짧게 한 줄로 만들 수 있는 파이썬의 문법)을 사용한 효율적인 카운팅: 한 번의 순회로 조건에 맞는 항목 수를 계산
-        # [ ( 변수를 활용한 값 ) for ( 사용할 변수 이름 ) in ( 순회할 수 있는 값 ) if ( 조건 ) ]
-        best_score = similar_answers[0]['score']  # 가장 높은 유사도 점수
-        high_quality_count = len([ans for ans in similar_answers if ans['score'] >= 0.7])    # 고품질(0.7+) 답변 개수
-        medium_quality_count = len([ans for ans in similar_answers if 0.5 <= ans['score'] < 0.7])  # 중품질(0.5-0.7) 답변 개수
+        best_score = similar_answers[0]['score']
+        high_quality_count = len([ans for ans in similar_answers if ans['score'] >= 0.7])
+        medium_quality_count = len([ans for ans in similar_answers if 0.5 <= ans['score'] < 0.7])
         
-        # 상위 5개에서 카테고리 추출하여 분포 계산 (비슷한 카테고리가 많으면 도메인 특화된 답변 가능)
-        # 딕셔너리 컴프리헨션: { 키: 값 for 키, 값 in 순회할 수 있는 값 if 조건 }
-        categories = [ans['category'] for ans in similar_answers[:5]] # 상위 5개 답변의 카테고리 추출 (리스트 컴프리헨션)
-        category_distribution = {cat: categories.count(cat) for cat in set(categories)} # 카테고리별 개수 계산 (딕셔너리 컴프리헨션), set()으로 중복 제거, 카운트 메서드 사용
+        # 🔥 카테고리 일치도 분석 추가
+        categories = [ans['category'] for ans in similar_answers[:5]]
+        category_distribution = {cat: categories.count(cat) for cat in set(categories)}
         
-        # 의사 결정 트리 : 최적의 답변 생성 전략을 결정하는 알고리즘
-        # 100% 또는 거의 완벽한 일치(0.95+)는 직접 사용
-        # 매우 높은 유사도(0.8+)는 기존 답변 직접 활용
-        # 높은 유사도(0.7+) 또는 고품질 답변이 2개 이상이면 고품질 컨텍스트로 GPT 생성
-        # 중간 유사도(0.5+) 또는 중품질 답변이 있으면 약한 컨텍스트로 GPT 생성
-        # 그 외는 폴백 처리
-        if best_score >= 0.95:
-            approach = 'direct_use'                # 거의 완벽한 일치 → 기존 답변 직접 활용
-        elif best_score >= 0.8:
-            approach = 'direct_use'                # 매우 유사 → 기존 답변 직접 활용
-        elif best_score >= 0.7 or high_quality_count >= 2:
-            approach = 'gpt_with_strong_context'   # 고품질 컨텍스트로 GPT 생성
-        elif best_score >= 0.5 or medium_quality_count >= 1:
-            approach = 'gpt_with_weak_context'     # 약한 컨텍스트로 GPT 생성
+        # 🔥 질문 의도와 답변 카테고리 일치도 검사
+        context_relevance = self.check_context_relevance_ai(question_analysis, categories, query, similar_answers[:3])
+        logging.info(f"컨텍스트 관련성: {context_relevance}")
+        
+        # 🔥 의사 결정 트리 개선 - 관련성을 고려한 전략 결정
+        if context_relevance == 'irrelevant':
+            # 관련성이 없으면 무조건 폴백 처리
+            approach = 'fallback'
+            logging.warning(f"질문 유형({question_type})과 검색된 답변의 관련성이 낮아 폴백 처리")
+        elif best_score >= 0.95 and context_relevance in ['high', 'medium']:
+            approach = 'direct_use'
+        elif best_score >= 0.8 and context_relevance == 'high':
+            approach = 'direct_use'
+        elif best_score >= 0.7 and context_relevance in ['high', 'medium']:
+            approach = 'gpt_with_strong_context'
+        elif best_score >= 0.5 and context_relevance == 'high':
+            approach = 'gpt_with_strong_context'
+        elif best_score >= 0.4 and context_relevance in ['high', 'medium']:
+            approach = 'gpt_with_weak_context'
         else:
-            approach = 'fallback'                  # 품질이 낮아 폴백 처리
+            approach = 'fallback'
         
         # 분석 결과 구조화
         analysis = {
-            'has_good_context': best_score >= 0.5,  # 최소 50% 이상 유사하면 유용한 컨텍스트로 간주
+            'has_good_context': context_relevance in ['high', 'medium'] and best_score >= 0.4,
             'best_score': best_score,
             'high_quality_count': high_quality_count,
             'medium_quality_count': medium_quality_count,
             'category_distribution': category_distribution,
             'recommended_approach': approach,
-            'context_summary': f"최고점수: {best_score:.3f}, 고품질: {high_quality_count}개, 중품질: {medium_quality_count}개"
+            'question_analysis': question_analysis,
+            'question_type': question_type,
+            'context_relevance': context_relevance,
+            'context_summary': f"의도: {question_type}, 주제: {question_analysis.get('main_topic', 'N/A')}, 관련성: {context_relevance}, 최고점수: {best_score:.3f}"
         }
         
-        logging.info(f"컨텍스트 분석 결과: {analysis}")
+        logging.info(f"향상된 컨텍스트 분석 결과: {analysis}")
         return analysis
+
+    # ☆ AI 기반 컨텍스트 관련성 검사 메서드 (개선된 버전)
+    def check_context_relevance_ai(self, question_analysis: dict, answer_categories: list, query: str, top_answers: list) -> str:
+        """AI를 이용해 질문 의도와 답변의 관련성을 지능적으로 검사"""
+        
+        try:
+            # 상위 답변들의 내용 요약
+            answer_summaries = []
+            for i, answer in enumerate(top_answers[:3]):
+                answer_text = answer.get('answer', '')[:200]  # 첫 200자만
+                answer_summaries.append(f"답변{i+1}: {answer_text}")
+            
+            combined_answers = "\n".join(answer_summaries)
+            
+            with memory_cleanup():
+                system_prompt = """당신은 문의-답변 관련성 분석 전문가입니다.
+고객의 질문 의도와 검색된 답변들의 관련성을 분석하여 다음 중 하나로 판정하세요:
+
+- "high": 답변이 질문과 직접적으로 관련되고 도움이 됨
+- "medium": 답변이 어느 정도 관련이 있지만 완전히 일치하지는 않음  
+- "low": 답변이 약간 관련이 있지만 질문의 핵심과는 거리가 있음
+- "irrelevant": 답변이 질문과 전혀 관련이 없음
+
+분석 기준:
+1. 질문의 핵심 의도와 답변 내용의 일치도
+2. 문제 해결에 실질적 도움이 되는지 여부
+3. 질문 유형과 답변 유형의 적합성
+
+결과는 "high", "medium", "low", "irrelevant" 중 하나만 반환하세요."""
+
+                user_prompt = f"""질문 분석 결과:
+의도: {question_analysis.get('intent_type', 'N/A')}
+주제: {question_analysis.get('main_topic', 'N/A')}
+구체적 요청: {question_analysis.get('specific_request', 'N/A')}
+
+원본 질문: {query}
+
+검색된 답변들:
+{combined_answers}
+
+위 질문과 답변들의 관련성을 분석해주세요."""
+
+                response = self.openai_client.chat.completions.create(
+                    model='gpt-3.5-turbo',
+                    messages=[
+                        {"role": "system", "content": system_prompt},
+                        {"role": "user", "content": user_prompt}
+                    ],
+                    max_tokens=50,
+                    temperature=0.2
+                )
+                
+                result = response.choices[0].message.content.strip().lower()
+                
+                # 결과 정규화
+                if 'high' in result:
+                    return 'high'
+                elif 'medium' in result:
+                    return 'medium'
+                elif 'low' in result:
+                    return 'low'
+                elif 'irrelevant' in result:
+                    return 'irrelevant'
+                else:
+                    logging.warning(f"AI 관련성 분석 결과 파싱 실패: {result}")
+                    return 'medium'  # 기본값
+                    
+        except Exception as e:
+            logging.error(f"AI 관련성 분석 실패: {e}")
+            # 폴백: 기본적인 키워드 매칭
+            return self.fallback_relevance_check(query, top_answers)
+    
+    # ☆ 폴백 관련성 검사 메서드 (AI 실패 시 사용)
+    def fallback_relevance_check(self, query: str, top_answers: list) -> str:
+        """AI 분석 실패 시 사용하는 기본적인 키워드 매칭"""
+        query_words = set(self.extract_keywords(query.lower()))
+        
+        max_overlap = 0
+        for answer in top_answers:
+            answer_words = set(self.extract_keywords(answer.get('answer', '').lower()))
+            overlap = len(query_words & answer_words)
+            overlap_ratio = overlap / max(len(query_words), 1)
+            max_overlap = max(max_overlap, overlap_ratio)
+        
+        if max_overlap >= 0.5:
+            return 'high'
+        elif max_overlap >= 0.3:
+            return 'medium'
+        elif max_overlap >= 0.1:
+            return 'low'
+        else:
+            return 'irrelevant'
+    
+    # ☆ 핵심 키워드 추출 메서드
+    def extract_keywords(self, text: str) -> list:
+        """텍스트에서 핵심 키워드 추출"""
+        # 불용어 제거용 리스트
+        stop_words = {'는', '은', '이', '가', '을', '를', '에', '에서', '로', '으로', '와', '과', '의', '도', '만', '까지', '부터', '께서', '에게', '한테', '로부터', '으로부터'}
+        
+        # 특수문자 제거 및 단어 분리
+        import re
+        words = re.findall(r'[가-힣a-zA-Z0-9]+', text)
+        
+        # 불용어 제거 및 2글자 이상 단어만 선택
+        keywords = [word for word in words if len(word) >= 2 and word not in stop_words]
+        
+        return keywords
+    
 
     # ☆ 참고 답변에서 인사말과 끝맺음말을 제거하는 메서드
     # Args:
@@ -1093,40 +1274,60 @@ Important: Do not include greetings or closings. Only write the main content."""
         else:  # 한국어
             system_prompt = """당신은 GOODTV 바이블 애플 고객센터 상담원입니다.
 
-지침:
-1. 제공된 참고 답변들의 스타일과 내용을 충실히 따라 작성하세요
-2. 참고 답변에서 유사한 상황의 해결책을 찾아 적용하세요
-3. 고객의 구체적 상황에 맞게 보완하되, 참고 답변의 톤과 스타일을 유지하세요
+🎯 핵심 원칙:
+1. 고객의 질문을 정확히 이해하고 질문 내용에 맞는 답변만 제공하세요
+2. 질문과 관련 없는 내용의 참고 답변은 무시하고, 질문의 본질에 집중하세요
+3. 참고 답변이 질문과 맞지 않으면 새로운 적절한 답변을 생성하세요
+
+📋 질문 유형별 대응 방법:
+
+🔤 오탈자/오류 문의:
+- 오탈자 제보 감사 표현
+- 성서공회 원문 확인 후 수정 안내
+- 앱 업데이트를 통한 반영 일정 안내
+
+⚙️ 기능 문의:
+- 해당 기능의 사용법을 구체적으로 안내
+- 버튼 위치, 메뉴 경로를 명확히 설명
+- 기능이 없다면 "현재 제공되지 않는 기능"이라고 명시
+
+📱 화면 표시 문제:
+- 구체적인 상황 파악을 위한 추가 질문
+- 스크린샷 요청
+- 임시 해결방법 제시
+
+📚 성경 검색/번역본:
+- 기존 지원 기능 정확히 안내
+- 지원되는 번역본 목록 제시
+- 동시 비교 기능 등 실제 가능한 기능 안내
 
 ⚠️ 절대 금지사항:
-- 존재하지 않는 기능이나 메뉴를 안내하지 마세요
-- 구체적인 설정 방법이나 버튼 위치를 창작하지 마세요
-- 참고 답변에 없는 기능은 "죄송하지만 현재 제공되지 않는 기능"으로 안내하세요
-- 불확실한 경우 "내부적으로 검토하겠다"고 답변하세요
-
-4. 기능 요청이나 개선 제안의 경우:
-   - "좋은 의견 감사합니다"
-   - "내부적으로 논의/검토하겠습니다"
-   - "개선 사항으로 전달하겠습니다"
-   위 표현들을 사용하세요
-
-5. 고객은 반드시 '성도님'으로 호칭하세요
-6. 앱 이름은 'GOODTV 바이블 애플' 또는 '바이블 애플'로 통일하세요
+- 질문과 전혀 다른 내용의 답변 금지
+- 오탈자 문의에 폰트 조절 답변 금지
+- 기능 문의에 오탈자 관련 답변 금지
+- 구체적 질문에 "내부 검토" 등 회피성 답변 지양
 
 🚫 인사말 및 끝맺음말 생성 금지:
 - "안녕하세요", "감사합니다", "평안하세요" 등의 인사말을 절대 사용하지 마세요
 - "주님 안에서", "기도드리겠습니다" 등의 끝맺음말을 절대 사용하지 마세요
 - 오직 본문 내용만 작성하세요
 
-7. HTML 태그 사용 금지, 자연스러운 문장으로 작성하세요"""
+💡 창의적 사고:
+- 참고 답변이 부적절하면 고객 질문에 맞는 새로운 답변을 창의적으로 생성하세요
+- 바이블 애플의 실제 기능과 정책에 맞는 현실적인 답변을 제공하세요"""
 
             user_prompt = f"""고객 문의: {query}
 
-참고 답변들 (인사말과 끝맺음말은 제거된 본문만 포함):
+참고 답변들:
 {context}
 
-위 참고 답변들의 해결 방식과 톤을 그대로 따라서 고객의 문제에 대한 구체적인 답변을 작성하세요.
-중요: 인사말("안녕하세요", "감사합니다" 등)이나 끝맺음말("평안하세요", "주님 안에서" 등)을 절대 포함하지 마세요. 오직 본문 내용만 작성하세요."""
+❗ 중요 지시사항:
+위 참고 답변들이 고객의 질문과 관련이 있는지 먼저 판단하세요.
+- 관련이 있다면: 참고 답변의 해결 방식을 활용하여 답변하세요
+- 관련이 없다면: 참고 답변을 무시하고 고객 질문에 맞는 새로운 답변을 생성하세요
+
+고객의 구체적인 질문에 정확히 맞는 답변만 작성하세요.
+인사말이나 끝맺음말 없이 본문 내용만 작성하세요."""
 
         return system_prompt, user_prompt
 
@@ -1144,12 +1345,14 @@ Important: Do not include greetings or closings. Only write the main content."""
                 # 통일된 프롬프트 생성
                 system_prompt, user_prompt = self.get_gpt_prompts(query, context, lang)
                 
-                # 접근 방식별 temperature와 max_tokens 설정
+                # 🔥 접근 방식별 temperature와 max_tokens 설정 개선
                 if approach == 'gpt_with_strong_context':
-                    temperature = 0.5 # 창의성: 매우 보수적
-                    max_tokens = 600
+                    # 관련성이 높은 경우 더 창의적으로 설정
+                    temperature = 0.7 if context_analysis.get('context_relevance') == 'high' else 0.6
+                    max_tokens = 700
                 elif approach == 'gpt_with_weak_context':
-                    temperature = 0.6 # 창의성: 적당한 창의성
+                    # 관련성이 낮은 경우 더 창의적으로 설정하여 새로운 답변 생성 유도
+                    temperature = 0.8
                     max_tokens = 650
                 else: # fallback이나 기타
                     return ""
@@ -1174,10 +1377,19 @@ Important: Do not include greetings or closings. Only write the main content."""
                 # 생성된 텍스트 정리
                 generated = self.clean_generated_text(generated)
                 
-                # 텍스트 유효성 검증
+                # 🔥 답변 관련성 추가 검증 (AI 기반)
+                if not self.validate_answer_relevance_ai(generated, query, context_analysis.get('question_analysis', {})):
+                    logging.warning(f"생성된 답변이 질문과 관련성이 낮음: {generated[:50]}...")
+                    return ""
+                
+                # 텍스트 유효성 검증 (완화)
                 if not self.is_valid_text(generated, lang):
                     logging.warning(f"GPT가 무효한 텍스트 생성: {generated[:50]}...")
-                    return ""
+                    # 유효성 검증 실패해도 관련성이 높으면 사용
+                    if context_analysis.get('context_relevance') == 'high':
+                        logging.info("관련성이 높아 유효성 검증 우회")
+                    else:
+                        return ""
                 
                 logging.info(f"GPT 생성 성공 ({approach}, 언어: {lang}): {len(generated)}자")
                 return generated[:650]
@@ -1185,6 +1397,62 @@ Important: Do not include greetings or closings. Only write the main content."""
         except Exception as e:
             logging.error(f"향상된 GPT 생성 실패: {e}")
             return ""
+
+    # ☆ AI 기반 답변 관련성 검증 메서드 (개선된 버전)
+    def validate_answer_relevance_ai(self, answer: str, query: str, question_analysis: dict) -> bool:
+        """AI를 이용해 생성된 답변이 질문과 관련성이 있는지 검증"""
+        
+        try:
+            with memory_cleanup():
+                system_prompt = """당신은 답변 품질 검증 전문가입니다.
+생성된 답변이 고객의 질문에 적절히 대응하는지 평가하세요.
+
+평가 기준:
+1. 답변이 질문의 핵심 내용을 다루고 있는가?
+2. 답변이 고객의 문제를 해결하는데 도움이 되는가?
+3. 답변과 질문의 주제가 일치하는가?
+
+결과: "relevant" 또는 "irrelevant" 중 하나만 반환하세요."""
+
+                user_prompt = f"""질문 분석:
+의도: {question_analysis.get('intent_type', 'N/A')}
+주제: {question_analysis.get('main_topic', 'N/A')}
+요청사항: {question_analysis.get('specific_request', 'N/A')}
+
+원본 질문: {query}
+
+생성된 답변: {answer}
+
+이 답변이 질문에 적절한지 평가해주세요."""
+
+                response = self.openai_client.chat.completions.create(
+                    model='gpt-3.5-turbo',
+                    messages=[
+                        {"role": "system", "content": system_prompt},
+                        {"role": "user", "content": user_prompt}
+                    ],
+                    max_tokens=30,
+                    temperature=0.1
+                )
+                
+                result = response.choices[0].message.content.strip().lower()
+                
+                is_relevant = 'relevant' in result and 'irrelevant' not in result
+                
+                logging.info(f"AI 답변 관련성 검증: {result} -> {is_relevant}")
+                
+                return is_relevant
+                
+        except Exception as e:
+            logging.error(f"AI 답변 관련성 검증 실패: {e}")
+            # 폴백: 기본적인 키워드 매칭
+            query_keywords = set(self.extract_keywords(query.lower()))
+            answer_keywords = set(self.extract_keywords(answer.lower()))
+            
+            keyword_overlap = len(query_keywords & answer_keywords)
+            keyword_relevance = keyword_overlap / max(len(query_keywords), 1)
+            
+            return keyword_relevance >= 0.2  # 20% 이상 키워드 일치시 관련성 있음으로 판단
 
     # ☆ 최적의 폴백 답변 선택 메서드 (직접 사용 답변 포함)
     def get_best_fallback_answer(self, similar_answers: list, lang: str = 'ko') -> str:
@@ -1438,6 +1706,16 @@ Important: Do not include greetings or closings. Only write the main content."""
                 base_answer = re.sub(r'[,.!?]\s*항상\s*주님\s*안에서[^.]*\.?\s*$', '', base_answer, flags=re.IGNORECASE)
                 base_answer = re.sub(r'[,.!?]\s*감사합니다[^.]*\.?\s*$', '', base_answer, flags=re.IGNORECASE)
                 base_answer = re.sub(r'[,.!?]\s*평안하세요[^.]*\.?\s*$', '', base_answer, flags=re.IGNORECASE)
+                
+                # 🔥 오래된 앱 이름 제거 및 정리
+                base_answer = re.sub(r'다번역성경찬송', '바이블 애플', base_answer, flags=re.IGNORECASE)
+                base_answer = re.sub(r'\(구\)\s*다번역성경찬송', '바이블 애플', base_answer, flags=re.IGNORECASE)
+                
+                # 🔥 중복 끝맺음말 제거
+                base_answer = re.sub(r'(항상\s*성도님께\s*좋은\s*성경앱을\s*제공하기\s*위해\s*노력하는\s*바이블\s*애플이\s*되겠습니다[.]?\s*)*', 
+                                   '', base_answer, flags=re.IGNORECASE)
+                base_answer = re.sub(r'(감사합니다[.]?\s*주님\s*안에서\s*평안하세요[.]?\s*)*', 
+                                   '', base_answer, flags=re.IGNORECASE)
                 
                 # 🔥 '항상' 단독으로 남은 경우 제거 (중복 문제 해결)
                 base_answer = re.sub(r'\s*항상\s*$', '', base_answer, flags=re.IGNORECASE)
