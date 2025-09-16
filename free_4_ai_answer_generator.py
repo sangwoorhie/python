@@ -1294,7 +1294,7 @@ Important: Do not include greetings or closings. Only write the main content."""
             if lang == 'en':
                 default_msg = "<p>We need more detailed information to provide an accurate answer to your inquiry.</p><p><br></p><p>Please contact our customer service center for prompt assistance.</p>"
             else:
-                default_msg = "<p>문의해주신 내용에 대해 정확한 답변을 드리기 위해 더 자세한 정보가 필요합니다.</p><p><br></p><p>고객센터로 문의해주시면 신속하게 도움을 드리겠습니다.</p>"
+                default_msg = "<p>안녕하세요, GOODTV 바이블 애플입니다.</p><p><br></p><p>바이블 애플을 이용해 주셔서 진심으로 감사드립니다.</p><p><br></p><p>남겨주신 문의는 현재 담당자가 직접 확인하고 있습니다.</p><p><br></p><p>성도님께 도움이 될 수 있도록 내용을 꼼꼼히 살펴</p><p><br></p><p>정확하고 구체적인 답변을 준비하겠습니다.</p><p><br></p><p>답변은 최대 하루 이내에 드릴 예정이오니</p><p><br></p><p>조금만 기다려 주시면 감사하겠습니다.</p><p><br></p><p>항상 주님 안에서 평안하세요, 감사합니다.</p>"
             return default_msg
         
         # 3. 컨텍스트 분석
@@ -1378,7 +1378,7 @@ Important: Do not include greetings or closings. Only write the main content."""
                 if lang == 'en':
                     return "<p>We need more detailed information to provide an accurate answer to your inquiry.</p><p><br></p><p>Please contact our customer service center for prompt assistance.</p>"
                 else:
-                    return "<p>문의해주신 내용에 대해 정확한 답변을 드리기 위해 더 자세한 정보가 필요합니다.</p><p><br></p><p>고객센터로 문의해주시면 신속하게 도움을 드리겠습니다.</p>"
+                    return "<p>안녕하세요, GOODTV 바이블 애플입니다.</p><p><br></p><p>바이블 애플을 이용해 주셔서 진심으로 감사드립니다.</p><p><br></p><p>남겨주신 문의는 현재 담당자가 직접 확인하고 있습니다.</p><p><br></p><p>성도님께 도움이 될 수 있도록 내용을 꼼꼼히 살펴</p><p><br></p><p>정확하고 구체적인 답변을 준비하겠습니다.</p><p><br></p><p>답변은 최대 하루 이내에 드릴 예정이오니</p><p><br></p><p>조금만 기다려 주시면 감사하겠습니다.</p><p><br></p><p>항상 주님 안에서 평안하세요, 감사합니다.</p>"
             
             # 🔥 is_valid_text 검증을 임시로 주석 처리
             # elif not self.is_valid_text(base_answer, lang):
@@ -1470,7 +1470,7 @@ Important: Do not include greetings or closings. Only write the main content."""
             if lang == 'en':
                 return "<p>Sorry, we cannot generate an answer at this moment.</p><p><br></p><p>Please contact our customer service center.</p>"
             else:
-                return "<p>죄송합니다. 현재 답변을 생성할 수 없습니다.</p><p><br></p><p>고객센터로 문의해주세요.</p>"
+                return "<p>안녕하세요, GOODTV 바이블 애플입니다.</p><p><br></p><p>바이블 애플을 이용해 주셔서 진심으로 감사드립니다.</p><p><br></p><p>남겨주신 문의는 현재 담당자가 직접 확인하고 있습니다.</p><p><br></p><p>성도님께 도움이 될 수 있도록 내용을 꼼꼼히 살펴</p><p><br></p><p>정확하고 구체적인 답변을 준비하겠습니다.</p><p><br></p><p>답변은 최대 하루 이내에 드릴 예정이오니</p><p><br></p><p>조금만 기다려 주시면 감사하겠습니다.</p><p><br></p><p>항상 주님 안에서 평안하세요, 감사합니다.</p>"
 
     # ☆ 메모리 최적화된 메인 처리 메서드
     def process(self, seq: int, question: str, lang: str) -> dict:
