@@ -353,7 +353,7 @@ class AIAnswerGenerator:
             
     # Returns:
     #     list: 유사 답변 리스트 [{'score': float, 'question': str, 'answer': str, ...}, ...]
-    def search_similar_answers(self, query: str, top_k: int = 5, similarity_threshold: float = 0.3, lang: str = 'ko') -> list:
+    def search_similar_answers(self, query: str, top_k: int = 5, similarity_threshold: float = 0.7, lang: str = 'ko') -> list:
         try:
             with memory_cleanup():
                 # ★ 디버깅 로그 추가
@@ -413,8 +413,9 @@ class AIAnswerGenerator:
                     answer = match['metadata'].get('answer', '')
                     category = match['metadata'].get('category', '일반')
                     
-                    # 유사도 임계값(0.6) 이상만 포함하여 정확도 향상, 임계값 이하는 버림 (노이즈 제거)
-                    if score >= similarity_threshold:
+                    # 유사도 임계값 이상만 포함하여 정확도 향상, 임계값 이하는 버림 (노이즈 제거)
+                    # 하지만 최소 1개의 결과는 보장하기 위해 상위 결과는 임계값과 무관하게 포함
+                    if score >= similarity_threshold or (i == 0 and score >= 0.5):
                         filtered_results.append({
                             'score': score,
                             'question': question,
@@ -491,7 +492,7 @@ class AIAnswerGenerator:
         # 유사 답변이 없으면 기본값 반환
         if not similar_answers:
             return {
-                'has_good_context': len(similar_answers) > 0,
+                'has_good_context': False,
                 'best_score': 0.0,
                 'recommended_approach': 'fallback',
                 'context_summary': '유사 답변이 없습니다.'
@@ -510,22 +511,25 @@ class AIAnswerGenerator:
         category_distribution = {cat: categories.count(cat) for cat in set(categories)} # 카테고리별 개수 계산 (딕셔너리 컴프리헨션), set()으로 중복 제거, 카운트 메서드 사용
         
         # 의사 결정 트리 : 최적의 답변 생성 전략을 결정하는 알고리즘
-        # 최고 유사도 점수가 0.8 이상이면 기존 답변 직접 활용
-        # 최고 유사도 점수가 0.7 이상이거나 고품질 답변이 2개 이상이면 고품질 컨텍스트로 GPT 생성
-        # 최고 유사도 점수가 0.6 이상이거나 중품질 답변이 3개 이상이면 약한 컨텍스트로 GPT 생성
-        # 그 외는 품질이 낮아 폴백 처리
-        if best_score >= 0.8:
+        # 100% 또는 거의 완벽한 일치(0.95+)는 직접 사용
+        # 매우 높은 유사도(0.8+)는 기존 답변 직접 활용
+        # 높은 유사도(0.7+) 또는 고품질 답변이 2개 이상이면 고품질 컨텍스트로 GPT 생성
+        # 중간 유사도(0.5+) 또는 중품질 답변이 있으면 약한 컨텍스트로 GPT 생성
+        # 그 외는 폴백 처리
+        if best_score >= 0.95:
+            approach = 'direct_use'                # 거의 완벽한 일치 → 기존 답변 직접 활용
+        elif best_score >= 0.8:
             approach = 'direct_use'                # 매우 유사 → 기존 답변 직접 활용
         elif best_score >= 0.7 or high_quality_count >= 2:
             approach = 'gpt_with_strong_context'   # 고품질 컨텍스트로 GPT 생성
-        elif best_score >= 0.6 or medium_quality_count >= 3:
+        elif best_score >= 0.5 or medium_quality_count >= 1:
             approach = 'gpt_with_weak_context'     # 약한 컨텍스트로 GPT 생성
         else:
             approach = 'fallback'                  # 품질이 낮아 폴백 처리
         
         # 분석 결과 구조화
         analysis = {
-            'has_good_context': len(similar_answers) > 0,
+            'has_good_context': best_score >= 0.5,  # 최소 50% 이상 유사하면 유용한 컨텍스트로 간주
             'best_score': best_score,
             'high_quality_count': high_quality_count,
             'medium_quality_count': medium_quality_count,
@@ -1139,7 +1143,7 @@ Important: Do not include greetings or closings. Only write the main content."""
             logging.error(f"향상된 GPT 생성 실패: {e}")
             return ""
 
-    # ☆ 최적의 폴백 답변 선택 메서드
+    # ☆ 최적의 폴백 답변 선택 메서드 (직접 사용 답변 포함)
     def get_best_fallback_answer(self, similar_answers: list, lang: str = 'ko') -> str:
         if not similar_answers:
             return ""
@@ -1148,9 +1152,12 @@ Important: Do not include greetings or closings. Only write the main content."""
         best_answer = ""
         best_score = 0
         
-        for ans in similar_answers[:5]: # 상위 5개만 검토
+        for ans in similar_answers[:3]: # 상위 3개만 검토 (품질 향상)
             score = ans['score']
-            answer_text = self.clean_generated_text(ans['answer'])
+            answer_text = ans['answer']  # 원본 답변 텍스트 사용
+            
+            # 기본 정리만 수행
+            answer_text = self.preprocess_text(answer_text)
             
             # 영어 질문인 경우 답변을 번역
             if lang == 'en' and ans.get('lang', 'ko') == 'ko':
@@ -1159,16 +1166,22 @@ Important: Do not include greetings or closings. Only write the main content."""
             if not self.is_valid_text(answer_text, lang):
                 continue
             
+            # 높은 유사도(0.8+)인 경우 간단하게 첫 번째 답변 선택
+            if score >= 0.8:
+                logging.info(f"높은 유사도({score:.3f})로 첫 번째 답변 직접 선택")
+                return answer_text
+            
             # 종합 점수 계산 (유사도 + 텍스트 길이 + 완성도)
             length_score = min(len(answer_text) / 200, 1.0) # 200자 기준 정규화
             completeness_score = 1.0 if answer_text.endswith(('.', '!', '?')) else 0.8
             
-            total_score = score * 0.7 + length_score * 0.2 + completeness_score * 0.1
+            total_score = score * 0.8 + length_score * 0.1 + completeness_score * 0.1  # 유사도 가중치 증가
             
             if total_score > best_score:
                 best_score = total_score
                 best_answer = answer_text
         
+        logging.info(f"최종 선택된 답변 점수: {best_score:.3f}")
         return best_answer
 
     # ☆ 더 보수적인 GPT-3.5-turbo 생성 메서드 (기존 코드와의 호환성 유지)
@@ -1194,16 +1207,14 @@ Important: Do not include greetings or closings. Only write the main content."""
         # 3. 컨텍스트 분석
         context_analysis = self.analyze_context_quality(similar_answers, query)
         
-        # 4. 유용한 컨텍스트가 없는 경우
-        # if not context_analysis['has_good_context']:
-        #     logging.warning("유용한 컨텍스트가 없어 기본 메시지 반환")
-        #     if lang == 'en':
-        #         return "<p>We need more detailed information to provide an accurate answer to your inquiry.</p><p><br></p><p>Please contact our customer service center for prompt assistance.</p>"
-        #     else:
-        #         return "<p>문의해주신 내용에 대해 정확한 답변을 드리기 위해 더 자세한 정보가 필요합니다.</p><p><br></p><p>고객센터로 문의해주시면 신속하게 도움을 드리겠습니다.</p>"
+        # 4. 검색 결과 상세 로깅
+        logging.info(f"검색된 유사 답변 개수: {len(similar_answers)}")
+        if similar_answers:
+            for i, ans in enumerate(similar_answers[:3]):
+                logging.info(f"답변 #{i+1}: 점수={ans['score']:.3f}, 카테고리={ans['category']}")
         
+        # 5. 답변이 전혀 없을 때만 기본 메시지 반환
         if not similar_answers:
-        # 답변이 전혀 없을 때만 기본 메시지
             logging.warning("검색 결과가 전혀 없음")
             if lang == 'en':
                 return "<p>We need more detailed information to provide an accurate answer to your inquiry.</p><p><br></p><p>Please contact our customer service center for prompt assistance.</p>"
