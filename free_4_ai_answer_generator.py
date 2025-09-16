@@ -523,7 +523,7 @@ class AIAnswerGenerator:
             logging.error(f"번역 실패: {e}")
             return text
 
-    # ☆ AI 기반 질문 의도 분석 메서드 (개선된 버전)
+    # ☆ AI 기반 질문 의도 분석 메서드 (정확도 개선 버전)
     def analyze_question_intent(self, query: str) -> dict:
         """AI를 이용해 질문의 의도와 핵심 내용을 분석"""
         try:
@@ -533,16 +533,25 @@ class AIAnswerGenerator:
 
 {
   "intent_type": "문의 유형 (예: 오탈자신고, 기능문의, 기술지원, 개선제안, 일반문의)",
-  "main_topic": "주요 주제 (예: 성경본문, 음원재생, 검색기능, 번역본, 앱기능)",
+  "main_topic": "주요 주제 (예: 성경본문, 음원재생, 검색기능, 번역본, 앱기능, 텍스트복사, 화면표시)",
   "specific_request": "구체적 요청사항 요약",
   "keywords": ["핵심", "키워드", "목록"],
-  "urgency": "긴급도 (low/medium/high)"
+  "urgency": "긴급도 (low/medium/high)",
+  "action_type": "요청 행동 (예: 복사, 재생, 검색, 다운로드, 설정변경, 오류신고)"
 }
 
-분석 시 주의사항:
-- 질문의 핵심 의도를 정확히 파악하세요
-- 구체적인 문제나 요청사항을 식별하세요
-- 기존 카테고리에 얽매이지 말고 유연하게 분석하세요"""
+⚠️ 중요한 분석 기준:
+1. 동사/행동어를 정확히 식별하세요 (복사≠재생, 검색≠다운로드)
+2. 텍스트 관련 요청과 음성 관련 요청을 명확히 구분하세요
+3. "복사", "붙여넣기", "워드", "텍스트"는 텍스트 처리 요청입니다
+4. "재생", "듣기", "음성", "소리"는 음성 처리 요청입니다
+5. 질문에서 명시된 구체적 행동을 놓치지 마세요
+
+분석 예시:
+- "복사해서 워드로" → action_type: "복사", main_topic: "텍스트복사"
+- "연속으로 들을 수" → action_type: "재생", main_topic: "음원재생"
+
+"""
 
                 user_prompt = f"다음 고객 문의를 분석해주세요: {query}"
 
@@ -571,7 +580,8 @@ class AIAnswerGenerator:
                         "main_topic": "기타",
                         "specific_request": query[:100],
                         "keywords": [query[:20]],
-                        "urgency": "medium"
+                        "urgency": "medium",
+                        "action_type": "기타"
                     }
                 
         except Exception as e:
@@ -581,7 +591,8 @@ class AIAnswerGenerator:
                 "main_topic": "기타",
                 "specific_request": query[:100],
                 "keywords": [query[:20]],
-                "urgency": "medium"
+                "urgency": "medium",
+                "action_type": "기타"
             }
 
     # ☆ 검색된 유사 답변들의 품질을 분석하여 최적의 답변 생성 전략을 결정하는 메서드
@@ -657,7 +668,7 @@ class AIAnswerGenerator:
         logging.info(f"향상된 컨텍스트 분석 결과: {analysis}")
         return analysis
 
-    # ☆ AI 기반 컨텍스트 관련성 검사 메서드 (개선된 버전)
+    # ☆ AI 기반 컨텍스트 관련성 검사 메서드 (정확도 강화 버전)
     def check_context_relevance_ai(self, question_analysis: dict, answer_categories: list, query: str, top_answers: list) -> str:
         """AI를 이용해 질문 의도와 답변의 관련성을 지능적으로 검사"""
         
@@ -679,16 +690,24 @@ class AIAnswerGenerator:
 - "low": 답변이 약간 관련이 있지만 질문의 핵심과는 거리가 있음
 - "irrelevant": 답변이 질문과 전혀 관련이 없음
 
-분석 기준:
-1. 질문의 핵심 의도와 답변 내용의 일치도
-2. 문제 해결에 실질적 도움이 되는지 여부
-3. 질문 유형과 답변 유형의 적합성
+⚠️ 엄격한 분석 기준:
+1. 행동 유형 일치 여부 (복사≠재생, 텍스트≠음성)
+2. 주제 영역 일치 여부 (앱기능, 성경본문, 기술지원 등)
+3. 질문의 핵심 키워드와 답변 키워드의 의미적 일치성
+4. 실제 문제 해결 도움 여부
+
+🚫 특별 주의사항:
+- 텍스트 복사/붙여넣기 질문에 음성 재생 답변 → "irrelevant"
+- 음성 재생 질문에 텍스트 복사 답변 → "irrelevant"  
+- 검색 기능 질문에 설정 변경 답변 → "irrelevant"
+- 오류 신고에 일반 사용법 답변 → "low" 또는 "irrelevant"
 
 결과는 "high", "medium", "low", "irrelevant" 중 하나만 반환하세요."""
 
                 user_prompt = f"""질문 분석 결과:
 의도: {question_analysis.get('intent_type', 'N/A')}
 주제: {question_analysis.get('main_topic', 'N/A')}
+행동유형: {question_analysis.get('action_type', 'N/A')}
 구체적 요청: {question_analysis.get('specific_request', 'N/A')}
 
 원본 질문: {query}
@@ -696,6 +715,7 @@ class AIAnswerGenerator:
 검색된 답변들:
 {combined_answers}
 
+⚠️ 중요: 질문의 행동유형과 답변의 행동유형이 다르면 "irrelevant"로 판정하세요.
 위 질문과 답변들의 관련성을 분석해주세요."""
 
                 response = self.openai_client.chat.completions.create(
@@ -728,23 +748,82 @@ class AIAnswerGenerator:
             # 폴백: 기본적인 키워드 매칭
             return self.fallback_relevance_check(query, top_answers)
     
-    # ☆ 폴백 관련성 검사 메서드 (AI 실패 시 사용)
+    # ☆ 폴백 관련성 검사 메서드 (의미론적 매칭 강화)
     def fallback_relevance_check(self, query: str, top_answers: list) -> str:
-        """AI 분석 실패 시 사용하는 기본적인 키워드 매칭"""
-        query_words = set(self.extract_keywords(query.lower()))
+        """AI 분석 실패 시 사용하는 의미론적 키워드 매칭"""
         
-        max_overlap = 0
+        # 의미론적 키워드 그룹 정의
+        semantic_groups = {
+            'text_copy': ['복사', '붙여넣기', '워드', '텍스트', '복사해서', '옮기', '내보내기', '저장'],
+            'audio_play': ['재생', '듣기', '음성', '소리', '연속재생', '반복', '들을', '듣고'],
+            'search_find': ['검색', '찾기', '찾아서', '검색해서', '찾을', '찾는'],
+            'download': ['다운로드', '다운받기', '받기', '저장'],
+            'error_report': ['오류', '에러', '안됨', '안되', '문제', '고장', '버그'],
+            'setting_config': ['설정', '변경', '조정', '옵션', '환경설정']
+        }
+        
+        # 질문에서 의미 그룹 식별
+        query_lower = query.lower()
+        query_semantic_groups = set()
+        for group_name, keywords in semantic_groups.items():
+            if any(keyword in query_lower for keyword in keywords):
+                query_semantic_groups.add(group_name)
+        
+        max_relevance = 0
         for answer in top_answers:
-            answer_words = set(self.extract_keywords(answer.get('answer', '').lower()))
-            overlap = len(query_words & answer_words)
-            overlap_ratio = overlap / max(len(query_words), 1)
-            max_overlap = max(max_overlap, overlap_ratio)
+            answer_lower = answer.get('answer', '').lower()
+            answer_semantic_groups = set()
+            
+            # 답변에서 의미 그룹 식별
+            for group_name, keywords in semantic_groups.items():
+                if any(keyword in answer_lower for keyword in keywords):
+                    answer_semantic_groups.add(group_name)
+            
+            # 의미 그룹 일치도 계산
+            if query_semantic_groups and answer_semantic_groups:
+                semantic_overlap = len(query_semantic_groups & answer_semantic_groups)
+                semantic_total = len(query_semantic_groups | answer_semantic_groups)
+                semantic_ratio = semantic_overlap / semantic_total if semantic_total > 0 else 0
+            else:
+                semantic_ratio = 0
+            
+            # 키워드 일치도도 함께 고려
+            query_words = set(self.extract_keywords(query_lower))
+            answer_words = set(self.extract_keywords(answer_lower))
+            keyword_overlap = len(query_words & answer_words)
+            keyword_ratio = keyword_overlap / max(len(query_words), 1)
+            
+            # 의미론적 매칭과 키워드 매칭을 조합 (의미론적 매칭에 더 높은 가중치)
+            combined_relevance = semantic_ratio * 0.7 + keyword_ratio * 0.3
+            max_relevance = max(max_relevance, combined_relevance)
         
-        if max_overlap >= 0.5:
+        # 🚫 의미 그룹이 완전히 다른 경우 irrelevant 처리
+        if query_semantic_groups and any(answer.get('answer', '') for answer in top_answers):
+            all_answer_groups = set()
+            for answer in top_answers:
+                answer_lower = answer.get('answer', '').lower()
+                for group_name, keywords in semantic_groups.items():
+                    if any(keyword in answer_lower for keyword in keywords):
+                        all_answer_groups.add(group_name)
+            
+            # 텍스트-음성, 검색-설정 등 상반된 그룹인 경우
+            conflicting_pairs = [
+                ('text_copy', 'audio_play'),
+                ('search_find', 'setting_config'),
+                ('error_report', 'search_find')
+            ]
+            
+            for q_group in query_semantic_groups:
+                for a_group in all_answer_groups:
+                    if (q_group, a_group) in conflicting_pairs or (a_group, q_group) in conflicting_pairs:
+                        return 'irrelevant'
+        
+        # 관련성 점수에 따른 판정
+        if max_relevance >= 0.6:
             return 'high'
-        elif max_overlap >= 0.3:
+        elif max_relevance >= 0.4:
             return 'medium'
-        elif max_overlap >= 0.1:
+        elif max_relevance >= 0.2:
             return 'low'
         else:
             return 'irrelevant'
@@ -1398,32 +1477,41 @@ Important: Do not include greetings or closings. Only write the main content."""
             logging.error(f"향상된 GPT 생성 실패: {e}")
             return ""
 
-    # ☆ AI 기반 답변 관련성 검증 메서드 (개선된 버전)
+    # ☆ AI 기반 답변 관련성 검증 메서드 (엄격한 검증 버전)
     def validate_answer_relevance_ai(self, answer: str, query: str, question_analysis: dict) -> bool:
-        """AI를 이용해 생성된 답변이 질문과 관련성이 있는지 검증"""
+        """AI를 이용해 생성된 답변이 질문과 관련성이 있는지 엄격하게 검증"""
         
         try:
             with memory_cleanup():
                 system_prompt = """당신은 답변 품질 검증 전문가입니다.
-생성된 답변이 고객의 질문에 적절히 대응하는지 평가하세요.
+생성된 답변이 고객의 질문에 적절히 대응하는지 엄격하게 평가하세요.
 
-평가 기준:
-1. 답변이 질문의 핵심 내용을 다루고 있는가?
-2. 답변이 고객의 문제를 해결하는데 도움이 되는가?
-3. 답변과 질문의 주제가 일치하는가?
+⚠️ 엄격한 평가 기준:
+1. 답변이 질문의 핵심 행동 요청과 일치하는가? (복사≠재생)
+2. 답변이 질문의 주제 영역과 일치하는가? (텍스트≠음성)
+3. 답변이 실제 문제 해결에 직접적으로 도움이 되는가?
+4. 답변에서 언급하는 기능이 질문에서 요청한 기능과 같은가?
+
+🚫 부적절한 답변 예시:
+- 텍스트 복사 질문에 음성 재생 답변
+- 검색 기능 질문에 설정 변경 답변  
+- 오류 신고에 일반 사용법 답변
+- 구체적 기능 질문에 추상적 안내 답변
 
 결과: "relevant" 또는 "irrelevant" 중 하나만 반환하세요."""
 
                 user_prompt = f"""질문 분석:
 의도: {question_analysis.get('intent_type', 'N/A')}
 주제: {question_analysis.get('main_topic', 'N/A')}
+행동유형: {question_analysis.get('action_type', 'N/A')}
 요청사항: {question_analysis.get('specific_request', 'N/A')}
 
 원본 질문: {query}
 
 생성된 답변: {answer}
 
-이 답변이 질문에 적절한지 평가해주세요."""
+⚠️ 특히 주의: 질문의 행동유형과 답변에서 다루는 행동이 다르면 "irrelevant"입니다.
+이 답변이 질문에 적절한지 엄격하게 평가해주세요."""
 
                 response = self.openai_client.chat.completions.create(
                     model='gpt-3.5-turbo',
