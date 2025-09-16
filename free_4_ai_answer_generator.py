@@ -61,16 +61,31 @@ app = Flask(__name__)
 CORS(app)
 
 # ==================================================
-# 3. 로깅 시스템 설정
+# 3. 로깅 시스템 설정 (콘솔 + 파일)
 # ==================================================
-# 운영환경에서 로그를 파일로 저장하여 디버깅 및 모니터링 가능
-# 로깅 설정에서 중요한 것은 encoding='utf-8'. 한글 에러 메시지나 디버그 정보가 깨지지 않고 로그 파일에 기록되도록 함
-logging.basicConfig(
-    filename='/home/ec2-user/python/logs/ai_generator.log',  # 로그 파일 경로
-    level=logging.INFO,                                      # INFO 레벨 이상 로그 기록
-    format='%(asctime)s - %(levelname)s - %(message)s',      # 로그 포맷
-    encoding='utf-8'                                         # 한글 지원을 위한 UTF-8 인코딩
-)
+# 로거 생성
+logger = logging.getLogger()
+logger.setLevel(logging.INFO)
+
+# 포맷터 생성
+formatter = logging.Formatter('%(asctime)s - %(levelname)s - %(message)s')
+
+# 파일 핸들러 (기존)
+try:
+    # 로그 디렉토리 생성
+    os.makedirs('/home/ec2-user/python/logs', exist_ok=True)
+    file_handler = logging.FileHandler('/home/ec2-user/python/logs/ai_generator.log', encoding='utf-8')
+    file_handler.setLevel(logging.INFO)
+    file_handler.setFormatter(formatter)
+    logger.addHandler(file_handler)
+except Exception as e:
+    print(f"로그 파일 핸들러 생성 실패: {e}")
+
+# 콘솔 핸들러 추가 (실시간 디버깅용)
+console_handler = logging.StreamHandler()
+console_handler.setLevel(logging.INFO)
+console_handler.setFormatter(formatter)
+logger.addHandler(console_handler)
 
 # ==================================================
 # 4. 환경변수 로드 및 시스템 상수 정의
@@ -1250,7 +1265,8 @@ Important: Do not include greetings or closings. Only write the main content."""
         
         # 2. 유사 답변이 없는 경우
         if not similar_answers:
-            logging.warning("유사 답변이 전혀 없음")
+            logging.error("🚨 유사 답변이 전혀 없음 - Pinecone 검색 실패 또는 데이터 없음")
+            print(f"🚨 CRITICAL: 유사 답변이 전혀 없음! query='{query[:50]}...', lang='{lang}'")
             if lang == 'en':
                 default_msg = "<p>We need more detailed information to provide an accurate answer to your inquiry.</p><p><br></p><p>Please contact our customer service center for prompt assistance.</p>"
             else:
@@ -1261,25 +1277,28 @@ Important: Do not include greetings or closings. Only write the main content."""
         context_analysis = self.analyze_context_quality(similar_answers, query)
         
         # 4. 검색 결과 상세 로깅
-        logging.info(f"검색된 유사 답변 개수: {len(similar_answers)}")
+        logging.info(f"✅ 검색된 유사 답변 개수: {len(similar_answers)}")
+        print(f"✅ 검색된 유사 답변 개수: {len(similar_answers)}")
+        
         if similar_answers:
             for i, ans in enumerate(similar_answers[:3]):
-                logging.info(f"답변 #{i+1}: 점수={ans['score']:.3f}, 카테고리={ans['category']}")
+                log_msg = f"📝 답변 #{i+1}: 점수={ans['score']:.3f}, 카테고리={ans['category']}"
+                logging.info(log_msg)
+                print(log_msg)
         
-        # 5. 답변이 전혀 없을 때만 기본 메시지 반환
-        if not similar_answers:
-            logging.warning("검색 결과가 전혀 없음")
-            if lang == 'en':
-                return "<p>We need more detailed information to provide an accurate answer to your inquiry.</p><p><br></p><p>Please contact our customer service center for prompt assistance.</p>"
-            else:
-                return "<p>문의해주신 내용에 대해 정확한 답변을 드리기 위해 더 자세한 정보가 필요합니다.</p><p><br></p><p>고객센터로 문의해주시면 신속하게 도움을 드리겠습니다.</p>"
+        # 5. 답변이 전혀 없을 때만 기본 메시지 반환 (중복 체크 제거)
+        # 이미 위에서 체크했으므로 이 부분은 실행되지 않아야 함
         
 
         try:
             approach = context_analysis['recommended_approach']
             logging.info(f"=== 접근 방식 결정 ===")
-            logging.info(f"선택된 접근 방식: {approach}, 언어: {lang}")
-            logging.info(f"컨텍스트 분석: {context_analysis}")
+            logging.info(f"🎯 선택된 접근 방식: {approach}, 언어: {lang}")
+            logging.info(f"📊 컨텍스트 분석: {context_analysis}")
+            
+            # 콘솔에도 출력
+            print(f"🎯 선택된 접근 방식: {approach}, 언어: {lang}")
+            print(f"📊 컨텍스트 분석: {context_analysis}")
             
             base_answer = ""
             
