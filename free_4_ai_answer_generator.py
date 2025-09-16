@@ -1422,7 +1422,7 @@ Important: Do not include greetings or closings. Only write the main content."""
                 base_answer = re.sub(r'^바이블\s*애플[^.]*\.\s*', '', base_answer, flags=re.IGNORECASE)
                 base_answer = re.sub(r'고객센터[^.]*\.\s*', '', base_answer, flags=re.IGNORECASE)
                 
-                # 끝맺음말 제거 (더 강화된 패턴)
+                # 끝맺음말 제거 (더 강화된 패턴) - '항상' 중복 제거 포함
                 base_answer = re.sub(r'\s*감사합니다[^.]*\.?\s*$', '', base_answer, flags=re.IGNORECASE)
                 base_answer = re.sub(r'\s*평안하세요[^.]*\.?\s*$', '', base_answer, flags=re.IGNORECASE)
                 base_answer = re.sub(r'\s*주님\s*안에서[^.]*\.?\s*$', '', base_answer, flags=re.IGNORECASE)
@@ -1439,13 +1439,24 @@ Important: Do not include greetings or closings. Only write the main content."""
                 base_answer = re.sub(r'[,.!?]\s*감사합니다[^.]*\.?\s*$', '', base_answer, flags=re.IGNORECASE)
                 base_answer = re.sub(r'[,.!?]\s*평안하세요[^.]*\.?\s*$', '', base_answer, flags=re.IGNORECASE)
                 
+                # 🔥 '항상' 단독으로 남은 경우 제거 (중복 문제 해결)
+                base_answer = re.sub(r'\s*항상\s*$', '', base_answer, flags=re.IGNORECASE)
+                base_answer = re.sub(r'\n\s*항상\s*\n', '\n', base_answer, flags=re.IGNORECASE)
+                base_answer = re.sub(r'<p>\s*항상\s*</p>', '', base_answer, flags=re.IGNORECASE)
+                base_answer = re.sub(r'<p><br></p>\s*<p>\s*항상\s*</p>', '', base_answer, flags=re.IGNORECASE)
+                
                 # 본문을 HTML 단락 형식으로 포맷팅
                 formatted_body = self.format_answer_with_html_paragraphs(base_answer.strip(), 'ko')
                 
                 # 한국어 고정 인사말 (HTML 형식으로)
                 final_answer = "<p>안녕하세요. GOODTV 바이블 애플입니다.</p><p><br></p><p>바이블 애플을 이용해주셔서 감사드립니다.</p><p><br></p>"
                 
-                # 포맷팅된 본문 추가
+                # 포맷팅된 본문 추가 (최종 정리 후)
+                # 🔥 HTML 포맷팅 후에도 남은 '항상' 제거
+                formatted_body = re.sub(r'<p>\s*항상\s*</p>', '', formatted_body, flags=re.IGNORECASE)
+                formatted_body = re.sub(r'<p><br></p>\s*<p>\s*항상\s*</p>', '', formatted_body, flags=re.IGNORECASE)
+                formatted_body = re.sub(r'<p>\s*항상\s*<br></p>', '', formatted_body, flags=re.IGNORECASE)
+                
                 final_answer += formatted_body
                 
                 # 고정된 끝맺음말 (HTML 형식으로)
