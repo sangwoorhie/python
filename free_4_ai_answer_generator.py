@@ -288,14 +288,18 @@ class AIAnswerGenerator:
 
     # ☆ 입력 텍스트를 AI 처리에 적합하게 전처리하는 메서드 (원본 텍스트 -> 정제된 텍스트)
     def preprocess_text(self, text: str) -> str:
+        logging.info(f"전처리 시작: 입력 길이={len(text) if text else 0}")
+        logging.info(f"전처리 입력 미리보기: {text[:100] if text else 'None'}...")
 
         # null 체크
         if not text:
+            logging.info("전처리: 빈 텍스트 입력")
             return ""
         
         # 문자열로 변환 및 HTML 엔티티 디코딩
         text = str(text)
         text = html.unescape(text)  # &amp; → &, &lt; → < 등
+        logging.info(f"HTML 디코딩 후 길이: {len(text)}")
         
         # HTML 태그 제거 및및 텍스트 형태로 변환 (구조 유지)
         text = re.sub(r'<br\s*/?>', '\n', text, flags=re.IGNORECASE)      # <br> → 줄바꿈
@@ -304,11 +308,15 @@ class AIAnswerGenerator:
         text = re.sub(r'<li[^>]*>', '\n• ', text, flags=re.IGNORECASE)    # <li> → 불릿포인트
         text = re.sub(r'</li>', '', text, flags=re.IGNORECASE)            # </li> 제거
         text = re.sub(r'<[^>]+>', '', text)                               # 나머지 HTML 태그 모두 제거
+        logging.info(f"HTML 태그 제거 후 길이: {len(text)}")
         
         # 공백 및 줄바꿈 정규화 - 일관된 형태로 변환
         text = re.sub(r'\n{3,}', '\n\n', text)    # 3개 이상 줄바꿈 → 2개로 제한
         text = re.sub(r'[ \t]+', ' ', text)       # 연속 공백/탭 → 단일 공백
         text = text.strip()                       # 앞뒤 공백 제거
+        
+        logging.info(f"전처리 완료: 최종 길이={len(text)}")
+        logging.info(f"전처리 결과 미리보기: {text[:100]}...")
         
         return text
 
@@ -413,9 +421,20 @@ class AIAnswerGenerator:
                     answer = match['metadata'].get('answer', '')
                     category = match['metadata'].get('category', '일반')
                     
-                    # 유사도 임계값 이상만 포함하여 정확도 향상, 임계값 이하는 버림 (노이즈 제거)
-                    # 하지만 최소 1개의 결과는 보장하기 위해 상위 결과는 임계값과 무관하게 포함
-                    if score >= similarity_threshold or (i == 0 and score >= 0.5):
+                    # ★ 임계값 로직 대폭 완화 - 항상 최소 3개는 반환하도록 수정
+                    include_result = False
+                    
+                    if score >= similarity_threshold:
+                        include_result = True
+                        logging.info(f"임계값 통과: {score:.3f} >= {similarity_threshold:.2f}")
+                    elif i < 3:  # 상위 3개는 무조건 포함
+                        include_result = True
+                        logging.info(f"상위 {i+1}번째 결과로 강제 포함: {score:.3f}")
+                    elif score >= 0.3:  # 매우 낮은 임계값으로 추가 포함
+                        include_result = True
+                        logging.info(f"낮은 임계값 통과: {score:.3f} >= 0.3")
+                    
+                    if include_result:
                         filtered_results.append({
                             'score': score,
                             'question': question,
@@ -426,12 +445,11 @@ class AIAnswerGenerator:
                         })
                         
                         # 디버깅을 위한 상세 로깅
-                        logging.info(f"유사 답변 #{i+1}: 점수={score:.3f}, 카테고리={category}, 언어={lang}")
+                        logging.info(f"★ 포함된 유사 답변 #{i+1}: 점수={score:.3f}, 카테고리={category}, 언어={lang}")
                         logging.info(f"참고 질문: {question[:50]}...")
                         logging.info(f"참고 답변: {answer[:100]}...")
-                        logging.info(f"유사도 임계값: {similarity_threshold:.2f}")
-                        logging.info(f"검색 질문: {query[:50]}...")
-                        logging.info(f"검색 언어: {lang}")
+                    else:
+                        logging.info(f"× 제외된 답변 #{i+1}: 점수={score:.3f} (너무 낮음)")
                         
                 # 4. 메모리 정리
                 del results # 원본 응답 객체 즉시 삭제 (메모리 해제)
@@ -925,17 +943,22 @@ class AIAnswerGenerator:
     # ☆ 한국어 텍스트의 유효성을 검증하는 메서드
     def is_valid_korean_text(self, text: str) -> bool:
         if not text or len(text.strip()) < 3:
+            logging.info(f"한국어 검증 실패: 텍스트가 너무 짧음 (길이: {len(text.strip()) if text else 0})")
             return False
         
         korean_chars = len(re.findall(r'[가-힣]', text))
         total_chars = len(re.sub(r'\s', '', text))
         
         if total_chars == 0:
+            logging.info("한국어 검증 실패: 총 글자 수가 0")
             return False
             
         korean_ratio = korean_chars / total_chars
+        logging.info(f"한국어 비율: {korean_ratio:.3f} (한국어: {korean_chars}, 전체: {total_chars})")
         
-        if korean_ratio < 0.2:
+        # 한국어 비율 기준을 완화 (0.2 → 0.1)
+        if korean_ratio < 0.1:
+            logging.info(f"한국어 검증 실패: 한국어 비율 부족 ({korean_ratio:.3f} < 0.1)")
             return False
         
         # 무의미한 패턴 감지 (GPT 할루시네이션 방지)
@@ -950,16 +973,21 @@ class AIAnswerGenerator:
         
         for pattern in meaningless_patterns:
             if re.match(pattern, text, re.IGNORECASE):
+                logging.info(f"한국어 검증 실패: 무의미한 패턴 감지")
                 return False
         
         # 반복 문자 감지: 같은 문자가 5번 이상 연속으로 나타나면 비정상 텍스트로 간주
         if re.search(r'(.)\1{5,}', text):
+            logging.info("한국어 검증 실패: 반복 문자 감지")
             return False
         
+        # 영어 비율 검사를 완화 (0.5 → 0.7)
         random_pattern = r'[a-zA-Z]{8,}'
-        if re.search(random_pattern, text) and korean_ratio < 0.5:
+        if re.search(random_pattern, text) and korean_ratio < 0.3:
+            logging.info(f"한국어 검증 실패: 긴 영어 단어와 낮은 한국어 비율")
             return False
         
+        logging.info("한국어 검증 성공")
         return True
 
     # ☆ 영어 텍스트의 유효성을 검증하는 메서드
@@ -1145,30 +1173,48 @@ Important: Do not include greetings or closings. Only write the main content."""
 
     # ☆ 최적의 폴백 답변 선택 메서드 (직접 사용 답변 포함)
     def get_best_fallback_answer(self, similar_answers: list, lang: str = 'ko') -> str:
+        logging.info(f"=== get_best_fallback_answer 시작 ===")
+        logging.info(f"입력된 similar_answers 개수: {len(similar_answers)}")
+        
         if not similar_answers:
+            logging.warning("similar_answers가 비어있음")
             return ""
+        
+        # 입력된 답변들 미리보기
+        for i, ans in enumerate(similar_answers[:3]):
+            logging.info(f"답변 #{i+1}: 점수={ans['score']:.3f}, 길이={len(ans.get('answer', ''))}, 내용미리보기={ans.get('answer', '')[:50]}...")
         
         # 점수와 텍스트 품질을 종합 평가
         best_answer = ""
         best_score = 0
         
-        for ans in similar_answers[:3]: # 상위 3개만 검토 (품질 향상)
+        for i, ans in enumerate(similar_answers[:3]): # 상위 3개만 검토 (품질 향상)
+            logging.info(f"--- 답변 #{i+1} 처리 시작 ---")
             score = ans['score']
             answer_text = ans['answer']  # 원본 답변 텍스트 사용
+            logging.info(f"원본 답변 길이: {len(answer_text)}, 내용: {answer_text[:100]}...")
             
             # 기본 정리만 수행
             answer_text = self.preprocess_text(answer_text)
+            logging.info(f"전처리 후 길이: {len(answer_text)}, 내용: {answer_text[:100]}...")
             
             # 영어 질문인 경우 답변을 번역
             if lang == 'en' and ans.get('lang', 'ko') == 'ko':
                 answer_text = self.translate_text(answer_text, 'ko', 'en')
+                logging.info(f"번역 후 길이: {len(answer_text)}")
             
-            if not self.is_valid_text(answer_text, lang):
+            # 유효성 검사
+            is_valid = self.is_valid_text(answer_text, lang)
+            logging.info(f"유효성 검사 결과: {is_valid}")
+            
+            if not is_valid:
+                logging.warning(f"답변 #{i+1} 유효성 검사 실패, 건너뜀")
                 continue
             
             # 높은 유사도(0.8+)인 경우 간단하게 첫 번째 답변 선택
             if score >= 0.8:
-                logging.info(f"높은 유사도({score:.3f})로 첫 번째 답변 직접 선택")
+                logging.info(f"높은 유사도({score:.3f})로 답변 #{i+1} 직접 선택")
+                logging.info(f"선택된 답변 최종 길이: {len(answer_text)}")
                 return answer_text
             
             # 종합 점수 계산 (유사도 + 텍스트 길이 + 완성도)
@@ -1177,11 +1223,18 @@ Important: Do not include greetings or closings. Only write the main content."""
             
             total_score = score * 0.8 + length_score * 0.1 + completeness_score * 0.1  # 유사도 가중치 증가
             
+            logging.info(f"답변 #{i+1} 종합 점수: {total_score:.3f} (유사도:{score:.3f}, 길이:{length_score:.3f}, 완성도:{completeness_score:.3f})")
+            
             if total_score > best_score:
                 best_score = total_score
                 best_answer = answer_text
+                logging.info(f"새로운 최고 점수 답변으로 선택됨")
         
+        logging.info(f"=== get_best_fallback_answer 완료 ===")
         logging.info(f"최종 선택된 답변 점수: {best_score:.3f}")
+        logging.info(f"최종 답변 길이: {len(best_answer)}")
+        logging.info(f"최종 답변 미리보기: {best_answer[:100] if best_answer else 'None'}...")
+        
         return best_answer
 
     # ☆ 더 보수적인 GPT-3.5-turbo 생성 메서드 (기존 코드와의 호환성 유지)
@@ -1224,24 +1277,60 @@ Important: Do not include greetings or closings. Only write the main content."""
 
         try:
             approach = context_analysis['recommended_approach']
+            logging.info(f"=== 접근 방식 결정 ===")
             logging.info(f"선택된 접근 방식: {approach}, 언어: {lang}")
+            logging.info(f"컨텍스트 분석: {context_analysis}")
+            
+            base_answer = ""
             
             if approach == 'direct_use':
+                logging.info("=== 직접 사용 방식 시작 ===")
                 base_answer = self.get_best_fallback_answer(similar_answers[:3], lang)
-                logging.info("높은 유사도로 직접 사용")
+                logging.info(f"직접 사용 결과 길이: {len(base_answer) if base_answer else 0}")
+                logging.info(f"직접 사용 결과 미리보기: {base_answer[:100] if base_answer else 'None'}...")
                 
             elif approach in ['gpt_with_strong_context', 'gpt_with_weak_context']:
+                logging.info(f"=== GPT 생성 방식 시작: {approach} ===")
                 base_answer = self.generate_with_enhanced_gpt(query, similar_answers, context_analysis, lang)
+                logging.info(f"GPT 생성 결과 길이: {len(base_answer) if base_answer else 0}")
                 
                 if not base_answer or not self.is_valid_text(base_answer, lang):
                     logging.warning("GPT 생성 실패, 폴백 답변 사용")
                     base_answer = self.get_best_fallback_answer(similar_answers, lang)
+                    logging.info(f"폴백 답변 길이: {len(base_answer) if base_answer else 0}")
                     
             else:
+                logging.info("=== 폴백 방식 사용 ===")
                 base_answer = self.get_best_fallback_answer(similar_answers, lang)
+                logging.info(f"폴백 답변 길이: {len(base_answer) if base_answer else 0}")
+            
+            # 최종 검증 전 상세 로깅
+            logging.info(f"=== 최종 검증 시작 ===")
+            logging.info(f"base_answer 존재 여부: {base_answer is not None and base_answer != ''}")
+            if base_answer:
+                logging.info(f"base_answer 길이: {len(base_answer)}")
+                logging.info(f"base_answer 미리보기: {base_answer[:200]}...")
+                is_valid = self.is_valid_text(base_answer, lang)
+                logging.info(f"is_valid_text 결과: {is_valid}")
+                if not is_valid:
+                    logging.warning(f"유효성 검사 실패 사유 분석 중...")
+                    # 한국어 텍스트 분석
+                    if lang == 'ko':
+                        korean_chars = len(re.findall(r'[가-힣]', base_answer))
+                        total_chars = len(re.sub(r'\s', '', base_answer))
+                        korean_ratio = korean_chars / total_chars if total_chars > 0 else 0
+                        logging.warning(f"한국어 비율: {korean_ratio:.2f} (기준: 0.2 이상)")
+                        logging.warning(f"한국어 글자 수: {korean_chars}, 전체 글자 수: {total_chars}")
+            else:
+                logging.error("base_answer가 비어있음")
             
             if not base_answer or not self.is_valid_text(base_answer, lang):
-                logging.error("모든 답변 생성 방법 실패")
+                logging.error("=== 모든 답변 생성 방법 실패 ===")
+                logging.error(f"similar_answers 개수: {len(similar_answers)}")
+                if similar_answers:
+                    logging.error(f"첫 번째 답변 점수: {similar_answers[0]['score']}")
+                    logging.error(f"첫 번째 답변 내용: {similar_answers[0]['answer'][:100]}...")
+                
                 if lang == 'en':
                     return "<p>We need more detailed information to provide an accurate answer to your inquiry.</p><p><br></p><p>Please contact our customer service center for prompt assistance.</p>"
                 else:
