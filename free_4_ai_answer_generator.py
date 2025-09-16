@@ -39,6 +39,7 @@ import pyodbc                      # MSSQL 데이터베이스 연결
 from dotenv import load_dotenv     # .env 파일에서 환경변수 로드
 from datetime import datetime      # 날짜/시간 처리
 from typing import Optional, Dict, Any, List  # 타입 힌팅
+import re                                     # 정규표현식
 
 # 성능 모니터링 관련
 from memory_profiler import profile                  # 메모리 사용량 프로파일링
@@ -325,6 +326,15 @@ class AIAnswerGenerator:
         text = re.sub(r'<[^>]+>', '', text)                               # 나머지 HTML 태그 모두 제거
         logging.info(f"HTML 태그 제거 후 길이: {len(text)}")
         
+        # 🔥 구 앱 이름을 바이블 애플로 교체 (전처리 단계에서)
+        # 중복 방지를 위해 순서를 조정: 전체 패턴부터 처리
+        text = re.sub(r'바이블\s*애플\s*\(구\)\s*다번역\s*성경\s*찬송', '바이블 애플', text, flags=re.IGNORECASE)
+        text = re.sub(r'바이블\s*애플\s*\(구\)\s*다번역성경찬송', '바이블 애플', text, flags=re.IGNORECASE)
+        text = re.sub(r'\(구\)\s*다번역\s*성경\s*찬송', '바이블 애플', text, flags=re.IGNORECASE)
+        text = re.sub(r'\(구\)\s*다번역성경찬송', '바이블 애플', text, flags=re.IGNORECASE)
+        text = re.sub(r'다번역\s*성경\s*찬송', '바이블 애플', text, flags=re.IGNORECASE)
+        text = re.sub(r'다번역성경찬송', '바이블 애플', text, flags=re.IGNORECASE)
+        
         # 공백 및 줄바꿈 정규화 - 일관된 형태로 변환
         text = re.sub(r'\n{3,}', '\n\n', text)    # 3개 이상 줄바꿈 → 2개로 제한
         text = re.sub(r'[ \t]+', ' ', text)       # 연속 공백/탭 → 단일 공백
@@ -550,7 +560,7 @@ class AIAnswerGenerator:
                 
                 # JSON 파싱 시도
                 try:
-                    import json
+                    
                     result = json.loads(result_text)
                     logging.info(f"AI 의도 분석 결과: {result}")
                     return result
@@ -746,7 +756,7 @@ class AIAnswerGenerator:
         stop_words = {'는', '은', '이', '가', '을', '를', '에', '에서', '로', '으로', '와', '과', '의', '도', '만', '까지', '부터', '께서', '에게', '한테', '로부터', '으로부터'}
         
         # 특수문자 제거 및 단어 분리
-        import re
+        
         words = re.findall(r'[가-힣a-zA-Z0-9]+', text)
         
         # 불용어 제거 및 2글자 이상 단어만 선택
@@ -1707,15 +1717,28 @@ Important: Do not include greetings or closings. Only write the main content."""
                 base_answer = re.sub(r'[,.!?]\s*감사합니다[^.]*\.?\s*$', '', base_answer, flags=re.IGNORECASE)
                 base_answer = re.sub(r'[,.!?]\s*평안하세요[^.]*\.?\s*$', '', base_answer, flags=re.IGNORECASE)
                 
-                # 🔥 오래된 앱 이름 제거 및 정리
-                base_answer = re.sub(r'다번역성경찬송', '바이블 애플', base_answer, flags=re.IGNORECASE)
+                # 🔥 구 앱 이름을 바이블 애플로 완전 교체 (중복 방지)
+                # 중복 방지를 위해 순서를 조정: 전체 패턴부터 처리
+                base_answer = re.sub(r'바이블\s*애플\s*\(구\)\s*다번역\s*성경\s*찬송', '바이블 애플', base_answer, flags=re.IGNORECASE)
+                base_answer = re.sub(r'바이블\s*애플\s*\(구\)\s*다번역성경찬송', '바이블 애플', base_answer, flags=re.IGNORECASE)
+                base_answer = re.sub(r'\(구\)\s*다번역\s*성경\s*찬송', '바이블 애플', base_answer, flags=re.IGNORECASE)
                 base_answer = re.sub(r'\(구\)\s*다번역성경찬송', '바이블 애플', base_answer, flags=re.IGNORECASE)
+                base_answer = re.sub(r'다번역\s*성경\s*찬송', '바이블 애플', base_answer, flags=re.IGNORECASE)
+                base_answer = re.sub(r'다번역성경찬송', '바이블 애플', base_answer, flags=re.IGNORECASE)
                 
-                # 🔥 중복 끝맺음말 제거
-                base_answer = re.sub(r'(항상\s*성도님께\s*좋은\s*성경앱을\s*제공하기\s*위해\s*노력하는\s*바이블\s*애플이\s*되겠습니다[.]?\s*)*', 
+                # 🔥 완전히 강화된 중복 끝맺음말 제거 시스템
+                # 1단계: 모든 형태의 "항상 성도님께..." 패턴 제거
+                base_answer = re.sub(r'항상\s*성도님들?께\s*좋은\s*(서비스|성경앱)을?\s*제공하기\s*위해\s*노력하는\s*바이블\s*애플이\s*되겠습니다\.?\s*', 
                                    '', base_answer, flags=re.IGNORECASE)
-                base_answer = re.sub(r'(감사합니다[.]?\s*주님\s*안에서\s*평안하세요[.]?\s*)*', 
+                
+                # 2단계: 감사합니다 패턴 완전 제거
+                base_answer = re.sub(r'감사합니다\.?\s*(주님\s*안에서\s*평안하세요\.?)?\s*', 
                                    '', base_answer, flags=re.IGNORECASE)
+                
+                # 3단계: 불완전한 문장들 제거
+                base_answer = re.sub(r'오늘도\s*$', '', base_answer, flags=re.IGNORECASE)
+                base_answer = re.sub(r'오늘도\s*\n', '\n', base_answer, flags=re.IGNORECASE)
+                base_answer = re.sub(r'항상\s*$', '', base_answer, flags=re.IGNORECASE)
                 
                 # 🔥 '항상' 단독으로 남은 경우 제거 (중복 문제 해결)
                 base_answer = re.sub(r'\s*항상\s*$', '', base_answer, flags=re.IGNORECASE)
@@ -1729,11 +1752,21 @@ Important: Do not include greetings or closings. Only write the main content."""
                 # 한국어 고정 인사말 (HTML 형식으로)
                 final_answer = "<p>안녕하세요. GOODTV 바이블 애플입니다.</p><p><br></p><p>바이블 애플을 이용해주셔서 감사드립니다.</p><p><br></p>"
                 
-                # 포맷팅된 본문 추가 (최종 정리 후)
-                # 🔥 HTML 포맷팅 후에도 남은 '항상' 제거
+                # 포맷팅된 본문 추가 전 최종 정리
+                # 🔥 HTML 포맷팅 후 완전한 정리 작업
+                # 중복된 끝맺음말 HTML 태그 제거
+                formatted_body = re.sub(r'<p>\s*항상\s*성도님들?께\s*좋은\s*(서비스|성경앱)을?\s*제공하기\s*위해\s*노력하는\s*바이블\s*애플이\s*되겠습니다\.?\s*</p>', '', formatted_body, flags=re.IGNORECASE)
+                formatted_body = re.sub(r'<p>\s*감사합니다\.?\s*(주님\s*안에서\s*평안하세요\.?)?\s*</p>', '', formatted_body, flags=re.IGNORECASE)
+                
+                # 불완전한 문장들 제거
                 formatted_body = re.sub(r'<p>\s*항상\s*</p>', '', formatted_body, flags=re.IGNORECASE)
-                formatted_body = re.sub(r'<p><br></p>\s*<p>\s*항상\s*</p>', '', formatted_body, flags=re.IGNORECASE)
-                formatted_body = re.sub(r'<p>\s*항상\s*<br></p>', '', formatted_body, flags=re.IGNORECASE)
+                formatted_body = re.sub(r'<p>\s*오늘도\s*</p>', '', formatted_body, flags=re.IGNORECASE)
+                formatted_body = re.sub(r'<p><br></p>\s*<p>\s*(항상|오늘도)\s*</p>', '', formatted_body, flags=re.IGNORECASE)
+                formatted_body = re.sub(r'<p>\s*(항상|오늘도)\s*<br></p>', '', formatted_body, flags=re.IGNORECASE)
+                
+                # 연속된 빈 태그들 정리
+                formatted_body = re.sub(r'(<p><br></p>\s*){3,}', '<p><br></p><p><br></p>', formatted_body)
+                formatted_body = re.sub(r'(<p><br></p>\s*)+$', '', formatted_body)  # 끝의 빈 태그들 제거
                 
                 final_answer += formatted_body
                 
