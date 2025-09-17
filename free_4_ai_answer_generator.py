@@ -523,37 +523,61 @@ class AIAnswerGenerator:
             logging.error(f"번역 실패: {e}")
             return text
 
-    # ☆ AI 기반 질문 의도 분석 메서드 (정확도 개선 버전)
+    # ☆ AI 기반 질문 의도 분석 메서드 (대폭 강화된 정확도)
     def analyze_question_intent(self, query: str) -> dict:
-        """AI를 이용해 질문의 의도와 핵심 내용을 분석"""
+        """AI를 이용해 질문의 의도와 핵심 내용을 매우 정확하게 분석"""
         try:
             with memory_cleanup():
-                system_prompt = """당신은 고객 문의 분석 전문가입니다. 
-고객의 질문을 분석하여 다음 정보를 JSON 형태로 반환하세요:
+                system_prompt = """당신은 바이블 앱 고객 문의 분석 전문가입니다. 
+고객의 질문을 매우 정확하게 분석하여 다음 정보를 JSON 형태로 반환하세요:
 
 {
-  "intent_type": "문의 유형 (예: 오탈자신고, 기능문의, 기술지원, 개선제안, 일반문의)",
-  "main_topic": "주요 주제 (예: 성경본문, 음원재생, 검색기능, 번역본, 앱기능, 텍스트복사, 화면표시)",
-  "specific_request": "구체적 요청사항 요약",
+  "intent_type": "문의 유형",
+  "main_topic": "핵심 주제",
+  "sub_topic": "세부 주제",
+  "content_type": "콘텐츠 유형",
+  "language_preference": "언어 선호도",
+  "specific_request": "구체적 요청사항",
   "keywords": ["핵심", "키워드", "목록"],
-  "urgency": "긴급도 (low/medium/high)",
-  "action_type": "요청 행동 (예: 복사, 재생, 검색, 다운로드, 설정변경, 오류신고)"
+  "urgency": "긴급도",
+  "action_type": "요청 행동"
 }
 
-⚠️ 중요한 분석 기준:
-1. 동사/행동어를 정확히 식별하세요 (복사≠재생, 검색≠다운로드)
-2. 텍스트 관련 요청과 음성 관련 요청을 명확히 구분하세요
-3. "복사", "붙여넣기", "워드", "텍스트"는 텍스트 처리 요청입니다
-4. "재생", "듣기", "음성", "소리"는 음성 처리 요청입니다
-5. 질문에서 명시된 구체적 행동을 놓치지 마세요
+🎯 바이블 앱 전용 분석 기준:
 
-분석 예시:
-- "복사해서 워드로" → action_type: "복사", main_topic: "텍스트복사"
-- "연속으로 들을 수" → action_type: "재생", main_topic: "음원재생"
+📚 콘텐츠 유형 구분 (매우 중요!):
+- "성경": 성경 본문, 구절, 장, 절 관련
+- "찬송": 찬송가, 찬양, hymn, praise 관련  
+- "기도": 기도문, 주기도문 관련
+- "설교": 설교, 강의, 강연 관련
+- "앱기능": 앱 자체 기능, 설정, 사용법
 
-"""
+🌏 언어 구분 (정확히!):
+- "korean": 한국어, 한글 관련
+- "english": 영어, English 관련
+- "multilingual": 다국어, 번역 관련
+- "none": 언어 무관
 
-                user_prompt = f"다음 고객 문의를 분석해주세요: {query}"
+⚠️ 매우 중요한 키워드 구분:
+1. "찬송가" ≠ "성경" (완전히 다른 콘텐츠)
+2. "영어 찬송가" = content_type: "찬송", language_preference: "english"
+3. "영어 성경" = content_type: "성경", language_preference: "english"  
+4. "복사" ≠ "재생" (완전히 다른 행동)
+5. "검색" ≠ "설정" (완전히 다른 기능)
+
+📋 분석 예시:
+- "영어 찬송가도 있나요?" → content_type: "찬송", language_preference: "english"
+- "NIV 성경 있나요?" → content_type: "성경", language_preference: "english"
+- "복사해서 워드로" → action_type: "복사", content_type: "성경"
+- "찬송가 연속재생" → action_type: "재생", content_type: "찬송"
+
+🚫 절대 혼동하지 말 것:
+- 찬송가 ≠ 성경본문
+- 영어 ≠ 한국어  
+- 복사 ≠ 재생
+- 검색 ≠ 설정변경"""
+
+                user_prompt = f"다음 바이블 앱 고객 문의를 매우 정확하게 분석해주세요: {query}"
 
                 response = self.openai_client.chat.completions.create(
                     model='gpt-3.5-turbo',
@@ -561,23 +585,25 @@ class AIAnswerGenerator:
                         {"role": "system", "content": system_prompt},
                         {"role": "user", "content": user_prompt}
                     ],
-                    max_tokens=300,
-                    temperature=0.3
+                    max_tokens=400,
+                    temperature=0.2  # 더 보수적으로 설정
                 )
                 
                 result_text = response.choices[0].message.content.strip()
                 
                 # JSON 파싱 시도
                 try:
-                    
                     result = json.loads(result_text)
-                    logging.info(f"AI 의도 분석 결과: {result}")
+                    logging.info(f"강화된 AI 의도 분석 결과: {result}")
                     return result
                 except json.JSONDecodeError:
                     logging.warning(f"JSON 파싱 실패, 기본값 반환: {result_text}")
                     return {
                         "intent_type": "일반문의",
                         "main_topic": "기타",
+                        "sub_topic": "기타",
+                        "content_type": "앱기능",
+                        "language_preference": "none",
                         "specific_request": query[:100],
                         "keywords": [query[:20]],
                         "urgency": "medium",
@@ -589,6 +615,9 @@ class AIAnswerGenerator:
             return {
                 "intent_type": "일반문의", 
                 "main_topic": "기타",
+                "sub_topic": "기타",
+                "content_type": "앱기능",
+                "language_preference": "none",
                 "specific_request": query[:100],
                 "keywords": [query[:20]],
                 "urgency": "medium",
@@ -629,27 +658,41 @@ class AIAnswerGenerator:
         categories = [ans['category'] for ans in similar_answers[:5]]
         category_distribution = {cat: categories.count(cat) for cat in set(categories)}
         
-        # 🔥 질문 의도와 답변 카테고리 일치도 검사
+        # 🔥 강화된 다단계 관련성 검증 적용
         context_relevance = self.check_context_relevance_ai(question_analysis, categories, query, similar_answers[:3])
-        logging.info(f"컨텍스트 관련성: {context_relevance}")
+        logging.info(f"강화된 컨텍스트 관련성: {context_relevance}")
         
-        # 🔥 의사 결정 트리 개선 - 관련성을 고려한 전략 결정
+        # 🔥 의사 결정 트리 대폭 개선 - 관련성을 최우선으로 고려
         if context_relevance == 'irrelevant':
-            # 관련성이 없으면 무조건 폴백 처리
-            approach = 'fallback'
-            logging.warning(f"질문 유형({question_type})과 검색된 답변의 관련성이 낮아 폴백 처리")
-        elif best_score >= 0.95 and context_relevance in ['high', 'medium']:
-            approach = 'direct_use'
-        elif best_score >= 0.8 and context_relevance == 'high':
-            approach = 'direct_use'
-        elif best_score >= 0.7 and context_relevance in ['high', 'medium']:
-            approach = 'gpt_with_strong_context'
-        elif best_score >= 0.5 and context_relevance == 'high':
-            approach = 'gpt_with_strong_context'
-        elif best_score >= 0.4 and context_relevance in ['high', 'medium']:
-            approach = 'gpt_with_weak_context'
+            # 관련성이 없으면 무조건 특별 fallback 처리
+            approach = 'smart_fallback'
+            logging.warning(f"질문 유형({question_type})과 검색된 답변의 관련성이 없어 스마트 폴백 처리")
+        elif context_relevance == 'high':
+            # 관련성이 높으면 점수에 따라 결정
+            if best_score >= 0.9:
+                approach = 'direct_use'
+            elif best_score >= 0.7:
+                approach = 'gpt_with_strong_context'
+            elif best_score >= 0.5:
+                approach = 'gpt_with_strong_context'
+            else:
+                approach = 'gpt_with_weak_context'
+        elif context_relevance == 'medium':
+            # 관련성이 중간이면 더 신중하게
+            if best_score >= 0.85:
+                approach = 'direct_use'
+            elif best_score >= 0.6:
+                approach = 'gpt_with_strong_context'
+            else:
+                approach = 'gpt_with_weak_context'
+        elif context_relevance == 'low':
+            # 관련성이 낮으면 매우 신중하게
+            if best_score >= 0.9:
+                approach = 'gpt_with_weak_context'  # 직접 사용하지 않음
+            else:
+                approach = 'smart_fallback'
         else:
-            approach = 'fallback'
+            approach = 'smart_fallback'
         
         # 분석 결과 구조화
         analysis = {
@@ -668,55 +711,245 @@ class AIAnswerGenerator:
         logging.info(f"향상된 컨텍스트 분석 결과: {analysis}")
         return analysis
 
-    # ☆ AI 기반 컨텍스트 관련성 검사 메서드 (정확도 강화 버전)
+    # ☆ 질문과 답변의 핵심 주제를 추출하는 메서드 (새로 추가)
+    def extract_core_topic(self, text: str, text_type: str = "question") -> dict:
+        """질문 또는 답변에서 핵심 주제를 추출"""
+        try:
+            with memory_cleanup():
+                system_prompt = """당신은 바이블 앱 콘텐츠 분석 전문가입니다.
+입력된 텍스트에서 핵심 주제를 추출하여 JSON 형태로 반환하세요:
+
+{
+  "content_type": "콘텐츠 유형",
+  "language_type": "언어 유형", 
+  "action_type": "행동 유형",
+  "specific_topic": "구체적 주제",
+  "confidence": "신뢰도 (0.0-1.0)"
+}
+
+📚 콘텐츠 유형:
+- "bible": 성경, 성경본문, 구절, 장절
+- "hymn": 찬송가, 찬양, 찬송
+- "prayer": 기도, 기도문
+- "sermon": 설교, 강의
+- "app_function": 앱 기능, 설정
+- "other": 기타
+
+🌏 언어 유형:
+- "korean": 한국어 관련
+- "english": 영어 관련  
+- "mixed": 다국어 관련
+- "neutral": 언어 무관
+
+⚡ 행동 유형:
+- "play": 재생, 듣기
+- "copy": 복사, 붙여넣기
+- "search": 검색, 찾기
+- "download": 다운로드
+- "setting": 설정, 변경
+- "inquiry": 문의, 질문
+- "other": 기타
+
+중요: 매우 정확하게 분류하세요!"""
+
+                user_prompt = f"다음 {text_type}에서 핵심 주제를 추출해주세요:\n\n{text}"
+
+                response = self.openai_client.chat.completions.create(
+                    model='gpt-3.5-turbo',
+                    messages=[
+                        {"role": "system", "content": system_prompt},
+                        {"role": "user", "content": user_prompt}
+                    ],
+                    max_tokens=300,
+                    temperature=0.1
+                )
+                
+                result_text = response.choices[0].message.content.strip()
+                
+                try:
+                    result = json.loads(result_text)
+                    logging.info(f"핵심 주제 추출 ({text_type}): {result}")
+                    return result
+                except json.JSONDecodeError:
+                    return {
+                        "content_type": "other",
+                        "language_type": "neutral", 
+                        "action_type": "other",
+                        "specific_topic": text[:50],
+                        "confidence": 0.3
+                    }
+                    
+        except Exception as e:
+            logging.error(f"핵심 주제 추출 실패: {e}")
+            return {
+                "content_type": "other",
+                "language_type": "neutral",
+                "action_type": "other", 
+                "specific_topic": text[:50],
+                "confidence": 0.0
+            }
+
+    # ☆ 의미적 유사성을 검증하는 메서드 (새로 추가)
+    def validate_semantic_similarity(self, question_analysis: dict, answer_topics: list, query: str, answers: list) -> dict:
+        """질문과 답변들 간의 의미적 유사성을 다각도로 검증"""
+        try:
+            # 1. 콘텐츠 유형 일치도 검사
+            question_content = question_analysis.get('content_type', 'other')
+            question_language = question_analysis.get('language_preference', 'none')
+            question_action = question_analysis.get('action_type', 'other')
+            
+            content_matches = 0
+            language_matches = 0
+            action_matches = 0
+            total_answers = len(answers)
+            
+            for answer in answers[:5]:  # 상위 5개만 검사
+                # 답변의 핵심 주제 추출
+                answer_topic = self.extract_core_topic(answer.get('answer', ''), 'answer')
+                
+                # 콘텐츠 유형 일치 검사
+                if answer_topic['content_type'] == question_content:
+                    content_matches += 1
+                
+                # 언어 유형 일치 검사  
+                if question_language != 'none':
+                    if answer_topic['language_type'] == question_language or answer_topic['language_type'] == 'neutral':
+                        language_matches += 1
+                else:
+                    language_matches += 1  # 언어 무관인 경우 항상 일치
+                
+                # 행동 유형 일치 검사
+                if answer_topic['action_type'] == question_action or answer_topic['action_type'] == 'other':
+                    action_matches += 1
+            
+            # 2. 일치도 비율 계산
+            content_ratio = content_matches / max(total_answers, 1)
+            language_ratio = language_matches / max(total_answers, 1)
+            action_ratio = action_matches / max(total_answers, 1)
+            
+            # 3. 종합 유사성 점수 계산 (가중 평균)
+            similarity_score = (content_ratio * 0.5 + language_ratio * 0.3 + action_ratio * 0.2)
+            
+            # 4. 특별한 불일치 패턴 감지
+            critical_mismatch = False
+            
+            # 찬송가 vs 성경 불일치
+            if question_content == 'hymn' and content_matches == 0:
+                critical_mismatch = True
+                logging.warning("심각한 불일치: 찬송가 질문에 성경 답변")
+                
+            # 영어 vs 한국어 불일치  
+            if question_language in ['english', 'korean'] and language_matches == 0:
+                critical_mismatch = True
+                logging.warning(f"심각한 불일치: {question_language} 질문에 다른 언어 답변")
+            
+            # 복사 vs 재생 불일치
+            if question_action in ['copy', 'play'] and action_matches == 0:
+                critical_mismatch = True
+                logging.warning(f"심각한 불일치: {question_action} 요청에 다른 행동 답변")
+            
+            # 5. 최종 판정
+            if critical_mismatch:
+                final_similarity = 'critical_mismatch'
+            elif similarity_score >= 0.8:
+                final_similarity = 'high'
+            elif similarity_score >= 0.6:
+                final_similarity = 'medium'
+            elif similarity_score >= 0.4:
+                final_similarity = 'low'
+            else:
+                final_similarity = 'very_low'
+            
+            result = {
+                'similarity_score': similarity_score,
+                'content_match_ratio': content_ratio,
+                'language_match_ratio': language_ratio,
+                'action_match_ratio': action_ratio,
+                'critical_mismatch': critical_mismatch,
+                'final_similarity': final_similarity,
+                'analysis_summary': f"콘텐츠일치:{content_ratio:.2f}, 언어일치:{language_ratio:.2f}, 행동일치:{action_ratio:.2f}"
+            }
+            
+            logging.info(f"의미적 유사성 검증: {result}")
+            return result
+            
+        except Exception as e:
+            logging.error(f"의미적 유사성 검증 실패: {e}")
+            return {
+                'similarity_score': 0.0,
+                'final_similarity': 'error',
+                'critical_mismatch': True,
+                'analysis_summary': f"검증 실패: {str(e)}"
+            }
+
+    # ☆ AI 기반 컨텍스트 관련성 검사 메서드 (대폭 강화 버전)
     def check_context_relevance_ai(self, question_analysis: dict, answer_categories: list, query: str, top_answers: list) -> str:
-        """AI를 이용해 질문 의도와 답변의 관련성을 지능적으로 검사"""
+        """AI와 의미적 유사성 검증을 결합한 고도화된 관련성 검사"""
         
         try:
-            # 상위 답변들의 내용 요약
+            # 1단계: 의미적 유사성 검증 (새로운 다단계 검증)
+            semantic_result = self.validate_semantic_similarity(question_analysis, answer_categories, query, top_answers)
+            
+            # 심각한 불일치가 감지된 경우 즉시 irrelevant 반환
+            if semantic_result.get('critical_mismatch', False):
+                logging.warning(f"심각한 의미적 불일치 감지: {semantic_result.get('analysis_summary', '')}")
+                return 'irrelevant'
+            
+            # 의미적 유사성 점수가 매우 낮은 경우
+            similarity_score = semantic_result.get('similarity_score', 0.0)
+            if similarity_score < 0.3:
+                logging.warning(f"의미적 유사성 점수 너무 낮음: {similarity_score:.3f}")
+                return 'irrelevant'
+            
+            # 2단계: AI 기반 상세 분석
             answer_summaries = []
             for i, answer in enumerate(top_answers[:3]):
-                answer_text = answer.get('answer', '')[:200]  # 첫 200자만
+                answer_text = answer.get('answer', '')[:200]
                 answer_summaries.append(f"답변{i+1}: {answer_text}")
             
             combined_answers = "\n".join(answer_summaries)
             
             with memory_cleanup():
-                system_prompt = """당신은 문의-답변 관련성 분석 전문가입니다.
-고객의 질문 의도와 검색된 답변들의 관련성을 분석하여 다음 중 하나로 판정하세요:
+                system_prompt = """당신은 바이블 앱 전문 문의-답변 관련성 분석가입니다.
+고객의 질문 의도와 검색된 답변들의 관련성을 매우 엄격하게 분석하여 판정하세요:
 
-- "high": 답변이 질문과 직접적으로 관련되고 도움이 됨
-- "medium": 답변이 어느 정도 관련이 있지만 완전히 일치하지는 않음  
-- "low": 답변이 약간 관련이 있지만 질문의 핵심과는 거리가 있음
-- "irrelevant": 답변이 질문과 전혀 관련이 없음
+- "high": 답변이 질문과 직접적으로 관련되고 완벽히 도움됨
+- "medium": 답변이 관련이 있지만 일부 불일치 있음
+- "low": 답변이 약간 관련이 있지만 핵심과 거리 있음
+- "irrelevant": 답변이 질문과 전혀 관련없음
 
-⚠️ 엄격한 분석 기준:
-1. 행동 유형 일치 여부 (복사≠재생, 텍스트≠음성)
-2. 주제 영역 일치 여부 (앱기능, 성경본문, 기술지원 등)
-3. 질문의 핵심 키워드와 답변 키워드의 의미적 일치성
-4. 실제 문제 해결 도움 여부
+🚫 바이블 앱 특화 엄격 기준:
+1. 찬송가 ≠ 성경 (완전히 다른 콘텐츠)
+2. 영어 ≠ 한국어 (언어 불일치)
+3. 복사 ≠ 재생 (행동 불일치)
+4. 검색 ≠ 설정 (기능 불일치)
 
-🚫 특별 주의사항:
-- 텍스트 복사/붙여넣기 질문에 음성 재생 답변 → "irrelevant"
-- 음성 재생 질문에 텍스트 복사 답변 → "irrelevant"  
-- 검색 기능 질문에 설정 변경 답변 → "irrelevant"
-- 오류 신고에 일반 사용법 답변 → "low" 또는 "irrelevant"
+📚 특별 케이스:
+- "영어 찬송가" 질문 + "영어 성경" 답변 → "irrelevant"
+- "복사 기능" 질문 + "재생 기능" 답변 → "irrelevant"
+- "검색 방법" 질문 + "설정 변경" 답변 → "irrelevant"
 
 결과는 "high", "medium", "low", "irrelevant" 중 하나만 반환하세요."""
 
-                user_prompt = f"""질문 분석 결과:
-의도: {question_analysis.get('intent_type', 'N/A')}
-주제: {question_analysis.get('main_topic', 'N/A')}
+                user_prompt = f"""질문 상세 분석:
+콘텐츠유형: {question_analysis.get('content_type', 'N/A')}
+언어선호: {question_analysis.get('language_preference', 'N/A')}
 행동유형: {question_analysis.get('action_type', 'N/A')}
-구체적 요청: {question_analysis.get('specific_request', 'N/A')}
+의도: {question_analysis.get('intent_type', 'N/A')}
+
+의미적 유사성 검증 결과:
+- 유사성 점수: {similarity_score:.3f}
+- 콘텐츠 일치도: {semantic_result.get('content_match_ratio', 0):.2f}
+- 언어 일치도: {semantic_result.get('language_match_ratio', 0):.2f}
+- 행동 일치도: {semantic_result.get('action_match_ratio', 0):.2f}
 
 원본 질문: {query}
 
 검색된 답변들:
 {combined_answers}
 
-⚠️ 중요: 질문의 행동유형과 답변의 행동유형이 다르면 "irrelevant"로 판정하세요.
-위 질문과 답변들의 관련성을 분석해주세요."""
+⚠️ 의미적 유사성 검증에서 이미 불일치가 감지되었다면 더욱 엄격하게 판정하세요.
+위 모든 정보를 종합하여 관련성을 분석해주세요."""
 
                 response = self.openai_client.chat.completions.create(
                     model='gpt-3.5-turbo',
@@ -725,26 +958,44 @@ class AIAnswerGenerator:
                         {"role": "user", "content": user_prompt}
                     ],
                     max_tokens=50,
-                    temperature=0.2
+                    temperature=0.1  # 더 보수적으로
                 )
                 
-                result = response.choices[0].message.content.strip().lower()
+                ai_result = response.choices[0].message.content.strip().lower()
                 
-                # 결과 정규화
-                if 'high' in result:
-                    return 'high'
-                elif 'medium' in result:
-                    return 'medium'
-                elif 'low' in result:
-                    return 'low'
-                elif 'irrelevant' in result:
-                    return 'irrelevant'
+                # 3단계: 의미적 유사성과 AI 분석 결과를 종합
+                final_similarity = semantic_result.get('final_similarity', 'medium')
+                
+                # AI 결과 정규화
+                if 'high' in ai_result:
+                    ai_relevance = 'high'
+                elif 'medium' in ai_result:
+                    ai_relevance = 'medium'
+                elif 'low' in ai_result:
+                    ai_relevance = 'low'
+                elif 'irrelevant' in ai_result:
+                    ai_relevance = 'irrelevant'
                 else:
-                    logging.warning(f"AI 관련성 분석 결과 파싱 실패: {result}")
-                    return 'medium'  # 기본값
+                    ai_relevance = 'medium'
+                
+                # 최종 판정: 두 결과 중 더 보수적인 것 선택
+                relevance_ranking = {'high': 4, 'medium': 3, 'low': 2, 'irrelevant': 1, 'critical_mismatch': 0, 'very_low': 1, 'error': 0}
+                
+                semantic_rank = relevance_ranking.get(final_similarity, 1)
+                ai_rank = relevance_ranking.get(ai_relevance, 1)
+                
+                # 더 낮은 (보수적인) 점수 선택
+                final_rank = min(semantic_rank, ai_rank)
+                
+                # 점수를 다시 문자열로 변환
+                rank_to_relevance = {4: 'high', 3: 'medium', 2: 'low', 1: 'irrelevant', 0: 'irrelevant'}
+                final_result = rank_to_relevance.get(final_rank, 'irrelevant')
+                
+                logging.info(f"관련성 최종 판정: 의미적={final_similarity}, AI={ai_relevance}, 최종={final_result}")
+                return final_result
                     
         except Exception as e:
-            logging.error(f"AI 관련성 분석 실패: {e}")
+            logging.error(f"강화된 관련성 분석 실패: {e}")
             # 폴백: 기본적인 키워드 매칭
             return self.fallback_relevance_check(query, top_answers)
     
@@ -842,7 +1093,61 @@ class AIAnswerGenerator:
         keywords = [word for word in words if len(word) >= 2 and word not in stop_words]
         
         return keywords
-    
+
+    # ☆ 스마트 폴백 답변 생성 메서드 (새로 추가)
+    def generate_smart_fallback_answer(self, query: str, question_analysis: dict, lang: str = 'ko') -> str:
+        """관련성이 낮을 때 질문 의도에 맞는 적절한 폴백 답변 생성"""
+        try:
+            with memory_cleanup():
+                # 질문 분석 결과 추출
+                content_type = question_analysis.get('content_type', 'other')
+                language_preference = question_analysis.get('language_preference', 'none')
+                action_type = question_analysis.get('action_type', 'other')
+                intent_type = question_analysis.get('intent_type', '일반문의')
+                
+                if lang == 'en':
+                    # 영어 스마트 폴백 답변 생성
+                    if content_type == 'hymn':
+                        if language_preference == 'english':
+                            fallback_answer = "<p>Thank you for your inquiry about English hymns.</p><p><br></p><p>We are reviewing options to expand our hymn collection, including English hymns.</p><p><br></p><p>Currently, our app primarily focuses on Korean hymns and Bible content.</p><p><br></p><p>We will forward your request to our development team for future consideration.</p><p><br></p><p>Please feel free to contact us again if you have any other questions.</p>"
+                        else:
+                            fallback_answer = "<p>Thank you for your inquiry about hymns.</p><p><br></p><p>Our app currently provides a comprehensive collection of Korean hymns.</p><p><br></p><p>We are continuously working to improve our hymn features.</p><p><br></p><p>Please let us know if you have any specific requests or feedback.</p>"
+                    elif content_type == 'bible':
+                        if language_preference == 'english':
+                            fallback_answer = "<p>Thank you for your inquiry about English Bible content.</p><p><br></p><p>Our app supports multiple Bible translations including English versions.</p><p><br></p><p>Please check the translation settings in the app menu to access English Bible versions.</p><p><br></p><p>If you need assistance with specific features, please contact our customer service.</p>"
+                        else:
+                            fallback_answer = "<p>Thank you for your Bible-related inquiry.</p><p><br></p><p>Our app provides comprehensive Bible reading features with multiple translations.</p><p><br></p><p>Please explore the Bible section for various reading and study tools.</p><p><br></p><p>Contact us if you need help with specific Bible features.</p>"
+                    else:
+                        fallback_answer = "<p>Thank you for contacting GOODTV Bible App support.</p><p><br></p><p>We are reviewing your inquiry to provide the most accurate information.</p><p><br></p><p>Our team will respond with detailed guidance soon.</p><p><br></p><p>Please contact us again if you have any urgent questions.</p>"
+                else:
+                    # 한국어 스마트 폴백 답변 생성
+                    if content_type == 'hymn':
+                        if language_preference == 'english':
+                            fallback_answer = "<p>영어 찬송가에 대한 문의해 주셔서 감사합니다.</p><p><br></p><p>현재 바이블 애플은 한국어 찬송가를 중심으로 서비스를 제공하고 있습니다.</p><p><br></p><p>영어 찬송가 추가에 대한 성도님의 의견은 개발팀에 전달하여</p><p><br></p><p>향후 서비스 개선 시 적극 검토하도록 하겠습니다.</p><p><br></p><p>다른 궁금한 사항이 있으시면 언제든 문의해 주세요.</p>"
+                        else:
+                            fallback_answer = "<p>찬송가 관련 문의해 주셔서 감사합니다.</p><p><br></p><p>바이블 애플에서는 다양한 찬송가 서비스를 제공하고 있습니다.</p><p><br></p><p>찬송가 메뉴에서 원하시는 찬송을 검색하고 재생하실 수 있습니다.</p><p><br></p><p>구체적인 기능이나 사용법에 대해 궁금하신 점이 있으시면</p><p><br></p><p>언제든 다시 문의해 주세요.</p>"
+                    elif content_type == 'bible':
+                        if language_preference == 'english':
+                            fallback_answer = "<p>영어 성경에 대한 문의해 주셔서 감사합니다.</p><p><br></p><p>바이블 애플에서는 NIV, ESV 등 다양한 영어 성경 번역본을</p><p><br></p><p>제공하고 있습니다.</p><p><br></p><p>설정 메뉴에서 번역본을 변경하여 영어 성경을 이용하실 수 있습니다.</p><p><br></p><p>자세한 사용법이 궁금하시면 다시 문의해 주세요.</p>"
+                        else:
+                            fallback_answer = "<p>성경 관련 문의해 주셔서 감사합니다.</p><p><br></p><p>바이블 애플에서는 다양한 성경 번역본과 읽기 기능을</p><p><br></p><p>제공하고 있습니다.</p><p><br></p><p>성경 메뉴에서 원하시는 성경 본문을 검색하고 읽으실 수 있습니다.</p><p><br></p><p>구체적인 사용법이 궁금하시면 언제든 문의해 주세요.</p>"
+                    elif action_type == 'copy':
+                        fallback_answer = "<p>텍스트 복사 기능에 대한 문의해 주셔서 감사합니다.</p><p><br></p><p>바이블 애플에서는 성경 본문을 선택하여 복사하는 기능을</p><p><br></p><p>제공하고 있습니다.</p><p><br></p><p>원하시는 구절을 길게 눌러 선택한 후 복사 버튼을 이용해 주세요.</p><p><br></p><p>자세한 사용법이 궁금하시면 언제든 문의해 주세요.</p>"
+                    elif action_type == 'play':
+                        fallback_answer = "<p>음성 재생 기능에 대한 문의해 주셔서 감사합니다.</p><p><br></p><p>바이블 애플에서는 성경과 찬송가 음성 재생 기능을</p><p><br></p><p>제공하고 있습니다.</p><p><br></p><p>재생 버튼을 눌러 원하시는 콘텐츠를 들으실 수 있습니다.</p><p><br></p><p>구체적인 재생 방법이 궁금하시면 다시 문의해 주세요.</p>"
+                    else:
+                        fallback_answer = "<p>바이블 애플 관련 문의해 주셔서 감사합니다.</p><p><br></p><p>성도님의 문의 내용을 정확히 파악하여</p><p><br></p><p>가장 적절한 답변을 드리기 위해 검토하고 있습니다.</p><p><br></p><p>구체적인 답변은 빠른 시일 내에 전달드리겠습니다.</p><p><br></p><p>급한 문의사항이 있으시면 언제든 다시 연락해 주세요.</p>"
+                
+                logging.info(f"스마트 폴백 답변 생성 완료: 콘텐츠={content_type}, 언어={language_preference}, 행동={action_type}")
+                return fallback_answer
+                
+        except Exception as e:
+            logging.error(f"스마트 폴백 답변 생성 실패: {e}")
+            # 최종 안전장치
+            if lang == 'en':
+                return "<p>Thank you for contacting GOODTV Bible App.</p><p><br></p><p>We are reviewing your inquiry and will provide a detailed response soon.</p><p><br></p><p>Please contact us again if you have any urgent questions.</p>"
+            else:
+                return "<p>안녕하세요. GOODTV 바이블 애플입니다.</p><p><br></p><p>성도님의 문의 내용을 검토하여 정확한 답변을 준비하겠습니다.</p><p><br></p><p>답변은 빠른 시일 내에 전달드리겠습니다.</p><p><br></p><p>감사합니다.</p>"
 
     # ☆ 참고 답변에서 인사말과 끝맺음말을 제거하는 메서드
     # Args:
@@ -1698,10 +2003,15 @@ Important: Do not include greetings or closings. Only write the main content."""
                     base_answer = self.get_best_fallback_answer(similar_answers, lang)
                     logging.info(f"폴백 답변 길이: {len(base_answer) if base_answer else 0}")
                     
+            elif approach == 'smart_fallback':
+                logging.info("=== 스마트 폴백 방식 사용 ===")
+                base_answer = self.generate_smart_fallback_answer(query, context_analysis.get('question_analysis', {}), lang)
+                logging.info(f"스마트 폴백 답변 길이: {len(base_answer) if base_answer else 0}")
+                    
             else:
-                logging.info("=== 폴백 방식 사용 ===")
+                logging.info("=== 일반 폴백 방식 사용 ===")
                 base_answer = self.get_best_fallback_answer(similar_answers, lang)
-                logging.info(f"폴백 답변 길이: {len(base_answer) if base_answer else 0}")
+                logging.info(f"일반 폴백 답변 길이: {len(base_answer) if base_answer else 0}")
             
             # 최종 검증 전 상세 로깅
             logging.info(f"=== 최종 검증 시작 ===")
@@ -1741,6 +2051,12 @@ Important: Do not include greetings or closings. Only write the main content."""
             elif False:  # 항상 False가 되어 이 블록은 실행되지 않음
                 logging.warning(f"유효성 검사 실패했지만 답변 존재함 - 강제 진행")
                 # 이 블록은 실행되지 않음
+            
+            # 🔥 스마트 폴백의 경우 추가 포맷팅 건너뛰기
+            if approach == 'smart_fallback':
+                logging.info("🎯 스마트 폴백 답변은 이미 완성된 형태로 바로 반환")
+                print("🎯 스마트 폴백 답변은 이미 완성된 형태로 바로 반환")
+                return base_answer
             
             # 🔥 성공 로그 추가
             logging.info("🎉 유효성 검사 우회 성공 - 답변 포맷팅 시작")
