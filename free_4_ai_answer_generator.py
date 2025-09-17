@@ -523,37 +523,61 @@ class AIAnswerGenerator:
             logging.error(f"번역 실패: {e}")
             return text
 
-    # ☆ AI 기반 질문 의도 분석 메서드 (정확도 개선 버전)
+    # ☆ AI 기반 질문 의도 분석 메서드 (의미론적 동등성 강화 버전)
     def analyze_question_intent(self, query: str) -> dict:
-        """AI를 이용해 질문의 의도와 핵심 내용을 분석"""
+        """AI를 이용해 질문의 본질적 의도와 핵심 목적을 정확히 분석"""
         try:
             with memory_cleanup():
-                system_prompt = """당신은 고객 문의 분석 전문가입니다. 
-고객의 질문을 분석하여 다음 정보를 JSON 형태로 반환하세요:
+                system_prompt = """당신은 바이블 앱 문의 분석 전문가입니다. 
+고객 질문의 본질적 의도를 파악하여 의미론적으로 동등한 질문들이 같은 결과를 얻도록 분석하세요.
+
+분석 결과를 JSON 형태로 반환:
 
 {
-  "intent_type": "문의 유형 (예: 오탈자신고, 기능문의, 기술지원, 개선제안, 일반문의)",
-  "main_topic": "주요 주제 (예: 성경본문, 음원재생, 검색기능, 번역본, 앱기능, 텍스트복사, 화면표시)",
-  "specific_request": "구체적 요청사항 요약",
-  "keywords": ["핵심", "키워드", "목록"],
-  "urgency": "긴급도 (low/medium/high)",
-  "action_type": "요청 행동 (예: 복사, 재생, 검색, 다운로드, 설정변경, 오류신고)"
+  "core_intent": "핵심 의도 (표준화된 형태)",
+  "intent_category": "의도 카테고리",
+  "primary_action": "주요 행동",
+  "target_object": "대상 객체",
+  "constraint_conditions": ["제약 조건들"],
+  "standardized_query": "표준화된 질문 형태",
+  "semantic_keywords": ["의미론적 핵심 키워드들"]
 }
 
-⚠️ 중요한 분석 기준:
-1. 동사/행동어를 정확히 식별하세요 (복사≠재생, 검색≠다운로드)
-2. 텍스트 관련 요청과 음성 관련 요청을 명확히 구분하세요
-3. "복사", "붙여넣기", "워드", "텍스트"는 텍스트 처리 요청입니다
-4. "재생", "듣기", "음성", "소리"는 음성 처리 요청입니다
-5. 질문에서 명시된 구체적 행동을 놓치지 마세요
+🎯 의미론적 동등성 분석 기준:
 
-분석 예시:
-- "복사해서 워드로" → action_type: "복사", main_topic: "텍스트복사"
-- "연속으로 들을 수" → action_type: "재생", main_topic: "음원재생"
+1. **핵심 의도 파악**: 질문의 본질적 목적이 무엇인지 파악
+   - "두 번역본을 동시에 보고 싶다" → core_intent: "multiple_translations_view"
+   - "텍스트를 복사하고 싶다" → core_intent: "text_copy"
+   - "연속으로 듣고 싶다" → core_intent: "continuous_audio_play"
 
+2. **표준화된 형태로 변환**: 구체적 예시를 제거하고 일반화
+   - "요한복음 3장 16절 NIV와 KJV 동시에" → "서로 다른 번역본 동시 보기"
+   - "개역한글과 개역개정 동시에" → "서로 다른 번역본 동시 보기"
+
+3. **의미론적 키워드 추출**: 표면적 단어가 아닌 의미적 개념
+   - "동시에", "함께", "비교하여", "나란히" → "simultaneous_view"
+   - "NIV", "KJV", "개역한글", "번역본" → "translation_version"
+
+4. **제약 조건 식별**: 요청의 구체적 조건들
+   - "영어 번역본만", "한글 번역본만", "특정 장절" 등
+
+예시 분석:
+질문1: "요한복음 3장 16절 영어 번역본 NIV와 KJV 동시에 보려면?"
+질문2: "개역한글과 개역개정을 동시에 보려면?"
+질문3: "두 개의 번역본을 어떻게 동시에 볼 수 있죠?"
+
+→ 모두 core_intent: "multiple_translations_simultaneous_view"
+→ 모두 standardized_query: "서로 다른 번역본을 동시에 보는 방법"
 """
 
-                user_prompt = f"다음 고객 문의를 분석해주세요: {query}"
+                user_prompt = f"""다음 질문을 의미론적으로 분석하여 본질적 의도를 파악해주세요:
+
+질문: {query}
+
+특히 다음 사항에 집중하세요:
+1. 이 질문이 정말로 묻고자 하는 바가 무엇인가?
+2. 구체적 예시(성경 구절, 번역본명 등)를 제거하고 일반화하면?
+3. 비슷한 의도의 다른 질문들과 어떻게 통합할 수 있는가?"""
 
                 response = self.openai_client.chat.completions.create(
                     model='gpt-3.5-turbo',
@@ -561,21 +585,37 @@ class AIAnswerGenerator:
                         {"role": "system", "content": system_prompt},
                         {"role": "user", "content": user_prompt}
                     ],
-                    max_tokens=300,
-                    temperature=0.3
+                    max_tokens=400,
+                    temperature=0.2  # 더 일관성 있는 분석을 위해 낮춤
                 )
                 
                 result_text = response.choices[0].message.content.strip()
                 
                 # JSON 파싱 시도
                 try:
-                    
                     result = json.loads(result_text)
-                    logging.info(f"AI 의도 분석 결과: {result}")
+                    logging.info(f"강화된 의도 분석 결과: {result}")
+                    
+                    # 기존 형식과의 호환성을 위해 추가 필드 생성
+                    result['intent_type'] = result.get('intent_category', '일반문의')
+                    result['main_topic'] = result.get('target_object', '기타')
+                    result['specific_request'] = result.get('standardized_query', query[:100])
+                    result['keywords'] = result.get('semantic_keywords', [query[:20]])
+                    result['urgency'] = 'medium'
+                    result['action_type'] = result.get('primary_action', '기타')
+                    
                     return result
                 except json.JSONDecodeError:
                     logging.warning(f"JSON 파싱 실패, 기본값 반환: {result_text}")
                     return {
+                        "core_intent": "general_inquiry",
+                        "intent_category": "일반문의",
+                        "primary_action": "기타",
+                        "target_object": "기타",
+                        "constraint_conditions": [],
+                        "standardized_query": query,
+                        "semantic_keywords": [query[:20]],
+                        # 기존 호환성 필드
                         "intent_type": "일반문의",
                         "main_topic": "기타",
                         "specific_request": query[:100],
@@ -585,9 +625,17 @@ class AIAnswerGenerator:
                     }
                 
         except Exception as e:
-            logging.error(f"AI 의도 분석 실패: {e}")
+            logging.error(f"강화된 의도 분석 실패: {e}")
             return {
-                "intent_type": "일반문의", 
+                "core_intent": "general_inquiry",
+                "intent_category": "일반문의", 
+                "primary_action": "기타",
+                "target_object": "기타",
+                "constraint_conditions": [],
+                "standardized_query": query,
+                "semantic_keywords": [query[:20]],
+                # 기존 호환성 필드
+                "intent_type": "일반문의",
                 "main_topic": "기타",
                 "specific_request": query[:100],
                 "keywords": [query[:20]],
@@ -1378,27 +1426,31 @@ Important: Do not include greetings or closings. Only write the main content."""
         else:  # 한국어
             system_prompt = """당신은 GOODTV 바이블 애플 고객센터 상담원입니다.
 
-🎯 핵심 원칙:
-1. 고객의 질문을 정확히 이해하고 질문 의도에 맞는 적절한 답변을 제공하세요
-2. 참고 답변이 질문과 관련성이 있다면 이를 활용하여 답변하세요
-3. 참고 답변이 질문과 관련성이 낮다면 고객 질문에 맞는 새로운 답변을 생성하세요
+🎯 핵심 원칙 (참고답변 우선 활용):
+1. **참고답변 최우선**: 제공된 참고답변들을 면밀히 분석하고 최대한 활용하세요
+2. **의도 일치 확인**: 고객 질문의 본질적 의도와 참고답변의 해결책이 일치하는지 확인
+3. **내용 충실성**: 참고답변의 핵심 해결 방법, 단계, 기능명을 정확히 반영하세요
+4. **일관성 유지**: 참고답변과 다른 방향의 해결책 제시 금지
 
-📋 답변 작성 지침:
+📋 참고답변 활용 지침:
 
-✅ 질문별 적절한 대응:
-- 문의 유형과 내용을 정확히 파악하여 그에 맞는 답변 제공
-- 고객의 구체적인 요청사항에 직접적으로 대응
-- 실제 존재하는 기능과 정책에 기반한 정확한 정보 제공
+✅ 참고답변 분석 우선 순위:
+1. 고객 질문과 의미적으로 가장 유사한 참고답변 식별
+2. 해당 참고답변의 핵심 해결 단계와 방법 추출  
+3. 참고답변에 명시된 구체적 기능명, 메뉴명, 버튼명 파악
+4. 참고답변의 톤앤매너와 설명 스타일 학습
 
-🔍 답변 품질 기준:
-- 질문의 핵심 의도와 일치하는 내용으로 답변
-- 모호하거나 회피적인 표현보다는 구체적이고 명확한 안내
-- 고객의 문제 해결에 실질적으로 도움이 되는 내용
+🔍 참고답변 기반 답변 작성:
+- **핵심 해결책 유지**: 참고답변의 주요 해결 방법을 그대로 활용
+- **구체적 정보 보존**: 참고답변에 나온 설정 위치, 버튼명, 메뉴 경로를 정확히 반영
+- **단계별 순서 준수**: 참고답변의 해결 단계 순서를 유지하거나 개선
+- **전문 용어 일치**: 참고답변에 사용된 앱 전문 용어와 표현 방식 따르기
 
-⚠️ 답변 일관성 유지:
-- 질문 유형과 전혀 다른 내용의 답변 지양
-- 하나의 문의에 대해 일관된 주제와 해결방향 제시
-- 불확실한 정보보다는 확실한 범위 내에서 답변
+⚠️ 참고답변 충실성 검증:
+- 참고답변에 없는 새로운 기능이나 방법 추가 금지
+- 참고답변과 상충되는 해결책 제시 금지
+- 참고답변의 핵심 내용을 누락하거나 변형하지 말 것
+- 불확실한 정보보다는 참고답변에서 확인된 내용만 활용
 
 🚫 절대 금지사항:
 - 인사말("안녕하세요", "감사합니다" 등) 사용 금지
@@ -1412,38 +1464,52 @@ Important: Do not include greetings or closings. Only write the main content."""
 - 예시: ❌ "방법을 안내해드리겠습니다." (끝) 
          ✅ "방법을 안내해드리겠습니다. 1. 화면 상단의 설정 메뉴를 터치하세요..."
 
-💡 구체적 답변 작성법:
-- 단계별 설명: "1단계:", "먼저", "그다음" 등으로 순서 명확화
-- 구체적 위치: "화면 상단", "메뉴에서", "버튼을 클릭" 등 정확한 위치 제시  
-- 실제 기능명: "NIV", "KJV", "설정", "번역본 선택" 등 구체적 명칭 사용
-- 현실적 한계: 불가능한 기능은 솔직히 "현재 지원하지 않습니다"라고 명시
+💡 참고답변 기반 구체적 작성법:
+- **참고답변 단계 재현**: 참고답변의 해결 단계를 순서대로 설명
+- **참고답변 용어 사용**: 참고답변에 나온 정확한 기능명과 위치 표현 활용
+- **참고답변 스타일 반영**: 참고답변의 설명 방식과 구체성 수준 유지
+- **검증된 정보 우선**: 참고답변에서 검증된 정보를 창의적 추측보다 우선
 
-💡 창의적 문제해결:
-- 참고 답변이 부적절할 때는 고객 상황에 맞는 새로운 해결책 제시
-- 바이블 애플의 실제 서비스 범위 내에서 현실적인 답변 제공
-- 고객 관점에서 도움이 되는 실용적인 조언 포함"""
+💡 참고답변 부족시 대응:
+- 참고답변이 부족해도 그 범위 내에서만 확장하여 답변
+- 참고답변의 핵심 원리를 고객 상황에 맞게 적용
+- 바이블 애플의 실제 서비스 범위 내에서만 현실적인 답변 제공"""
 
             user_prompt = f"""고객 문의: {query}
 
-참고 답변들:
+참고 답변들 (핵심 정보):
 {context}
 
-❗ 중요 지시사항:
-위 참고 답변들이 고객의 질문과 관련이 있는지 먼저 판단하세요.
-- 관련이 있다면: 참고 답변의 해결 방식을 활용하여 답변하세요
-- 관련이 없다면: 고객 상황에 맞는 새로운 해결책을 제시하세요
+🎯 참고답변 우선 활용 지시사항:
+위 참고 답변들을 면밀히 분석하고 다음 원칙에 따라 답변하세요:
+
+1. **참고답변 최우선 분석**: 
+   - 고객 질문과 의미적으로 가장 일치하는 참고답변을 식별
+   - 해당 참고답변의 해결 방법, 단계, 기능명을 정확히 파악
+   - 참고답변에 나온 구체적 용어와 설명 방식을 학습
+
+2. **참고답변 충실한 활용**:
+   - 참고답변의 핵심 해결책을 그대로 활용하여 답변 작성
+   - 참고답변에 명시된 설정 위치, 버튼명, 메뉴 경로를 정확히 반영
+   - 참고답변의 단계별 순서와 설명 스타일을 따라 답변 구성
+   - 참고답변에 사용된 전문 용어와 표현 방식을 동일하게 사용
+
+3. **참고답변 기반 확장**:
+   - 참고답변의 범위 내에서만 고객 상황에 맞게 내용 조정
+   - 참고답변에 없는 새로운 기능이나 방법 추가 절대 금지
+   - 참고답변과 상충되는 해결책 제시 금지
 
 🚨 필수 요구사항:
-1. 고객의 구체적인 질문에 정확히 맞는 답변만 작성하세요
-2. "안내해드리겠습니다" 같은 약속 표현 사용 시 반드시 구체적인 실행 내용을 바로 이어서 작성하세요
-3. 단계별 설명이 필요하면 "1단계", "먼저", "그다음" 등으로 명확히 구분하세요
-4. 구체적 위치나 버튼명, 메뉴명을 정확히 명시하세요
-5. 인사말이나 끝맺음말 없이 본문 내용만 작성하세요
+1. **참고답변 우선**: 창의적 해결책보다 참고답변의 검증된 방법 우선 활용
+2. **구체적 실행**: "안내해드리겠습니다" 등의 약속 후 반드시 구체적 내용 제시
+3. **정확한 용어**: 참고답변의 정확한 기능명, 메뉴명, 버튼명 사용
+4. **단계별 설명**: 참고답변의 해결 단계를 순서대로 명확히 설명
+5. **본문만 작성**: 인사말이나 끝맺음말 없이 핵심 내용만 작성
 
-❌ 금지 예시: "방법을 안내해드리겠습니다." (끝)
-✅ 올바른 예시: "방법을 안내해드리겠습니다. 먼저 화면 상단의 설정 버튼을 터치하세요..."
+❌ 금지: 참고답변 무시하고 새로운 방법 제안
+✅ 올바름: 참고답변의 해결 방법을 고객 질문에 맞게 정확히 적용
 
-지금 즉시 고객에게 실질적 도움이 되는 구체적인 답변을 작성하세요."""
+지금 즉시 참고답변에 충실하면서도 고객 질문에 정확히 대응하는 답변을 작성하세요."""
 
         return system_prompt, user_prompt
 
@@ -2670,12 +2736,12 @@ Important: Do not include greetings or closings. Only write the main content."""
         
         return list(set(concepts))  # 중복 제거
 
-    # ☆ 다각도 벡터 검색 메서드 (핵심 개선)
+    # ☆ 의미론적 다층 검색 메서드 (의도 기반 검색 강화)
     def search_similar_answers_enhanced(self, query: str, top_k: int = 8, lang: str = 'ko') -> list:
-        """다각도 검색으로 정확도를 높인 유사 답변 검색"""
+        """의도 기반 다층 검색으로 의미론적으로 동등한 질문들을 정확히 매칭"""
         try:
             with memory_cleanup():
-                logging.info(f"=== 향상된 검색 시작 ===")
+                logging.info(f"=== 의미론적 다층 검색 시작 ===")
                 logging.info(f"원본 질문: {query}")
                 
                 # 1. 기본 전처리
@@ -2685,36 +2751,67 @@ Important: Do not include greetings or closings. Only write the main content."""
                 else:
                     query_to_embed = query
                 
-                # 2. 핵심 개념 추출
+                # 2. ⭐ 핵심 의도 분석 (새로 추가)
+                intent_analysis = self.analyze_question_intent(query_to_embed)
+                core_intent = intent_analysis.get('core_intent', '')
+                standardized_query = intent_analysis.get('standardized_query', query_to_embed)
+                semantic_keywords = intent_analysis.get('semantic_keywords', [])
+                
+                logging.info(f"핵심 의도: {core_intent}")
+                logging.info(f"표준화된 질문: {standardized_query}")
+                logging.info(f"의미론적 키워드: {semantic_keywords}")
+                
+                # 3. 기존 핵심 개념 추출 (보완용)
                 key_concepts = self.extract_key_concepts(query_to_embed)
-                logging.info(f"추출된 핵심 개념: {key_concepts}")
                 
                 all_results = []
                 seen_ids = set()
                 
-                # 3. 다각도 검색 수행
-                search_queries = [query_to_embed]  # 원본 질문
-                
-                # 핵심 개념이 있으면 개별 검색도 수행
-                if key_concepts:
-                    # 핵심 개념 조합으로 검색 쿼리 생성
-                    if len(key_concepts) >= 2:
-                        search_queries.append(' '.join(key_concepts[:3]))  # 상위 3개 개념 조합
+                # 4. ⭐ 다층 검색 쿼리 구성 (의도 기반 강화)
+                search_layers = [
+                    # Layer 1: 원본 질문 (가중치 1.0)
+                    {'query': query_to_embed, 'weight': 1.0, 'type': 'original'},
                     
-                    # 가장 중요한 개념 단독 검색
-                    for concept in key_concepts[:2]:  # 상위 2개만
-                        if len(concept) >= 2:
-                            search_queries.append(concept)
+                    # Layer 2: 표준화된 의도 기반 질문 (가중치 0.95) ⭐ 핵심 추가
+                    {'query': standardized_query, 'weight': 0.95, 'type': 'intent_based'},
+                    
+                    # Layer 3: 핵심 의도만 (가중치 0.9) ⭐ 핵심 추가
+                    {'query': core_intent.replace('_', ' '), 'weight': 0.9, 'type': 'core_intent'},
+                ]
                 
-                logging.info(f"검색 쿼리들: {search_queries}")
+                # Layer 4: 의미론적 키워드 조합 (가중치 0.8)
+                if semantic_keywords and len(semantic_keywords) >= 2:
+                    semantic_query = ' '.join(semantic_keywords[:3])
+                    search_layers.append({
+                        'query': semantic_query, 'weight': 0.8, 'type': 'semantic_keywords'
+                    })
                 
-                # 4. 각 쿼리로 검색 수행
-                for i, search_query in enumerate(search_queries):
+                # Layer 5: 기존 개념 기반 검색 (보완용, 가중치 0.7)
+                if key_concepts:
+                    if len(key_concepts) >= 2:
+                        concept_query = ' '.join(key_concepts[:3])
+                        search_layers.append({
+                            'query': concept_query, 'weight': 0.7, 'type': 'concept_based'
+                        })
+                
+                logging.info(f"검색 레이어 수: {len(search_layers)}")
+                
+                # 5. 각 레이어로 검색 수행
+                for i, layer in enumerate(search_layers):
+                    search_query = layer['query']
+                    weight = layer['weight']
+                    layer_type = layer['type']
+                    
+                    if not search_query or len(search_query.strip()) < 2:
+                        continue
+                    
+                    logging.info(f"레이어 {i+1} ({layer_type}): {search_query[:50]}...")
+                    
                     query_vector = self.create_embedding(search_query)
                     if query_vector is None:
                         continue
                     
-                    # 첫 번째 검색은 더 많이, 나머지는 적게
+                    # 첫 번째 레이어는 더 많이 검색
                     search_top_k = top_k * 2 if i == 0 else top_k
                     
                     results = index.query(
@@ -2724,8 +2821,6 @@ Important: Do not include greetings or closings. Only write the main content."""
                     )
                     
                     # 결과를 가중치와 함께 수집
-                    weight = 1.0 if i == 0 else 0.7  # 원본 질문에 높은 가중치
-                    
                     for match in results['matches']:
                         match_id = match['id']
                         if match_id not in seen_ids:
@@ -2733,12 +2828,13 @@ Important: Do not include greetings or closings. Only write the main content."""
                             # 가중치 적용한 점수 계산
                             adjusted_score = match['score'] * weight
                             match['adjusted_score'] = adjusted_score
-                            match['search_type'] = 'original' if i == 0 else 'concept'
+                            match['search_type'] = layer_type
+                            match['layer_weight'] = weight
                             all_results.append(match)
                     
                     del query_vector, results
                 
-                # 5. 영어 질문인 경우 번역 검색
+                # 6. 영어 질문인 경우 번역 검색
                 if lang == 'en':
                     korean_query = self.translate_text(query_to_embed, 'en', 'ko')
                     korean_vector = self.create_embedding(korean_query)
@@ -2750,15 +2846,15 @@ Important: Do not include greetings or closings. Only write the main content."""
                         )
                         for match in korean_results['matches']:
                             if match['id'] not in seen_ids:
-                                match['adjusted_score'] = match['score'] * 0.8
+                                match['adjusted_score'] = match['score'] * 0.85
                                 match['search_type'] = 'translated'
+                                match['layer_weight'] = 0.85
                                 all_results.append(match)
                         del korean_vector, korean_results
                 
-                # 6. 결과 정렬 및 필터링
+                # 7. 결과 정렬 및 의미론적 관련성 검증
                 all_results.sort(key=lambda x: x['adjusted_score'], reverse=True)
                 
-                # 7. 핵심 개념 일치도 검증 추가
                 filtered_results = []
                 for i, match in enumerate(all_results[:top_k*2]):
                     score = match['adjusted_score']
@@ -2770,40 +2866,49 @@ Important: Do not include greetings or closings. Only write the main content."""
                     if score < 0.3 and i >= 5:  # 상위 5개는 점수가 낮아도 포함
                         continue
                     
-                    # 핵심 개념 일치도 검증
-                    relevance_score = self.calculate_concept_relevance(
+                    # ⭐ 의도 기반 관련성 검증 (새로 추가)
+                    intent_relevance = self.calculate_intent_similarity(
+                        intent_analysis, question, answer
+                    )
+                    
+                    # 기존 개념 일치도도 함께 고려
+                    concept_relevance = self.calculate_concept_relevance(
                         query_to_embed, key_concepts, question, answer
                     )
                     
-                    # 최종 점수 = 벡터 유사도 + 개념 일치도
-                    final_score = score * 0.7 + relevance_score * 0.3
+                    # 최종 점수 = 벡터 유사도(60%) + 의도 관련성(25%) + 개념 관련성(15%)
+                    final_score = (score * 0.6 + 
+                                 intent_relevance * 0.25 + 
+                                 concept_relevance * 0.15)
                     
                     if final_score >= 0.4 or i < 3:  # 상위 3개는 무조건 포함
                         filtered_results.append({
                             'score': final_score,
                             'vector_score': match['score'],
-                            'relevance_score': relevance_score,
+                            'intent_relevance': intent_relevance,
+                            'concept_relevance': concept_relevance,
                             'question': question,
                             'answer': answer,
                             'category': category,
                             'rank': i + 1,
                             'search_type': match['search_type'],
+                            'layer_weight': match.get('layer_weight', 1.0),
                             'lang': 'ko'
                         })
                         
                         logging.info(f"선택: #{i+1} 최종점수={final_score:.3f} "
-                                   f"(벡터={match['score']:.3f}, 관련성={relevance_score:.3f}) "
-                                   f"검색타입={match['search_type']}")
+                                   f"(벡터={match['score']:.3f}, 의도={intent_relevance:.3f}, "
+                                   f"개념={concept_relevance:.3f}) 타입={match['search_type']}")
                         logging.info(f"질문: {question[:50]}...")
                     
                     if len(filtered_results) >= top_k:
                         break
                 
-                logging.info(f"향상된 검색 완료: {len(filtered_results)}개 답변")
+                logging.info(f"의미론적 다층 검색 완료: {len(filtered_results)}개 답변")
                 return filtered_results
                 
         except Exception as e:
-            logging.error(f"향상된 검색 실패: {str(e)}")
+            logging.error(f"의미론적 다층 검색 실패: {str(e)}")
             return []
 
     # ☆ 핵심 개념 일치도 계산 메서드
@@ -2848,6 +2953,115 @@ Important: Do not include greetings or closings. Only write the main content."""
         
         # 0-1 범위로 정규화
         return min(relevance, 1.0)
+
+    # ☆ 의도 기반 유사성 계산 메서드 (새로 추가)
+    def calculate_intent_similarity(self, query_intent_analysis: dict, ref_question: str, ref_answer: str) -> float:
+        """질문의 의도와 참조 답변 간의 의미론적 유사성 계산"""
+        
+        try:
+            # 1. 질문 의도 정보 추출
+            query_core_intent = query_intent_analysis.get('core_intent', '')
+            query_primary_action = query_intent_analysis.get('primary_action', '')
+            query_target_object = query_intent_analysis.get('target_object', '')
+            query_semantic_keywords = query_intent_analysis.get('semantic_keywords', [])
+            
+            if not query_core_intent:
+                return 0.5  # 의도 정보가 없으면 중간값
+            
+            # 2. 참조 질문과 답변에서 의도 분석
+            ref_text = ref_question + ' ' + ref_answer
+            ref_intent_analysis = self.analyze_question_intent(ref_question)
+            
+            ref_core_intent = ref_intent_analysis.get('core_intent', '')
+            ref_primary_action = ref_intent_analysis.get('primary_action', '')
+            ref_target_object = ref_intent_analysis.get('target_object', '')
+            ref_semantic_keywords = ref_intent_analysis.get('semantic_keywords', [])
+            
+            # 3. 핵심 의도 일치도 계산 (가장 중요)
+            intent_match_score = 0.0
+            if query_core_intent == ref_core_intent:
+                intent_match_score = 1.0
+            elif query_core_intent and ref_core_intent:
+                # 의도 이름의 유사성 검사 (부분 일치)
+                query_intent_words = set(query_core_intent.split('_'))
+                ref_intent_words = set(ref_core_intent.split('_'))
+                
+                if query_intent_words & ref_intent_words:  # 공통 단어가 있으면
+                    overlap_ratio = len(query_intent_words & ref_intent_words) / len(query_intent_words | ref_intent_words)
+                    intent_match_score = overlap_ratio * 0.8  # 완전 일치보다는 낮게
+            
+            # 4. 행동 유형 일치도 계산
+            action_match_score = 0.0
+            if query_primary_action == ref_primary_action:
+                action_match_score = 1.0
+            elif query_primary_action and ref_primary_action:
+                # 행동 유형 유사성 검사
+                action_similarity_map = {
+                    ('보기', '확인'): 0.8,
+                    ('복사', '저장'): 0.7,
+                    ('듣기', '재생'): 0.9,
+                    ('검색', '찾기'): 0.8,
+                    ('설정', '변경'): 0.7
+                }
+                
+                action_key = (query_primary_action, ref_primary_action)
+                reverse_key = (ref_primary_action, query_primary_action)
+                
+                if action_key in action_similarity_map:
+                    action_match_score = action_similarity_map[action_key]
+                elif reverse_key in action_similarity_map:
+                    action_match_score = action_similarity_map[reverse_key]
+            
+            # 5. 대상 객체 일치도 계산
+            object_match_score = 0.0
+            if query_target_object == ref_target_object:
+                object_match_score = 1.0
+            elif query_target_object and ref_target_object:
+                # 객체 유사성 검사
+                object_similarity_map = {
+                    ('번역본', '성경'): 0.8,
+                    ('텍스트', '내용'): 0.7,
+                    ('음성', '오디오'): 0.9,
+                    ('화면', '디스플레이'): 0.7
+                }
+                
+                object_key = (query_target_object, ref_target_object)
+                reverse_key = (ref_target_object, query_target_object)
+                
+                if object_key in object_similarity_map:
+                    object_match_score = object_similarity_map[object_key]
+                elif reverse_key in object_similarity_map:
+                    object_match_score = object_similarity_map[reverse_key]
+            
+            # 6. 의미론적 키워드 일치도 계산
+            keyword_match_score = 0.0
+            if query_semantic_keywords and ref_semantic_keywords:
+                query_keyword_set = set(query_semantic_keywords)
+                ref_keyword_set = set(ref_semantic_keywords)
+                
+                common_keywords = query_keyword_set & ref_keyword_set
+                total_keywords = query_keyword_set | ref_keyword_set
+                
+                if total_keywords:
+                    keyword_match_score = len(common_keywords) / len(total_keywords)
+            
+            # 7. 전체 점수 계산 (가중 평균)
+            total_score = (
+                intent_match_score * 0.4 +      # 핵심 의도 일치 (40%)
+                action_match_score * 0.25 +     # 행동 유형 일치 (25%)
+                object_match_score * 0.2 +      # 대상 객체 일치 (20%)
+                keyword_match_score * 0.15      # 키워드 일치 (15%)
+            )
+            
+            logging.debug(f"의도 유사성 분석: 의도={intent_match_score:.2f}, "
+                         f"행동={action_match_score:.2f}, 객체={object_match_score:.2f}, "
+                         f"키워드={keyword_match_score:.2f}, 전체={total_score:.2f}")
+            
+            return min(total_score, 1.0)
+            
+        except Exception as e:
+            logging.error(f"의도 유사성 계산 실패: {e}")
+            return 0.3  # 오류시 낮은 기본값
 
     # ☆ 기존 메서드를 향상된 버전으로 교체
     def search_similar_answers(self, query: str, top_k: int = 5, similarity_threshold: float = 0.7, lang: str = 'ko') -> list:
