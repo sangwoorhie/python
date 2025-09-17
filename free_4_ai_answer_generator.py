@@ -1426,11 +1426,24 @@ Important: Do not include greetings or closings. Only write the main content."""
         else:  # 한국어
             system_prompt = """당신은 GOODTV 바이블 애플 고객센터 상담원입니다.
 
-🎯 핵심 원칙 (참고답변 우선 활용):
-1. **참고답변 최우선**: 제공된 참고답변들을 면밀히 분석하고 최대한 활용하세요
-2. **의도 일치 확인**: 고객 질문의 본질적 의도와 참고답변의 해결책이 일치하는지 확인
-3. **내용 충실성**: 참고답변의 핵심 해결 방법, 단계, 기능명을 정확히 반영하세요
-4. **일관성 유지**: 참고답변과 다른 방향의 해결책 제시 금지
+🏆 바이블 애플 핵심 기능 (절대 준수):
+- 바이블 애플은 **자체적으로 여러 번역본을 동시에 볼 수 있는 기능을 제공**합니다
+- NIV, KJV, 개역개정, 개역한글 등 다양한 번역본을 **한 화면에서 비교 가능**합니다
+- 다른 앱 다운로드나 외부 서비스 이용은 **절대 안내하지 마세요**
+- 바이블 애플 내부 기능만으로 모든 번역본 비교가 가능합니다
+
+🚨 절대 금지사항 (할루시네이션 방지):
+- ❌ "Parallel Bible" 앱이나 다른 앱 다운로드 추천 금지
+- ❌ 바이블 애플에 없는 기능이나 메뉴 언급 금지  
+- ❌ 확실하지 않은 정보나 추측성 답변 금지
+- ❌ 답변 중간에 다른 번역본이나 언어로 내용 변경 금지
+- ❌ 참고답변에 없는 새로운 해결책 창작 금지
+
+🎯 핵심 원칙 (참고답변 절대 준수):
+1. **참고답변 100% 활용**: 제공된 참고답변의 해결 방법을 그대로 사용하세요
+2. **질문 내용 고정**: 질문에서 언급한 번역본/기능을 절대 바꾸지 마세요
+3. **일관성 철저 유지**: 답변 처음부터 끝까지 동일한 내용과 번역본 유지
+4. **도메인 지식 준수**: 바이블 애플의 실제 기능 범위 내에서만 답변
 
 📋 참고답변 활용 지침:
 
@@ -1506,10 +1519,22 @@ Important: Do not include greetings or closings. Only write the main content."""
 4. **단계별 설명**: 참고답변의 해결 단계를 순서대로 명확히 설명
 5. **본문만 작성**: 인사말이나 끝맺음말 없이 핵심 내용만 작성
 
-❌ 금지: 참고답변 무시하고 새로운 방법 제안
-✅ 올바름: 참고답변의 해결 방법을 고객 질문에 맞게 정확히 적용
+🔒 할루시네이션 엄격 금지:
+- 질문에서 언급한 번역본이나 기능을 절대 바꾸지 마세요
+- 답변 중간에 다른 내용으로 변경하는 것을 절대 금지합니다
+- 바이블 애플 외부 앱이나 서비스 추천을 절대 하지 마세요
+- 참고답변에 없는 기능이나 방법을 창작하지 마세요
+- 확실하지 않은 정보는 절대 언급하지 마세요
 
-지금 즉시 참고답변에 충실하면서도 고객 질문에 정확히 대응하는 답변을 작성하세요."""
+✅ 일관성 검증:
+- 답변 전체에서 동일한 번역본/기능 유지
+- 질문의 핵심 요구사항에서 절대 벗어나지 않기
+- 바이블 애플 자체 기능만으로 해결책 제시
+
+❌ 절대 금지: 참고답변 무시, 외부 앱 추천, 내용 변경
+✅ 반드시 준수: 참고답변 방법을 질문에 정확히 적용, 일관성 유지
+
+지금 즉시 참고답변에 100% 충실하면서 질문 내용을 절대 바꾸지 않고 답변하세요."""
 
         return system_prompt, user_prompt
 
@@ -1566,16 +1591,34 @@ Important: Do not include greetings or closings. Only write the main content."""
                     completeness_score = self.check_answer_completeness(generated, query, lang)
                     logging.info(f"시도 #{attempt+1} 답변 완성도: {completeness_score:.2f}")
                     
+                    # 🔥 할루시네이션 및 일관성 검증 (새로 추가)
+                    hallucination_check = self.detect_hallucination_and_inconsistency(generated, query, lang)
+                    hallucination_score = hallucination_check['overall_score']
+                    detected_issues = hallucination_check['detected_issues']
+                    
+                    logging.info(f"시도 #{attempt+1} 할루시네이션 검증: {hallucination_score:.2f}")
+                    if detected_issues:
+                        logging.warning(f"감지된 문제들: {detected_issues}")
+                    
+                    # 완성도와 할루시네이션 점수 모두 고려
+                    combined_score = completeness_score * 0.6 + hallucination_score * 0.4
+                    
+                    # 🚨 할루시네이션이 감지되면 즉시 재시도
+                    if hallucination_score < 0.3:
+                        logging.error(f"시도 #{attempt+1}: 심각한 할루시네이션 감지 (점수: {hallucination_score:.2f})")
+                        logging.error(f"감지된 문제: {detected_issues}")
+                        continue  # 즉시 다음 시도로
+                    
                     # 완성도가 충분한지 검사
-                    if completeness_score >= 0.7:
+                    if combined_score >= 0.7 and completeness_score >= 0.6:
                         # 관련성 검증
                         if self.validate_answer_relevance_ai(generated, query, context_analysis.get('question_analysis', {})):
-                            logging.info(f"GPT 생성 성공 (시도 #{attempt+1}, {approach}): {len(generated)}자")
+                            logging.info(f"GPT 생성 성공 (시도 #{attempt+1}, {approach}): 완성도={completeness_score:.2f}, 할루시네이션={hallucination_score:.2f}")
                             return generated[:650]
                         else:
                             logging.warning(f"시도 #{attempt+1}: 관련성 검증 실패")
                     else:
-                        logging.warning(f"시도 #{attempt+1}: 완성도 부족 ({completeness_score:.2f})")
+                        logging.warning(f"시도 #{attempt+1}: 품질 부족 - 완성도={completeness_score:.2f}, 할루시네이션={hallucination_score:.2f}, 종합={combined_score:.2f}")
                     
                     # 마지막 시도가 아니면 temperature 조정
                     if attempt < max_attempts - 1:
@@ -1975,6 +2018,173 @@ Important: Do not include greetings or closings. Only write the main content."""
         
         return 0.5  # 기본값
 
+    # ☆ 할루시네이션 및 일관성 검증 메서드 (새로 추가)
+    def detect_hallucination_and_inconsistency(self, answer: str, query: str, lang: str = 'ko') -> dict:
+        """생성된 답변에서 할루시네이션과 일관성 문제를 감지"""
+        
+        issues = {
+            'external_app_recommendation': False,
+            'bible_app_domain_violation': False,
+            'content_inconsistency': False,
+            'translation_switching': False,
+            'invalid_features': False,
+            'overall_score': 1.0,
+            'detected_issues': []
+        }
+        
+        if not answer:
+            return issues
+        
+        # HTML 태그 제거하여 순수 텍스트로 분석
+        clean_answer = re.sub(r'<[^>]+>', '', answer)
+        clean_query = re.sub(r'<[^>]+>', '', query)
+        
+        if lang == 'ko':
+            # 1. 🚨 외부 앱 추천 감지 (치명적)
+            external_app_patterns = [
+                r'Parallel\s*Bible',
+                r'병렬\s*성경\s*앱',
+                r'다른\s*앱을?\s*(다운로드|설치)',
+                r'앱\s*스토어에서\s*(검색|다운로드)',
+                r'구글\s*플레이\s*스토어',
+                r'외부\s*(앱|어플리케이션)',
+                r'별도[의]*\s*(앱|어플)',
+                r'추가로\s*(앱을|어플을)\s*설치'
+            ]
+            
+            for pattern in external_app_patterns:
+                if re.search(pattern, clean_answer, re.IGNORECASE):
+                    issues['external_app_recommendation'] = True
+                    issues['detected_issues'].append(f"외부 앱 추천 감지: {pattern}")
+                    issues['overall_score'] -= 0.8  # 매우 심각한 감점
+            
+            # 2. 🚨 바이블 애플 도메인 위반 감지
+            domain_violation_patterns = [
+                r'바이블\s*애플에[서는]*\s*지원[하지]*\s*않',
+                r'바이블\s*애플로[는]*\s*(불가능|안\s*됨)',
+                r'다른\s*(방법|서비스)을\s*이용',
+                r'외부\s*서비스를\s*통해',
+                r'바이블\s*애플\s*밖에서'
+            ]
+            
+            for pattern in domain_violation_patterns:
+                if re.search(pattern, clean_answer, re.IGNORECASE):
+                    issues['bible_app_domain_violation'] = True
+                    issues['detected_issues'].append(f"도메인 위반: {pattern}")
+                    issues['overall_score'] -= 0.6
+            
+            # 3. 🚨 번역본 변경/교체 감지 (질문 vs 답변)
+            query_translations = self.extract_translations_from_text(clean_query)
+            answer_translations = self.extract_translations_from_text(clean_answer)
+            
+            if query_translations and answer_translations:
+                # 질문에서 언급한 번역본이 답변에서 다른 번역본으로 바뀌었는지 확인
+                query_set = set(query_translations)
+                answer_set = set(answer_translations)
+                
+                # 질문에 없던 번역본이 답변에 추가되었는지 확인
+                unexpected_translations = answer_set - query_set
+                if unexpected_translations:
+                    # 단, 일반적인 확장(예: 개역개정 → 개역개정+개역한글)은 허용
+                    # 하지만 완전히 다른 번역본(예: 개역한글 → 영문성경)은 금지
+                    problematic = False
+                    for trans in unexpected_translations:
+                        if any(forbidden in trans.lower() for forbidden in ['영어', 'english', 'niv', 'kjv', 'esv']) and \
+                           not any(allowed in q_trans.lower() for q_trans in query_translations for allowed in ['영어', 'english', 'niv', 'kjv', 'esv']):
+                            problematic = True
+                            break
+                        elif any(forbidden in trans.lower() for forbidden in ['한글', '개역', 'korean']) and \
+                             not any(allowed in q_trans.lower() for q_trans in query_translations for allowed in ['한글', '개역', 'korean']):
+                            problematic = True
+                            break
+                    
+                    if problematic:
+                        issues['translation_switching'] = True
+                        issues['detected_issues'].append(f"번역본 변경: {query_translations} → {list(unexpected_translations)}")
+                        issues['overall_score'] -= 0.7
+            
+            # 4. 🚨 내용 일관성 검사 (답변 내부에서 내용이 바뀌는지)
+            answer_sentences = re.split(r'[.!?]\s+', clean_answer)
+            if len(answer_sentences) >= 3:
+                # 답변 전반부와 후반부의 번역본 언급이 다른지 확인
+                first_half = ' '.join(answer_sentences[:len(answer_sentences)//2])
+                second_half = ' '.join(answer_sentences[len(answer_sentences)//2:])
+                
+                first_translations = self.extract_translations_from_text(first_half)
+                second_translations = self.extract_translations_from_text(second_half)
+                
+                if first_translations and second_translations:
+                    if set(first_translations) != set(second_translations):
+                        # 완전히 다른 번역본으로 바뀌었는지 확인
+                        if not (set(first_translations) & set(second_translations)):  # 교집합이 없으면
+                            issues['content_inconsistency'] = True
+                            issues['detected_issues'].append(f"내용 일관성 위반: {first_translations} → {second_translations}")
+                            issues['overall_score'] -= 0.8
+            
+            # 5. 존재하지 않는 기능 언급 감지
+            invalid_feature_patterns = [
+                r'화면\s*분할\s*기능',
+                r'병렬\s*모드',
+                r'분할\s*화면\s*설정',
+                r'동시\s*실행\s*모드'
+            ]
+            
+            for pattern in invalid_feature_patterns:
+                if re.search(pattern, clean_answer, re.IGNORECASE):
+                    issues['invalid_features'] = True
+                    issues['detected_issues'].append(f"존재하지 않는 기능: {pattern}")
+                    issues['overall_score'] -= 0.4
+        
+        # 최종 점수 정규화
+        issues['overall_score'] = max(issues['overall_score'], 0.0)
+        
+        # 심각한 문제가 하나라도 있으면 전체 점수를 매우 낮게
+        critical_issues = [
+            issues['external_app_recommendation'],
+            issues['bible_app_domain_violation'],
+            issues['translation_switching'],
+            issues['content_inconsistency']
+        ]
+        
+        if any(critical_issues):
+            issues['overall_score'] = min(issues['overall_score'], 0.2)
+        
+        logging.info(f"할루시네이션 검증 결과: 점수={issues['overall_score']:.2f}, 문제={len(issues['detected_issues'])}개")
+        
+        return issues
+
+    # ☆ 텍스트에서 번역본 추출하는 헬퍼 메서드
+    def extract_translations_from_text(self, text: str) -> list:
+        """텍스트에서 성경 번역본명을 추출"""
+        
+        translation_patterns = [
+            r'NIV',
+            r'KJV', 
+            r'ESV',
+            r'개역개정',
+            r'개역한글',
+            r'개역\s*개정',
+            r'개역\s*한글',
+            r'영어\s*번역본',
+            r'영문\s*성경',
+            r'한글\s*번역본',
+            r'한국어\s*성경'
+        ]
+        
+        found_translations = []
+        for pattern in translation_patterns:
+            matches = re.findall(pattern, text, re.IGNORECASE)
+            found_translations.extend(matches)
+        
+        # 중복 제거 및 정규화
+        normalized = []
+        for trans in found_translations:
+            trans = re.sub(r'\s+', '', trans)  # 공백 제거
+            if trans not in normalized:
+                normalized.append(trans)
+        
+        return normalized
+
     # ☆ 최적의 폴백 답변 선택 메서드 (직접 사용 답변 포함)
     def get_best_fallback_answer(self, similar_answers: list, lang: str = 'ko') -> str:
         logging.info(f"=== get_best_fallback_answer 시작 ===")
@@ -2209,10 +2419,31 @@ Important: Do not include greetings or closings. Only write the main content."""
             empty_promise_score = self.detect_empty_promises(base_answer, lang)
             logging.info(f"빈 약속 패턴 검사 점수: {empty_promise_score:.2f}")
             
-            # 빈 약속이 감지되거나 완성도가 낮으면 재생성 시도
+            # 🔥 할루시네이션 및 일관성 최종 검증 (새로 추가)
+            final_hallucination_check = self.detect_hallucination_and_inconsistency(base_answer, query, lang)
+            final_hallucination_score = final_hallucination_check['overall_score']
+            final_detected_issues = final_hallucination_check['detected_issues']
+            
+            logging.info(f"최종 할루시네이션 검증 점수: {final_hallucination_score:.2f}")
+            if final_detected_issues:
+                logging.error(f"최종 답변에서 감지된 문제들: {final_detected_issues}")
+            
+            # 🚨 할루시네이션이 치명적이면 즉시 폴백으로 변경
+            if final_hallucination_score < 0.3:
+                logging.error("🚨 최종 답변에서 치명적 할루시네이션 감지! 폴백 답변으로 강제 변경")
+                approach = 'fallback'
+                base_answer = self.get_best_fallback_answer(similar_answers, lang)
+                
+                # 폴백 답변도 검증
+                if base_answer:
+                    fallback_hallucination = self.detect_hallucination_and_inconsistency(base_answer, query, lang)
+                    logging.info(f"폴백 답변 할루시네이션 점수: {fallback_hallucination['overall_score']:.2f}")
+            
+            # 재생성 조건 검사 (할루시네이션 점수 추가)
             needs_regeneration = (
                 base_completeness < 0.6 or 
-                empty_promise_score < 0.3
+                empty_promise_score < 0.3 or
+                final_hallucination_score < 0.5  # 할루시네이션 점수가 낮으면 재생성
             )
             
             if needs_regeneration and approach in ['gpt_with_strong_context', 'gpt_with_weak_context']:
@@ -2230,12 +2461,26 @@ Important: Do not include greetings or closings. Only write the main content."""
                         retry_completeness = self.check_answer_completeness(retry_answer, query, lang)
                         retry_empty_promise = self.detect_empty_promises(retry_answer, lang)
                         
-                        logging.info(f"재생성 #{attempt+1} - 완성도: {retry_completeness:.2f}, 빈약속: {retry_empty_promise:.2f}")
+                        # 🔥 재생성 답변도 할루시네이션 검증 (새로 추가)
+                        retry_hallucination_check = self.detect_hallucination_and_inconsistency(retry_answer, query, lang)
+                        retry_hallucination_score = retry_hallucination_check['overall_score']
+                        retry_detected_issues = retry_hallucination_check['detected_issues']
                         
-                        # 재생성 답변이 더 나은지 확인
+                        logging.info(f"재생성 #{attempt+1} - 완성도: {retry_completeness:.2f}, 빈약속: {retry_empty_promise:.2f}, 할루시네이션: {retry_hallucination_score:.2f}")
+                        
+                        if retry_detected_issues:
+                            logging.warning(f"재생성 #{attempt+1} 감지된 문제: {retry_detected_issues}")
+                        
+                        # 🚨 재생성 답변에 치명적 할루시네이션이 있으면 사용하지 않음
+                        if retry_hallucination_score < 0.3:
+                            logging.error(f"재생성 #{attempt+1}에 치명적 할루시네이션 감지 - 사용 안함")
+                            continue
+                        
+                        # 재생성 답변이 더 나은지 확인 (할루시네이션 점수 추가)
                         is_better = (
                             retry_completeness > base_completeness and 
-                            retry_empty_promise > empty_promise_score
+                            retry_empty_promise > empty_promise_score and
+                            retry_hallucination_score > final_hallucination_score
                         )
                         
                         if is_better:
@@ -2243,15 +2488,16 @@ Important: Do not include greetings or closings. Only write the main content."""
                             base_answer = retry_answer
                             base_completeness = retry_completeness
                             empty_promise_score = retry_empty_promise
+                            final_hallucination_score = retry_hallucination_score
                             break
                         else:
                             logging.info(f"재생성 답변 #{attempt+1}이 개선되지 않음")
                 
-                # 여전히 낮으면 폴백 답변으로 강제 변경
-                if base_completeness < 0.5 or empty_promise_score < 0.3:
+                # 여전히 낮으면 폴백 답변으로 강제 변경 (할루시네이션 검증 포함)
+                if base_completeness < 0.5 or empty_promise_score < 0.3 or final_hallucination_score < 0.5:
                     logging.warning("모든 재생성 실패, 폴백 답변으로 강제 변경")
                     
-                    # 상위 3개 답변 중 가장 좋은 것 선택
+                    # 상위 3개 답변 중 가장 좋은 것 선택 (할루시네이션 검증 포함)
                     best_fallback = None
                     best_fallback_score = 0
                     
@@ -2263,9 +2509,23 @@ Important: Do not include greetings or closings. Only write the main content."""
                         candidate_completeness = self.check_answer_completeness(candidate_text, query, lang)
                         candidate_empty_promise = self.detect_empty_promises(candidate_text, lang)
                         
-                        combined_score = candidate_completeness * 0.7 + candidate_empty_promise * 0.3
+                        # 🔥 폴백 후보도 할루시네이션 검증 (새로 추가)
+                        candidate_hallucination_check = self.detect_hallucination_and_inconsistency(candidate_text, query, lang)
+                        candidate_hallucination_score = candidate_hallucination_check['overall_score']
                         
-                        logging.info(f"폴백 후보 #{i+1} 종합점수: {combined_score:.2f}")
+                        # 🚨 할루시네이션이 심각하면 후보에서 제외
+                        if candidate_hallucination_score < 0.3:
+                            logging.warning(f"폴백 후보 #{i+1} 할루시네이션으로 제외")
+                            continue
+                        
+                        # 종합 점수 계산 (할루시네이션 점수 포함)
+                        combined_score = (
+                            candidate_completeness * 0.4 + 
+                            candidate_empty_promise * 0.3 + 
+                            candidate_hallucination_score * 0.3
+                        )
+                        
+                        logging.info(f"폴백 후보 #{i+1} 종합점수: {combined_score:.2f} (완성도={candidate_completeness:.2f}, 빈약속={candidate_empty_promise:.2f}, 할루시네이션={candidate_hallucination_score:.2f})")
                         
                         if combined_score > best_fallback_score:
                             best_fallback = candidate_text
