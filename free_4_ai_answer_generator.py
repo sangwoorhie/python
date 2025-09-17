@@ -1909,6 +1909,283 @@ Important: Do not include greetings or closings. Only write the main content."""
             logging.error(f"처리 중 오류 - SEQ: {seq}, 오류: {str(e)}")
             return {"success": False, "error": str(e)}
 
+    # ☆ 단순화된 컨텍스트 품질 분석 메서드 (규칙 기반)
+    def analyze_context_quality_simple(self, similar_answers: list, query: str) -> dict:
+        """유사도 점수 기반의 단순하고 명확한 품질 분석"""
+        
+        if not similar_answers:
+            return {
+                'has_good_context': False,
+                'best_score': 0.0,
+                'recommended_approach': 'fallback',
+                'quality_level': 'none',
+                'top_scores': []
+            }
+        
+        # 상위 5개 답변의 점수만 확인
+        top_5_scores = [ans['score'] for ans in similar_answers[:5]]
+        best_score = top_5_scores[0] if top_5_scores else 0.0
+        
+        # 점수 분포 분석
+        high_quality_count = len([s for s in top_5_scores if s >= 0.8])
+        medium_quality_count = len([s for s in top_5_scores if 0.6 <= s < 0.8])
+        
+        # 명확한 규칙 기반 접근 방식 결정
+        if best_score >= 0.95:
+            approach = 'direct_use'
+            quality_level = 'excellent'
+        elif best_score >= 0.85 and high_quality_count >= 2:
+            approach = 'direct_use'
+            quality_level = 'very_high'
+        elif best_score >= 0.75:
+            approach = 'gpt_with_strong_context'
+            quality_level = 'high'
+        elif best_score >= 0.6 and (high_quality_count + medium_quality_count) >= 2:
+            approach = 'gpt_with_strong_context'
+            quality_level = 'medium'
+        elif best_score >= 0.45:
+            approach = 'gpt_with_weak_context'
+            quality_level = 'low'
+        else:
+            approach = 'fallback'
+            quality_level = 'very_low'
+        
+        return {
+            'has_good_context': quality_level in ['excellent', 'very_high', 'high', 'medium'],
+            'best_score': best_score,
+            'high_quality_count': high_quality_count,
+            'medium_quality_count': medium_quality_count,
+            'recommended_approach': approach,
+            'quality_level': quality_level,
+            'top_scores': top_5_scores,
+            'context_summary': f"품질: {quality_level}, 최고점수: {best_score:.3f}, 고품질: {high_quality_count}개"
+        }
+
+    # ☆ 단순화된 검색 결과 필터링 (임계값 기반)
+    def search_similar_answers(self, query: str, top_k: int = 8, lang: str = 'ko') -> list:
+        """단순화된 유사 답변 검색 - 명확한 점수 기반 필터링"""
+        try:
+            with memory_cleanup():
+                logging.info(f"=== 단순화된 검색 시작 ===")
+                logging.info(f"검색 질문: {query[:100]}")
+                
+                # 오타 수정 (한국어만)
+                if lang == 'ko':
+                    corrected_query = self.fix_korean_typos_with_ai(query)
+                    query_to_embed = corrected_query
+                else:
+                    query_to_embed = query
+                
+                # 임베딩 생성
+                query_vector = self.create_embedding(query_to_embed)
+                if query_vector is None:
+                    logging.error("임베딩 생성 실패")
+                    return []
+                
+                # Pinecone 검색 (더 많이 검색해서 좋은 결과 확보)
+                results = index.query(
+                    vector=query_vector,
+                    top_k=top_k * 3,  # 3배 더 검색
+                    include_metadata=True
+                )
+                
+                # 영어 질문인 경우 한국어 번역으로 추가 검색
+                if lang == 'en':
+                    korean_query = self.translate_text(query_to_embed, 'en', 'ko')
+                    korean_vector = self.create_embedding(korean_query)
+                    if korean_vector:
+                        korean_results = index.query(
+                            vector=korean_vector,
+                            top_k=top_k,
+                            include_metadata=True
+                        )
+                        # 결과 병합 및 중복 제거
+                        seen_ids = set()
+                        merged_matches = []
+                        for match in results['matches'] + korean_results['matches']:
+                            if match['id'] not in seen_ids:
+                                seen_ids.add(match['id'])
+                                merged_matches.append(match)
+                        results['matches'] = sorted(merged_matches, key=lambda x: x['score'], reverse=True)
+                
+                # 단순한 점수 기반 필터링
+                filtered_results = []
+                for i, match in enumerate(results['matches'][:top_k*2]):  # 상위 2배만 검토
+                    score = match['score']
+                    question = match['metadata'].get('question', '')
+                    answer = match['metadata'].get('answer', '')
+                    category = match['metadata'].get('category', '일반')
+                    
+                    # 명확한 포함 기준
+                    should_include = False
+                    
+                    if score >= 0.4:  # 기본 임계값
+                        should_include = True
+                    elif i < 5:  # 상위 5개는 점수가 낮아도 포함
+                        should_include = True
+                    elif score >= 0.3 and len(filtered_results) < 3:  # 최소 3개 보장
+                        should_include = True
+                    
+                    if should_include and len(filtered_results) < top_k:
+                        # 기본적인 텍스트 품질 검증만
+                        if len(answer.strip()) >= 10:  # 최소 길이만 확인
+                            filtered_results.append({
+                                'score': score,
+                                'question': question,
+                                'answer': answer,
+                                'category': category,
+                                'rank': i + 1,
+                                'lang': 'ko'
+                            })
+                            
+                            logging.info(f"포함: #{i+1} 점수={score:.3f} 카테고리={category}")
+                
+                # 메모리 정리
+                del results, query_vector
+                
+                logging.info(f"검색 완료: {len(filtered_results)}개 답변 (언어: {lang})")
+                return filtered_results
+            
+        except Exception as e:
+            logging.error(f"검색 실패: {str(e)}")
+            return []
+
+    # ☆ 단순화된 컨텍스트 생성 (점수 기반 우선순위)
+    def create_enhanced_context_simple(self, similar_answers: list, max_answers: int = 6, target_lang: str = 'ko') -> str:
+        """점수 기반의 단순한 컨텍스트 생성"""
+        
+        if not similar_answers:
+            return ""
+        
+        context_parts = []
+        used_count = 0
+        
+        # 점수 순으로 정렬되어 있으므로 순서대로 처리
+        for i, ans in enumerate(similar_answers[:max_answers]):
+            if used_count >= max_answers:
+                break
+            
+            score = ans['score']
+            answer_text = ans['answer']
+            
+            # 기본 정리
+            clean_answer = self.preprocess_text(answer_text)
+            clean_answer = self.remove_greeting_and_closing(clean_answer, 'ko')
+            
+            # 영어 요청시 번역
+            if target_lang == 'en' and ans.get('lang', 'ko') == 'ko':
+                clean_answer = self.translate_text(clean_answer, 'ko', 'en')
+            
+            # 최소 품질 검증
+            if len(clean_answer.strip()) >= 20:
+                # 점수에 따른 길이 조정
+                max_length = 500 if score >= 0.8 else 350 if score >= 0.6 else 250
+                
+                context_parts.append(
+                    f"[참고답변 {used_count+1} - 유사도: {score:.2f}]\n{clean_answer[:max_length]}"
+                )
+                used_count += 1
+        
+        logging.info(f"컨텍스트 생성: {used_count}개 답변 포함 (언어: {target_lang})")
+        return "\n\n" + "="*50 + "\n\n".join(context_parts)
+
+    # ☆ 단순화된 GPT 생성 (명확한 프롬프트)
+    def generate_with_simple_gpt(self, query: str, similar_answers: list, context_analysis: dict, lang: str = 'ko') -> str:
+        """단순화된 GPT 답변 생성 - 복잡한 검증 제거"""
+        
+        try:
+            with memory_cleanup():
+                approach = context_analysis['recommended_approach']
+                quality_level = context_analysis['quality_level']
+                
+                # 접근 방식이 GPT 생성이 아니면 빈 문자열 반환
+                if approach not in ['gpt_with_strong_context', 'gpt_with_weak_context']:
+                    return ""
+                
+                context = self.create_enhanced_context_simple(similar_answers, target_lang=lang)
+                if not context:
+                    return ""
+                
+                # 단순화된 프롬프트 생성
+                system_prompt, user_prompt = self.get_gpt_prompts(query, context, lang)
+                
+                # 품질에 따른 단순한 파라미터 설정
+                if quality_level in ['high', 'medium']:
+                    temperature = 0.6
+                    max_tokens = 650
+                else:  # low
+                    temperature = 0.7
+                    max_tokens = 600
+                
+                # GPT 호출
+                response = self.openai_client.chat.completions.create(
+                    model=GPT_MODEL,
+                    messages=[
+                        {"role": "system", "content": system_prompt},
+                        {"role": "user", "content": user_prompt}
+                    ],
+                    max_tokens=max_tokens,
+                    temperature=temperature,
+                    top_p=0.85,
+                    frequency_penalty=0.1,
+                    presence_penalty=0.1
+                )
+                
+                generated = response.choices[0].message.content.strip()
+                del response
+                
+                # 기본적인 정리만
+                generated = self.clean_generated_text(generated)
+                
+                # 최소 길이 검증만
+                if len(generated.strip()) < 10:
+                    logging.warning("생성된 답변이 너무 짧음")
+                    return ""
+                
+                logging.info(f"GPT 생성 성공 ({approach}, 품질: {quality_level}): {len(generated)}자")
+                return generated
+                
+        except Exception as e:
+            logging.error(f"GPT 생성 실패: {e}")
+            return ""
+
+    # ☆ 단순화된 폴백 답변 선택 (점수 기반)
+    def get_best_fallback_answer_simple(self, similar_answers: list, lang: str = 'ko') -> str:
+        """점수 기반의 단순한 최적 답변 선택"""
+        
+        if not similar_answers:
+            return ""
+        
+        # 상위 3개 중에서 선택
+        for i, ans in enumerate(similar_answers[:3]):
+            score = ans['score']
+            answer_text = ans['answer']
+            
+            # 점수가 매우 높으면 즉시 반환
+            if score >= 0.9:
+                logging.info(f"최고 점수({score:.3f}) 답변 직접 사용")
+                clean_answer = answer_text.strip()
+                return clean_answer if clean_answer else ""
+            
+            # 기본 전처리
+            processed = self.preprocess_text(answer_text)
+            
+            # 영어 번역
+            if lang == 'en' and ans.get('lang', 'ko') == 'ko':
+                processed = self.translate_text(processed, 'ko', 'en')
+            
+            # 기본 품질 검증
+            if len(processed.strip()) >= 20:
+                # 첫 번째 유효한 답변 선택
+                logging.info(f"폴백 답변 선택: #{i+1}, 점수={score:.3f}")
+                return processed
+        
+        # 모든 답변이 부적절한 경우 첫 번째 원본 반환
+        if similar_answers:
+            return similar_answers[0]['answer'].strip()
+        
+        return ""
+
 # ==================================================
 # 8. Pinecone 벡터 데이터베이스 동기화 클래스
 # ==================================================
