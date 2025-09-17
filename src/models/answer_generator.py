@@ -68,7 +68,7 @@ Important: Do not include greetings or closings. Only write the main content."""
 - 바이블 애플 내부 기능만으로 모든 번역본 비교가 가능합니다
 
 🚨 절대 금지사항 (할루시네이션 방지):
-- ❌ "Parallel Bible" 앱이나 다른 앱 다운로드 추천 금지
+- ❌ 바이블 애플 앱 외 다른 앱 다운로드 추천 금지
 - ❌ 바이블 애플에 없는 기능이나 메뉴 언급 금지  
 - ❌ 확실하지 않은 정보나 추측성 답변 금지
 - ❌ 답변 중간에 다른 번역본이나 언어로 내용 변경 금지

@@ -485,6 +485,15 @@ class QualityValidator:
                         issues['detected_issues'].append(f"번역본 변경: {query_translations} → {list(unexpected_translations)}")
                         issues['overall_score'] -= 0.7
         
+        # 3. 존재하지 않는 기능 안내 감지 (치명적)
+        invalid_feature_result = self._detect_non_existent_features(clean_answer, clean_query, lang)
+        if invalid_feature_result:
+            issues['invalid_features'] = True
+            issues['detected_issues'].append("존재하지 않는 기능에 대한 잘못된 안내 감지")
+            issues['overall_score'] -= 0.9  # 매우 심각한 감점
+        else:
+            issues['invalid_features'] = False
+        
         # 최종 점수 정규화
         issues['overall_score'] = max(issues['overall_score'], 0.0)
         
@@ -492,14 +501,90 @@ class QualityValidator:
         critical_issues = [
             issues['external_app_recommendation'],
             issues['translation_switching'],
+            issues['invalid_features']
         ]
         
         if any(critical_issues):
-            issues['overall_score'] = min(issues['overall_score'], 0.2)
+            issues['overall_score'] = min(issues['overall_score'], 0.1)
         
         logging.info(f"할루시네이션 검증 결과: 점수={issues['overall_score']:.2f}, 문제={len(issues['detected_issues'])}개")
         
         return issues
+    
+    def _detect_non_existent_features(self, answer: str, query: str, lang: str = 'ko') -> bool:
+        """존재하지 않는 기능에 대한 잘못된 안내 감지"""
+        
+        if lang == 'ko':
+            # 1. 존재하지 않는 알림 세부 설정 기능들
+            invalid_notification_patterns = [
+                r'주일에만\s*(알림|예배\s*알림).*설정',
+                r'요일별.*알림.*설정',
+                r'특정\s*요일.*알림.*받기',
+                r'월요일|화요일|수요일|목요일|금요일|토요일|일요일.*만.*알림',
+                r'주중|주말.*만.*알림.*설정',
+                r'시간대별.*알림.*커스터마이징',
+                r'개별.*요일.*선택.*알림'
+            ]
+            
+            # 2. 존재하지 않는 설정 메뉴 경로들
+            invalid_menu_patterns = [
+                r'설정.*메뉴에서.*"?주일"?.*선택',
+                r'알림.*설정.*"?요일"?.*선택',
+                r'주일.*옵션.*선택하고.*저장',
+                r'요일.*설정.*메뉴.*들어가서',
+                r'"?주일\s*알림"?.*항목.*찾아서',
+                r'주일.*체크박스.*선택',
+                r'요일별.*체크.*해제'
+            ]
+            
+            # 3. 존재하지 않는 고급 기능들
+            invalid_advanced_patterns = [
+                r'맞춤형.*알림.*스케줄.*설정',
+                r'개인화된.*알림.*시간.*조정',
+                r'세밀한.*알림.*옵션.*설정',
+                r'고급.*알림.*설정.*메뉴',
+                r'상세.*알림.*커스터마이징',
+                r'알림.*빈도.*세부.*조정'
+            ]
+            
+            # 4. 특정 질문 유형별 존재하지 않는 기능들
+            query_specific_patterns = []
+            
+            # 주일 알림 관련 질문에 대한 잘못된 답변 패턴
+            if re.search(r'주일.*만.*알림|주일.*예배.*알림', query, re.IGNORECASE):
+                query_specific_patterns.extend([
+                    r'주일.*선택하고.*저장.*버튼',
+                    r'주일.*체크.*표시.*하세요',
+                    r'주일.*옵션.*활성화.*하면',
+                    r'주일.*설정.*완료.*하세요'
+                ])
+            
+            # 모든 패턴 검사
+            all_patterns = (invalid_notification_patterns + 
+                          invalid_menu_patterns + 
+                          invalid_advanced_patterns + 
+                          query_specific_patterns)
+            
+            for pattern in all_patterns:
+                if re.search(pattern, answer, re.IGNORECASE):
+                    logging.error(f"존재하지 않는 기능 안내 감지: '{pattern}' 패턴 매칭")
+                    return True
+            
+            # 5. 실제 앱에 없는 UI 요소 언급 감지
+            ui_element_patterns = [
+                r'"?주일"?.*버튼.*눌러',
+                r'"?요일.*선택"?.*메뉴',
+                r'"?주일.*알림"?.*체크박스',
+                r'"?요일별.*설정"?.*옵션',
+                r'주일.*드롭다운.*메뉴'
+            ]
+            
+            for pattern in ui_element_patterns:
+                if re.search(pattern, answer, re.IGNORECASE):
+                    logging.error(f"존재하지 않는 UI 요소 언급 감지: '{pattern}' 패턴 매칭")
+                    return True
+        
+        return False
 
     def validate_answer_relevance_ai(self, answer: str, query: str, question_analysis: dict) -> bool:
         """AI를 이용해 생성된 답변이 질문과 관련성이 있는지 엄격하게 검증"""
