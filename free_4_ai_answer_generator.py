@@ -1400,10 +1400,23 @@ Important: Do not include greetings or closings. Only write the main content."""
 - 하나의 문의에 대해 일관된 주제와 해결방향 제시
 - 불확실한 정보보다는 확실한 범위 내에서 답변
 
-🚫 형식 제한사항:
+🚫 절대 금지사항:
 - 인사말("안녕하세요", "감사합니다" 등) 사용 금지
 - 끝맺음말("평안하세요", "주님 안에서" 등) 사용 금지  
 - 본문 내용만 작성하고 격식적 표현 생략
+
+🚨 빈 약속 금지 (매우 중요):
+- "안내해드리겠습니다", "도움드리겠습니다", "설명드리겠습니다" 등의 약속 표현 사용 시 
+  반드시 구체적인 실행 내용이 바로 뒤따라야 합니다
+- 약속만 하고 실제 안내/도움/설명 내용이 없으면 절대 안됩니다
+- 예시: ❌ "방법을 안내해드리겠습니다." (끝) 
+         ✅ "방법을 안내해드리겠습니다. 1. 화면 상단의 설정 메뉴를 터치하세요..."
+
+💡 구체적 답변 작성법:
+- 단계별 설명: "1단계:", "먼저", "그다음" 등으로 순서 명확화
+- 구체적 위치: "화면 상단", "메뉴에서", "버튼을 클릭" 등 정확한 위치 제시  
+- 실제 기능명: "NIV", "KJV", "설정", "번역본 선택" 등 구체적 명칭 사용
+- 현실적 한계: 불가능한 기능은 솔직히 "현재 지원하지 않습니다"라고 명시
 
 💡 창의적 문제해결:
 - 참고 답변이 부적절할 때는 고객 상황에 맞는 새로운 해결책 제시
@@ -1418,10 +1431,19 @@ Important: Do not include greetings or closings. Only write the main content."""
 ❗ 중요 지시사항:
 위 참고 답변들이 고객의 질문과 관련이 있는지 먼저 판단하세요.
 - 관련이 있다면: 참고 답변의 해결 방식을 활용하여 답변하세요
-- 관련이 없다면: 참고 답변을 참고하여 새로운 답변을 작성하세요
+- 관련이 없다면: 고객 상황에 맞는 새로운 해결책을 제시하세요
 
-고객의 구체적인 질문에 정확히 맞는 답변만 작성하세요.
-인사말이나 끝맺음말 없이 본문 내용만 작성하세요."""
+🚨 필수 요구사항:
+1. 고객의 구체적인 질문에 정확히 맞는 답변만 작성하세요
+2. "안내해드리겠습니다" 같은 약속 표현 사용 시 반드시 구체적인 실행 내용을 바로 이어서 작성하세요
+3. 단계별 설명이 필요하면 "1단계", "먼저", "그다음" 등으로 명확히 구분하세요
+4. 구체적 위치나 버튼명, 메뉴명을 정확히 명시하세요
+5. 인사말이나 끝맺음말 없이 본문 내용만 작성하세요
+
+❌ 금지 예시: "방법을 안내해드리겠습니다." (끝)
+✅ 올바른 예시: "방법을 안내해드리겠습니다. 먼저 화면 상단의 설정 버튼을 터치하세요..."
+
+지금 즉시 고객에게 실질적 도움이 되는 구체적인 답변을 작성하세요."""
 
         return system_prompt, user_prompt
 
@@ -1692,17 +1714,23 @@ Important: Do not include greetings or closings. Only write the main content."""
         # 문장이 불완전한 경우
         return 0.3
 
-    # ☆ 답변 구체성 검사
+    # ☆ 답변 구체성 검사 (빈 약속 패턴 감지 강화)
     def check_answer_specificity(self, answer: str, query: str, lang: str = 'ko') -> float:
-        """답변이 구체적인 정보를 포함하는지 검사"""
+        """답변이 구체적인 정보를 포함하는지 검사 (빈 약속 패턴 엄격 감지)"""
         
         if not answer:
             return 0.0
+        
+        # 🔥 빈 약속 패턴 엄격 감지 (Empty Promise Detection)
+        empty_promise_score = self.detect_empty_promises(answer, lang)
+        if empty_promise_score < 0.3:  # 빈 약속이 감지되면 매우 낮은 점수
+            logging.warning(f"빈 약속 패턴 감지! 점수: {empty_promise_score:.2f}")
+            return empty_promise_score
             
         specificity_score = 0.0
         
         if lang == 'ko':
-            # 구체적 정보 패턴 (한국어)
+            # 구체적 정보 패턴 (한국어) - 더 엄격하게 강화
             specific_patterns = [
                 r'\d+[가지개단계번째차례]',  # 숫자가 포함된 단계
                 r'[메뉴설정화면버튼탭]에서',    # 구체적 위치
@@ -1713,16 +1741,25 @@ Important: Do not include greetings or closings. Only write the main content."""
                 r'\w+\s*메뉴',               # 메뉴명
                 r'NIV|KJV|ESV|번역본',       # 구체적 번역본
                 r'[상하좌우]단[에의]',         # 구체적 위치
-                r'설정[에서으로]'             # 설정 관련
+                r'설정[에서으로]',            # 설정 관련
+                r'화면\s*[상하좌우중앙]',      # 화면 위치
+                r'탭하여|클릭하여|터치하여',    # 구체적 행동
+                r'다음\s*순서',              # 순서 안내
+                r'먼저|그다음|마지막으로'       # 단계별 안내
             ]
             
-            # 모호한 표현 패턴
+            # 🔥 빈 약속/모호한 표현 패턴 (더 엄격하게)
             vague_patterns = [
                 r'안내[해]*드리겠습니다',
-                r'검토[하고하여]',
+                r'도움[을이]\s*드리겠습니다',
                 r'확인[하고하여해서]',
+                r'검토[하고하여]',
                 r'준비[하고하겠습니다]',
-                r'전달[하고하겠드리겠]'
+                r'전달[하고하겠드리겠]',
+                r'제공[하고하겠드리겠]',
+                r'노력[하고하겠]',
+                r'살펴[보고보겠]',
+                r'방법[을이]\s*찾아[드리겠보겠]'
             ]
         else:
             # 구체적 정보 패턴 (영어)
@@ -1761,6 +1798,116 @@ Important: Do not include greetings or closings. Only write the main content."""
             specificity_score = 0.1 if vague_count == 0 else 0.0
         
         return min(specificity_score, 1.0)
+
+    # ☆ 빈 약속 패턴 감지 메서드 (새로 추가)
+    def detect_empty_promises(self, answer: str, lang: str = 'ko') -> float:
+        """약속만 하고 실제 내용이 없는 빈 약속 패턴을 감지"""
+        
+        if not answer:
+            return 0.0
+        
+        # HTML 태그 제거하여 순수 텍스트로 분석
+        clean_text = re.sub(r'<[^>]+>', '', answer)
+        
+        if lang == 'ko':
+            # 🔥 위험한 약속 표현들 (이후 실제 내용이 와야 함)
+            promise_patterns = [
+                r'안내[해]*드리겠습니다',
+                r'도움[을이]?\s*드리겠습니다',
+                r'방법[을이]?\s*안내[해]*드리겠습니다',
+                r'설명[해]*드리겠습니다',
+                r'알려[드리겠드릴]',
+                r'제공[해]*드리겠습니다',
+                r'도와[드리겠드릴]',
+                r'찾아[드리겠드릴]'
+            ]
+            
+            # 실제 내용을 나타내는 패턴들
+            content_patterns = [
+                r'\d+\.\s*',                    # 번호 매기기 (1., 2., ...)
+                r'먼저',                       # 단계별 설명 시작
+                r'다음과?\s*같[은이]',           # 구체적 방법 제시
+                r'[메뉴설정화면버튼]',           # 구체적 UI 요소
+                r'클릭|터치|선택|이동',          # 구체적 행동
+                r'NIV|KJV|ESV',               # 구체적 번역본
+                r'상단|하단|좌측|우측',         # 구체적 위치
+                r'설정에서|메뉴에서',           # 구체적 경로
+                r'다음\s*[순서단계방법절차]',    # 단계별 안내
+                r'[0-9]+[번째단계]',           # 순서 표시
+                r'화면\s*[상하좌우중앙]'        # 위치 설명
+            ]
+        else:  # 영어
+            promise_patterns = [
+                r'will\s+guide\s+you',
+                r'will\s+help\s+you',
+                r'will\s+show\s+you',
+                r'will\s+provide',
+                r'let\s+me\s+help',
+                r'here[\'\"]s\s+how'
+            ]
+            
+            content_patterns = [
+                r'\d+\.\s*',
+                r'first|second|third',
+                r'step\s+\d+',
+                r'click|tap|select',
+                r'menu|setting|screen',
+                r'NIV|KJV|ESV',
+                r'top|bottom|left|right'
+            ]
+        
+        # 약속 표현 찾기
+        promise_count = 0
+        promise_positions = []
+        
+        for pattern in promise_patterns:
+            matches = list(re.finditer(pattern, clean_text, re.IGNORECASE))
+            promise_count += len(matches)
+            promise_positions.extend([match.start() for match in matches])
+        
+        if promise_count == 0:
+            return 0.8  # 약속 표현이 없으면 중간 점수
+        
+        # 약속 이후에 실제 내용이 있는지 확인
+        content_after_promise = 0
+        total_text_after_promises = 0
+        
+        for pos in promise_positions:
+            # 약속 표현 이후의 텍스트 추출
+            text_after = clean_text[pos:]
+            
+            # 끝맺음말 제거하여 실제 내용만 검사
+            text_after = re.sub(r'항상\s*성도님께[^.]*\.', '', text_after, flags=re.IGNORECASE)
+            text_after = re.sub(r'감사합니다[^.]*\.', '', text_after, flags=re.IGNORECASE)
+            text_after = re.sub(r'주님\s*안에서[^.]*\.', '', text_after, flags=re.IGNORECASE)
+            text_after = re.sub(r'평안하세요[^.]*\.', '', text_after, flags=re.IGNORECASE)
+            
+            total_text_after_promises += len(text_after.strip())
+            
+            # 실제 내용 패턴이 있는지 확인
+            for content_pattern in content_patterns:
+                if re.search(content_pattern, text_after, re.IGNORECASE):
+                    content_after_promise += 1
+                    break
+        
+        # 점수 계산
+        if promise_count > 0:
+            # 약속 대비 실제 내용 비율
+            content_ratio = content_after_promise / promise_count
+            
+            # 약속 이후 텍스트 길이 비율 (평균)
+            avg_length_after = total_text_after_promises / len(promise_positions) if promise_positions else 0
+            length_score = min(avg_length_after / 100, 1.0)  # 100자 기준으로 정규화
+            
+            # 최종 점수 (내용 비율과 길이를 고려)
+            final_score = content_ratio * 0.7 + length_score * 0.3
+            
+            logging.info(f"빈 약속 분석: 약속={promise_count}개, 실제내용={content_after_promise}개, "
+                        f"내용비율={content_ratio:.2f}, 길이점수={length_score:.2f}, 최종점수={final_score:.2f}")
+            
+            return final_score
+        
+        return 0.5  # 기본값
 
     # ☆ 최적의 폴백 답변 선택 메서드 (직접 사용 답변 포함)
     def get_best_fallback_answer(self, similar_answers: list, lang: str = 'ko') -> str:
@@ -1988,41 +2135,82 @@ Important: Do not include greetings or closings. Only write the main content."""
             logging.info("🎉 유효성 검사 우회 성공 - 답변 포맷팅 시작")
             print("🎉 유효성 검사 우회 성공 - 답변 포맷팅 시작")
             
-            # 🔥 최종 답변 완성도 검증 및 재생성 로직
+            # 🔥 강화된 답변 완성도 검증 및 재생성 로직
             base_completeness = self.check_answer_completeness(base_answer, query, lang)
             logging.info(f"최종 답변 완성도 점수: {base_completeness:.2f}")
             
-            # 완성도가 낮으면 재생성 시도
-            if base_completeness < 0.6 and approach in ['gpt_with_strong_context', 'gpt_with_weak_context']:
-                logging.warning(f"답변 완성도 부족 ({base_completeness:.2f}), 재생성 시도")
+            # 🔥 빈 약속 패턴 특별 검사
+            empty_promise_score = self.detect_empty_promises(base_answer, lang)
+            logging.info(f"빈 약속 패턴 검사 점수: {empty_promise_score:.2f}")
+            
+            # 빈 약속이 감지되거나 완성도가 낮으면 재생성 시도
+            needs_regeneration = (
+                base_completeness < 0.6 or 
+                empty_promise_score < 0.3
+            )
+            
+            if needs_regeneration and approach in ['gpt_with_strong_context', 'gpt_with_weak_context']:
+                logging.warning(f"답변 품질 부족 - 완성도: {base_completeness:.2f}, 빈약속: {empty_promise_score:.2f}")
                 
-                # 더 강한 컨텍스트로 재생성 시도
-                retry_analysis = context_analysis.copy()
-                retry_analysis['recommended_approach'] = 'gpt_with_strong_context'
-                
-                retry_answer = self.generate_with_enhanced_gpt(query, similar_answers, retry_analysis, lang)
-                if retry_answer:
-                    retry_completeness = self.check_answer_completeness(retry_answer, query, lang)
-                    logging.info(f"재생성 답변 완성도: {retry_completeness:.2f}")
+                # 🔥 더 강한 재생성 시도 (최대 2회)
+                for attempt in range(2):
+                    logging.info(f"재생성 시도 #{attempt+1}")
                     
-                    if retry_completeness > base_completeness:
-                        logging.info("재생성 답변이 더 우수함 - 사용")
-                        base_answer = retry_answer
-                    else:
-                        logging.info("재생성 답변이 개선되지 않음 - 원본 유지")
-                
-                # 여전히 낮으면 폴백 답변 시도
-                if base_completeness < 0.5:
-                    logging.warning("여전히 완성도가 낮음, 폴백 답변으로 변경")
-                    fallback_answer = self.get_best_fallback_answer(similar_answers, lang)
-                    if fallback_answer:
-                        fallback_completeness = self.check_answer_completeness(fallback_answer, query, lang)
-                        logging.info(f"폴백 답변 완성도: {fallback_completeness:.2f}")
+                    retry_analysis = context_analysis.copy()
+                    retry_analysis['recommended_approach'] = 'gpt_with_strong_context'
+                    
+                    retry_answer = self.generate_with_enhanced_gpt(query, similar_answers, retry_analysis, lang)
+                    if retry_answer:
+                        retry_completeness = self.check_answer_completeness(retry_answer, query, lang)
+                        retry_empty_promise = self.detect_empty_promises(retry_answer, lang)
                         
-                        if fallback_completeness > base_completeness:
-                            base_answer = fallback_answer
-                            approach = 'fallback'  # 접근 방식 변경
-                            logging.info("폴백 답변으로 최종 변경")
+                        logging.info(f"재생성 #{attempt+1} - 완성도: {retry_completeness:.2f}, 빈약속: {retry_empty_promise:.2f}")
+                        
+                        # 재생성 답변이 더 나은지 확인
+                        is_better = (
+                            retry_completeness > base_completeness and 
+                            retry_empty_promise > empty_promise_score
+                        )
+                        
+                        if is_better:
+                            logging.info(f"재생성 답변 #{attempt+1}이 더 우수함 - 사용")
+                            base_answer = retry_answer
+                            base_completeness = retry_completeness
+                            empty_promise_score = retry_empty_promise
+                            break
+                        else:
+                            logging.info(f"재생성 답변 #{attempt+1}이 개선되지 않음")
+                
+                # 여전히 낮으면 폴백 답변으로 강제 변경
+                if base_completeness < 0.5 or empty_promise_score < 0.3:
+                    logging.warning("모든 재생성 실패, 폴백 답변으로 강제 변경")
+                    
+                    # 상위 3개 답변 중 가장 좋은 것 선택
+                    best_fallback = None
+                    best_fallback_score = 0
+                    
+                    for i, candidate in enumerate(similar_answers[:3]):
+                        candidate_text = self.preprocess_text(candidate['answer'])
+                        if lang == 'en' and candidate.get('lang', 'ko') == 'ko':
+                            candidate_text = self.translate_text(candidate_text, 'ko', 'en')
+                        
+                        candidate_completeness = self.check_answer_completeness(candidate_text, query, lang)
+                        candidate_empty_promise = self.detect_empty_promises(candidate_text, lang)
+                        
+                        combined_score = candidate_completeness * 0.7 + candidate_empty_promise * 0.3
+                        
+                        logging.info(f"폴백 후보 #{i+1} 종합점수: {combined_score:.2f}")
+                        
+                        if combined_score > best_fallback_score:
+                            best_fallback = candidate_text
+                            best_fallback_score = combined_score
+                    
+                    if best_fallback and best_fallback_score > 0.4:
+                        base_answer = best_fallback
+                        approach = 'fallback'
+                        logging.info(f"최고 폴백 답변 선택 (점수: {best_fallback_score:.2f})")
+                    else:
+                        logging.error("모든 답변이 품질 기준 미달, 원본 유지")
             
             # 언어별 포맷팅
             if lang == 'en':
