@@ -631,23 +631,40 @@ class AIAnswerGenerator:
         context_relevance = self.check_context_relevance_ai(question_analysis, categories, query, similar_answers[:3])
         logging.info(f"컨텍스트 관련성: {context_relevance}")
         
-        # 🔥 의사 결정 트리 개선 - 관련성을 고려한 전략 결정
+        # 🔥 안정화된 의사 결정 트리 - 명확한 기준과 버퍼 적용
+        
+        # 관련성별 가중치 적용
+        relevance_weights = {
+            'high': 1.0,
+            'medium': 0.8,
+            'low': 0.6,
+            'irrelevant': 0.0
+        }
+        
+        adjusted_score = best_score * relevance_weights.get(context_relevance, 0.5)
+        logging.info(f"조정된 점수: {best_score:.3f} * {relevance_weights.get(context_relevance, 0.5)} = {adjusted_score:.3f}")
+        
+        # 더 명확하고 안정적인 기준 적용
         if context_relevance == 'irrelevant':
-            # 관련성이 없으면 무조건 폴백 처리
             approach = 'fallback'
-            logging.warning(f"질문 유형({question_type})과 검색된 답변의 관련성이 낮아 폴백 처리")
-        elif best_score >= 0.95 and context_relevance in ['high', 'medium']:
+            logging.warning(f"관련성 없음 - 폴백 처리")
+        elif adjusted_score >= 0.85:  # 매우 높은 신뢰도
             approach = 'direct_use'
-        elif best_score >= 0.8 and context_relevance == 'high':
-            approach = 'direct_use'
-        elif best_score >= 0.7 and context_relevance in ['high', 'medium']:
+            logging.info(f"매우 높은 신뢰도 - 직접 사용")
+        elif adjusted_score >= 0.65:  # 높은 신뢰도
             approach = 'gpt_with_strong_context'
-        elif best_score >= 0.5 and context_relevance == 'high':
-            approach = 'gpt_with_strong_context'
-        elif best_score >= 0.4 and context_relevance in ['high', 'medium']:
+            logging.info(f"높은 신뢰도 - 강한 컨텍스트로 GPT 생성")
+        elif adjusted_score >= 0.4:   # 중간 신뢰도
             approach = 'gpt_with_weak_context'
-        else:
+            logging.info(f"중간 신뢰도 - 약한 컨텍스트로 GPT 생성")
+        else:                         # 낮은 신뢰도
             approach = 'fallback'
+            logging.info(f"낮은 신뢰도 - 폴백 처리")
+        
+        # 🔥 추가 안정성 검사 - 고품질 답변 개수 고려
+        if high_quality_count >= 3 and approach == 'fallback':
+            approach = 'gpt_with_weak_context'  # 고품질 답변이 많으면 GPT 사용
+            logging.info(f"고품질 답변 {high_quality_count}개로 인해 GPT 생성으로 변경")
         
         # 분석 결과 구조화
         analysis = {
@@ -1408,7 +1425,7 @@ Important: Do not include greetings or closings. Only write the main content."""
 
         return system_prompt, user_prompt
 
-    # ☆ 향상된 GPT 생성 - 통일된 프롬프트 사용
+    # ☆ 향상된 GPT 생성 - 일관성과 품질 보장
     def generate_with_enhanced_gpt(self, query: str, similar_answers: list, context_analysis: dict, lang: str = 'ko') -> str:
         try:
             with memory_cleanup():
@@ -1422,54 +1439,62 @@ Important: Do not include greetings or closings. Only write the main content."""
                 # 통일된 프롬프트 생성
                 system_prompt, user_prompt = self.get_gpt_prompts(query, context, lang)
                 
-                # 🔥 접근 방식별 temperature와 max_tokens 설정 개선
+                # 🔥 일관성을 위한 보수적 temperature 설정
                 if approach == 'gpt_with_strong_context':
-                    # 관련성이 높은 경우 더 창의적으로 설정
-                    temperature = 0.7 if context_analysis.get('context_relevance') == 'high' else 0.6
+                    # 일관성 우선으로 낮은 temperature
+                    temperature = 0.3 if context_analysis.get('context_relevance') == 'high' else 0.4
                     max_tokens = 700
                 elif approach == 'gpt_with_weak_context':
-                    # 관련성이 낮은 경우 더 창의적으로 설정하여 새로운 답변 생성 유도
-                    temperature = 0.8
+                    # 약간 더 창의적이지만 여전히 보수적
+                    temperature = 0.4
                     max_tokens = 650
                 else: # fallback이나 기타
                     return ""
                 
-                # GPT API 호출
-                response = self.openai_client.chat.completions.create(
-                    model=GPT_MODEL,
-                    messages=[
-                        {"role": "system", "content": system_prompt},
-                        {"role": "user", "content": user_prompt}
-                    ],
-                    max_tokens=max_tokens,
-                    temperature=temperature,
-                    top_p=0.8,
-                    frequency_penalty=0.1,
-                    presence_penalty=0.1
-                )
-                
-                generated = response.choices[0].message.content.strip()
-                del response
-                
-                # 생성된 텍스트 정리
-                generated = self.clean_generated_text(generated)
-                
-                # 🔥 답변 관련성 추가 검증 (AI 기반)
-                if not self.validate_answer_relevance_ai(generated, query, context_analysis.get('question_analysis', {})):
-                    logging.warning(f"생성된 답변이 질문과 관련성이 낮음: {generated[:50]}...")
-                    return ""
-                
-                # 텍스트 유효성 검증 (완화)
-                if not self.is_valid_text(generated, lang):
-                    logging.warning(f"GPT가 무효한 텍스트 생성: {generated[:50]}...")
-                    # 유효성 검증 실패해도 관련성이 높으면 사용
-                    if context_analysis.get('context_relevance') == 'high':
-                        logging.info("관련성이 높아 유효성 검증 우회")
+                # 🔥 답변 품질 보장을 위한 3회 재시도 메커니즘
+                max_attempts = 3
+                for attempt in range(max_attempts):
+                    # GPT API 호출
+                    response = self.openai_client.chat.completions.create(
+                        model=GPT_MODEL,
+                        messages=[
+                            {"role": "system", "content": system_prompt},
+                            {"role": "user", "content": user_prompt}
+                        ],
+                        max_tokens=max_tokens,
+                        temperature=temperature,
+                        top_p=0.9,  # 더 보수적으로 설정
+                        frequency_penalty=0.1,
+                        presence_penalty=0.1
+                    )
+                    
+                    generated = response.choices[0].message.content.strip()
+                    del response
+                    
+                    # 생성된 텍스트 정리
+                    generated = self.clean_generated_text(generated)
+                    
+                    # 🔥 답변 완성도 검증 (새로 추가)
+                    completeness_score = self.check_answer_completeness(generated, query, lang)
+                    logging.info(f"시도 #{attempt+1} 답변 완성도: {completeness_score:.2f}")
+                    
+                    # 완성도가 충분한지 검사
+                    if completeness_score >= 0.7:
+                        # 관련성 검증
+                        if self.validate_answer_relevance_ai(generated, query, context_analysis.get('question_analysis', {})):
+                            logging.info(f"GPT 생성 성공 (시도 #{attempt+1}, {approach}): {len(generated)}자")
+                            return generated[:650]
+                        else:
+                            logging.warning(f"시도 #{attempt+1}: 관련성 검증 실패")
                     else:
-                        return ""
+                        logging.warning(f"시도 #{attempt+1}: 완성도 부족 ({completeness_score:.2f})")
+                    
+                    # 마지막 시도가 아니면 temperature 조정
+                    if attempt < max_attempts - 1:
+                        temperature = min(temperature + 0.1, 0.6)  # 점진적으로 증가
                 
-                logging.info(f"GPT 생성 성공 ({approach}, 언어: {lang}): {len(generated)}자")
-                return generated[:650]
+                logging.warning("모든 GPT 생성 시도 실패")
+                return ""
                 
         except Exception as e:
             logging.error(f"향상된 GPT 생성 실패: {e}")
@@ -1539,6 +1564,203 @@ Important: Do not include greetings or closings. Only write the main content."""
             keyword_relevance = keyword_overlap / max(len(query_keywords), 1)
             
             return keyword_relevance >= 0.2  # 20% 이상 키워드 일치시 관련성 있음으로 판단
+
+    # ☆ 답변 완성도 검증 메서드 (새로 추가)
+    def check_answer_completeness(self, answer: str, query: str, lang: str = 'ko') -> float:
+        """생성된 답변의 완성도와 유용성을 평가"""
+        
+        try:
+            # 1. 기본 길이 검사
+            if len(answer.strip()) < 10:
+                return 0.0
+                
+            # 2. 실질적 내용 비율 검사
+            meaningful_content_ratio = self.calculate_meaningful_content_ratio(answer, lang)
+            
+            # 3. 질문-답변 관련성 키워드 매칭
+            query_keywords = set(self.extract_keywords(query.lower()))
+            answer_keywords = set(self.extract_keywords(answer.lower()))
+            keyword_overlap = len(query_keywords & answer_keywords)
+            keyword_relevance = keyword_overlap / max(len(query_keywords), 1) if query_keywords else 0.5
+            
+            # 4. 답변 완결성 검사 (문장이 완성되어 있는지)
+            completeness_score = self.check_sentence_completeness(answer, lang)
+            
+            # 5. 구체성 검사 (구체적인 정보가 포함되어 있는지)
+            specificity_score = self.check_answer_specificity(answer, query, lang)
+            
+            # 6. 종합 점수 계산 (가중 평균)
+            final_score = (
+                meaningful_content_ratio * 0.3 +    # 의미있는 내용 비율
+                keyword_relevance * 0.25 +          # 키워드 관련성
+                completeness_score * 0.25 +         # 문장 완결성
+                specificity_score * 0.2             # 구체성
+            )
+            
+            logging.info(f"답변 완성도 분석: 내용비율={meaningful_content_ratio:.2f}, "
+                        f"키워드관련성={keyword_relevance:.2f}, 완결성={completeness_score:.2f}, "
+                        f"구체성={specificity_score:.2f}, 최종점수={final_score:.2f}")
+            
+            return min(final_score, 1.0)
+            
+        except Exception as e:
+            logging.error(f"답변 완성도 검증 실패: {e}")
+            return 0.5  # 오류시 중간값 반환
+
+    # ☆ 의미있는 내용 비율 계산
+    def calculate_meaningful_content_ratio(self, text: str, lang: str = 'ko') -> float:
+        """텍스트에서 의미있는 내용의 비율을 계산"""
+        
+        if not text:
+            return 0.0
+            
+        # HTML 태그 제거
+        clean_text = re.sub(r'<[^>]+>', '', text)
+        
+        if lang == 'ko':
+            # 한국어 불용구 제거
+            filler_patterns = [
+                r'안녕하세요[^.]*\.',
+                r'감사[드립]*니다[^.]*\.',
+                r'평안하세요[^.]*\.',
+                r'주님\s*안에서[^.]*\.',
+                r'바이블\s*애플[^.]*\.',
+                r'GOODTV[^.]*\.',
+                r'문의[해주셔서]*\s*감사[^.]*\.',
+                r'안내[해]*드리겠습니다[^.]*\.',
+                r'도움이\s*[되]*[시]*[길]*[바라]*[며]*[^.]*\.',
+                r'항상[^.]*바이블\s*애플[^.]*\.'
+            ]
+        else:
+            # 영어 불용구 제거
+            filler_patterns = [
+                r'Hello[^.]*\.',
+                r'Thank you[^.]*\.',
+                r'Best regards[^.]*\.',
+                r'God bless[^.]*\.',
+                r'Bible App[^.]*\.',
+                r'GOODTV[^.]*\.',
+                r'We will[^.]*\.',
+                r'Please contact[^.]*\.'
+            ]
+        
+        # 불용구 제거
+        for pattern in filler_patterns:
+            clean_text = re.sub(pattern, '', clean_text, flags=re.IGNORECASE)
+        
+        # 공백 정리
+        clean_text = re.sub(r'\s+', ' ', clean_text).strip()
+        
+        # 의미있는 내용 비율 계산
+        original_length = len(re.sub(r'<[^>]+>', '', text).strip())
+        meaningful_length = len(clean_text)
+        
+        if original_length == 0:
+            return 0.0
+            
+        ratio = meaningful_length / original_length
+        return min(ratio, 1.0)
+
+    # ☆ 문장 완결성 검사
+    def check_sentence_completeness(self, text: str, lang: str = 'ko') -> float:
+        """문장이 완성되어 있는지 검사"""
+        
+        if not text:
+            return 0.0
+            
+        # HTML 태그 제거
+        clean_text = re.sub(r'<[^>]+>', '', text).strip()
+        
+        if len(clean_text) < 5:
+            return 0.0
+        
+        # 문장 끝 표시 확인
+        if lang == 'ko':
+            sentence_endings = r'[.!?니다요음됩다음까다하세요습니다니까]'
+        else:
+            sentence_endings = r'[.!?]'
+        
+        # 마지막 문장이 완성되어 있는지 확인
+        if re.search(sentence_endings + r'\s*$', clean_text):
+            return 1.0
+        
+        # 중간에 완성된 문장이 있는지 확인
+        sentences = re.split(sentence_endings, clean_text)
+        if len(sentences) > 1:
+            return 0.7  # 부분적으로 완성됨
+        
+        # 문장이 불완전한 경우
+        return 0.3
+
+    # ☆ 답변 구체성 검사
+    def check_answer_specificity(self, answer: str, query: str, lang: str = 'ko') -> float:
+        """답변이 구체적인 정보를 포함하는지 검사"""
+        
+        if not answer:
+            return 0.0
+            
+        specificity_score = 0.0
+        
+        if lang == 'ko':
+            # 구체적 정보 패턴 (한국어)
+            specific_patterns = [
+                r'\d+[가지개단계번째차례]',  # 숫자가 포함된 단계
+                r'[메뉴설정화면버튼탭]에서',    # 구체적 위치
+                r'다음과\s*같[은이]',         # 구체적 방법 제시
+                r'[클릭선택터치누르]',         # 구체적 동작
+                r'[방법단계절차과정]',         # 구체적 프로세스
+                r'\w+\s*버튼',               # 버튼명
+                r'\w+\s*메뉴',               # 메뉴명
+                r'NIV|KJV|ESV|번역본',       # 구체적 번역본
+                r'[상하좌우]단[에의]',         # 구체적 위치
+                r'설정[에서으로]'             # 설정 관련
+            ]
+            
+            # 모호한 표현 패턴
+            vague_patterns = [
+                r'안내[해]*드리겠습니다',
+                r'검토[하고하여]',
+                r'확인[하고하여해서]',
+                r'준비[하고하겠습니다]',
+                r'전달[하고하겠드리겠]'
+            ]
+        else:
+            # 구체적 정보 패턴 (영어)
+            specific_patterns = [
+                r'\d+\s*steps?',
+                r'follow\s+these',
+                r'click\s+on',
+                r'go\s+to',
+                r'select\s+\w+',
+                r'settings?\s+menu',
+                r'NIV|KJV|ESV|translation',
+                r'top\s+of\s+screen',
+                r'button\s+\w+'
+            ]
+            
+            vague_patterns = [
+                r'we\s+will\s+review',
+                r'we\s+are\s+working',
+                r'please\s+contact',
+                r'will\s+be\s+available'
+            ]
+        
+        # 구체성 점수 계산
+        specific_count = 0
+        for pattern in specific_patterns:
+            specific_count += len(re.findall(pattern, answer, re.IGNORECASE))
+        
+        vague_count = 0
+        for pattern in vague_patterns:
+            vague_count += len(re.findall(pattern, answer, re.IGNORECASE))
+        
+        # 구체적 정보가 많고 모호한 표현이 적을수록 높은 점수
+        if specific_count > 0:
+            specificity_score = specific_count / (specific_count + vague_count + 1)
+        else:
+            specificity_score = 0.1 if vague_count == 0 else 0.0
+        
+        return min(specificity_score, 1.0)
 
     # ☆ 최적의 폴백 답변 선택 메서드 (직접 사용 답변 포함)
     def get_best_fallback_answer(self, similar_answers: list, lang: str = 'ko') -> str:
@@ -1619,6 +1841,28 @@ Important: Do not include greetings or closings. Only write the main content."""
         logging.info(f"최종 선택된 답변 점수: {best_score:.3f}")
         logging.info(f"최종 답변 길이: {len(best_answer)}")
         logging.info(f"최종 답변 미리보기: {best_answer[:100] if best_answer else 'None'}...")
+        
+        # 🔥 최종 답변 품질 검증
+        if best_answer:
+            final_completeness = self.check_answer_completeness(best_answer, "", lang)
+            logging.info(f"최종 폴백 답변 완성도: {final_completeness:.2f}")
+            
+            # 완성도가 너무 낮으면 다른 답변 시도
+            if final_completeness < 0.4 and len(similar_answers) > 1:
+                logging.warning("최종 답변 완성도가 낮음, 대안 답변 검색 중...")
+                
+                # 다른 답변들도 검토
+                for i, alt_ans in enumerate(similar_answers[1:4], 1):  # 2-4번째 답변 검토
+                    alt_processed = self.preprocess_text(alt_ans['answer'])
+                    if lang == 'en' and alt_ans.get('lang', 'ko') == 'ko':
+                        alt_processed = self.translate_text(alt_processed, 'ko', 'en')
+                    
+                    alt_completeness = self.check_answer_completeness(alt_processed, "", lang)
+                    logging.info(f"대안 답변 #{i} 완성도: {alt_completeness:.2f}")
+                    
+                    if alt_completeness > final_completeness and alt_completeness >= 0.5:
+                        logging.info(f"더 나은 대안 답변 #{i} 선택")
+                        return alt_processed
         
         # 🔥 긴급 안전장치: 답변이 비어있으면 첫 번째 원본 답변 강제 반환
         if not best_answer and similar_answers:
@@ -1743,6 +1987,42 @@ Important: Do not include greetings or closings. Only write the main content."""
             # 🔥 성공 로그 추가
             logging.info("🎉 유효성 검사 우회 성공 - 답변 포맷팅 시작")
             print("🎉 유효성 검사 우회 성공 - 답변 포맷팅 시작")
+            
+            # 🔥 최종 답변 완성도 검증 및 재생성 로직
+            base_completeness = self.check_answer_completeness(base_answer, query, lang)
+            logging.info(f"최종 답변 완성도 점수: {base_completeness:.2f}")
+            
+            # 완성도가 낮으면 재생성 시도
+            if base_completeness < 0.6 and approach in ['gpt_with_strong_context', 'gpt_with_weak_context']:
+                logging.warning(f"답변 완성도 부족 ({base_completeness:.2f}), 재생성 시도")
+                
+                # 더 강한 컨텍스트로 재생성 시도
+                retry_analysis = context_analysis.copy()
+                retry_analysis['recommended_approach'] = 'gpt_with_strong_context'
+                
+                retry_answer = self.generate_with_enhanced_gpt(query, similar_answers, retry_analysis, lang)
+                if retry_answer:
+                    retry_completeness = self.check_answer_completeness(retry_answer, query, lang)
+                    logging.info(f"재생성 답변 완성도: {retry_completeness:.2f}")
+                    
+                    if retry_completeness > base_completeness:
+                        logging.info("재생성 답변이 더 우수함 - 사용")
+                        base_answer = retry_answer
+                    else:
+                        logging.info("재생성 답변이 개선되지 않음 - 원본 유지")
+                
+                # 여전히 낮으면 폴백 답변 시도
+                if base_completeness < 0.5:
+                    logging.warning("여전히 완성도가 낮음, 폴백 답변으로 변경")
+                    fallback_answer = self.get_best_fallback_answer(similar_answers, lang)
+                    if fallback_answer:
+                        fallback_completeness = self.check_answer_completeness(fallback_answer, query, lang)
+                        logging.info(f"폴백 답변 완성도: {fallback_completeness:.2f}")
+                        
+                        if fallback_completeness > base_completeness:
+                            base_answer = fallback_answer
+                            approach = 'fallback'  # 접근 방식 변경
+                            logging.info("폴백 답변으로 최종 변경")
             
             # 언어별 포맷팅
             if lang == 'en':
