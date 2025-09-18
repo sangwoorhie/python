@@ -358,10 +358,11 @@ Important: Do not include greetings or closings. Only write the main content."""
         # 유사도 점수에 따른 답변 그룹핑 (품질별 분류)
         high_score = [ans for ans in similar_answers if ans['score'] >= 0.7]      # 고품질
         medium_score = [ans for ans in similar_answers if 0.5 <= ans['score'] < 0.7]  # 중품질
-        medium_low_score = [ans for ans in similar_answers if 0.5 <= ans['score'] < 0.6]  # 중하품질
+        medium_low_score = [ans for ans in similar_answers if 0.4 <= ans['score'] < 0.5]  # 중하품질 (0.4-0.5로 조정)
+        low_score = [ans for ans in similar_answers if 0.3 <= ans['score'] < 0.4]  # 저품질 (새로 추가)
         
         # ===== 🔍 품질별 분류 결과 출력 =====
-        print(f"🔍 [CONTEXT DEBUG] 품질별 분류: 고품질({len(high_score)}개), 중품질({len(medium_score)}개), 중하품질({len(medium_low_score)}개)")
+        print(f"🔍 [CONTEXT DEBUG] 품질별 분류: 고품질({len(high_score)}개), 중품질({len(medium_score)}개), 중하품질({len(medium_low_score)}개), 저품질({len(low_score)}개)")
         
         # 유사답변 상세 정보 출력
         for i, ans in enumerate(similar_answers[:5]):  # 상위 5개만
@@ -404,9 +405,27 @@ Important: Do not include greetings or closings. Only write the main content."""
                 context_parts.append(f"[참고답변 {used_answers+1} - 점수: {ans['score']:.2f}]\n{clean_answer[:300]}")
                 used_answers += 1
 
-        # ===== 4단계: 답변 부족시 중하품질 답변 추가 =====
-        if used_answers < 3:
-            for ans in medium_low_score[:2]:
+        # ===== 4단계: 중하품질 답변 추가 (최대 3개) =====
+        for ans in medium_low_score[:3]:
+            if used_answers >= max_answers:
+                break
+            
+            clean_answer = self.text_processor.preprocess_text(ans['answer'])
+            clean_answer = self.remove_greeting_and_closing(clean_answer, 'ko')
+            
+            if target_lang == 'en' and ans.get('lang', 'ko') == 'ko':
+                clean_answer = self.translate_text(clean_answer, 'ko', 'en')
+            
+            if len(clean_answer.strip()) > 20:
+                print(f"✅ [CONTEXT DEBUG] 중하품질 답변 #{used_answers+1} 추가: 점수={ans['score']:.3f}")
+                context_parts.append(f"[참고답변 {used_answers+1} - 점수: {ans['score']:.2f}]\n{clean_answer[:250]}")
+                used_answers += 1
+            else:
+                print(f"❌ [CONTEXT DEBUG] 중하품질 답변 제외: 정제 후 길이={len(clean_answer.strip())}")
+
+        # ===== 5단계: 답변 부족시 저품질 답변도 추가 =====
+        if used_answers < 2:  # 최소 2개는 확보하도록
+            for ans in low_score[:2]:
                 if used_answers >= max_answers:
                     break
                 
@@ -417,13 +436,24 @@ Important: Do not include greetings or closings. Only write the main content."""
                     clean_answer = self.translate_text(clean_answer, 'ko', 'en')
                 
                 if len(clean_answer.strip()) > 20:
-                    context_parts.append(f"[참고답변 {used_answers+1} - 점수: {ans['score']:.2f}]\n{clean_answer[:250]}")
+                    print(f"✅ [CONTEXT DEBUG] 저품질 답변 #{used_answers+1} 추가: 점수={ans['score']:.3f}")
+                    context_parts.append(f"[참고답변 {used_answers+1} - 점수: {ans['score']:.2f}]\n{clean_answer[:200]}")
                     used_answers += 1
+                else:
+                    print(f"❌ [CONTEXT DEBUG] 저품질 답변 제외: 정제 후 길이={len(clean_answer.strip())}")
         
-        # ===== 5단계: 최종 컨텍스트 구성 및 반환 =====
+        # ===== 6단계: 최종 컨텍스트 구성 및 반환 =====
+        print(f"🔍 [CONTEXT DEBUG] 최종 컨텍스트: {used_answers}개 답변 포함")
         logging.info(f"컨텍스트 생성: {used_answers}개의 답변 포함 (언어: {target_lang})")
         
-        return "\n\n" + "="*50 + "\n\n".join(context_parts)
+        if used_answers == 0:
+            print("❌ [CONTEXT DEBUG] 컨텍스트에 포함된 답변이 없음!")
+            return ""
+        
+        final_context = "\n\n" + "="*50 + "\n\n".join(context_parts)
+        print(f"🔍 [CONTEXT DEBUG] 생성된 컨텍스트 길이: {len(final_context)}자")
+        
+        return final_context
 
     # 참고 답변에서 인사말과 끝맺음말을 제거하는 메서드
     # Args:
