@@ -474,7 +474,17 @@ class OptimizedSearchService:
     #     List[Dict]: 후처리된 최종 결과
     def _postprocess_results(self, search_results: List[Dict], query: str, 
                          intent_analysis: Dict, top_k: int) -> List[Dict]:
+        # ===== 🔍 검색 결과 디버그 출력 =====
+        print("\n" + "="*80)
+        print(f"🔍 [SEARCH DEBUG] 검색 결과 후처리 시작: {len(search_results)}개 결과")
+        print("="*80)
+        for i, result in enumerate(search_results[:5]):  # 상위 5개만 출력
+            question = result.get('metadata', {}).get('question', 'N/A')[:100]
+            print(f"검색결과 #{i+1}: 점수={result['score']:.3f}, 질문={question}...")
+        print("="*80)
+        
         if not search_results:
+            print("🔍 [SEARCH DEBUG] 검색 결과가 없어서 빈 리스트 반환")
             return []
         
         # 벡터 유사도 기반 동적 임계값 계산
@@ -523,6 +533,7 @@ class OptimizedSearchService:
             
             # 최소 임계값 또는 상위 순위 확인
             if final_score >= min_threshold or i < 3:
+                print(f"✅ [SEARCH DEBUG] 결과 #{i+1} 선택됨: 최종점수={final_score:.3f} (임계값={min_threshold:.3f})")
                 final_results.append({
                     'score': final_score,
                     'vector_score': vector_score,
@@ -540,9 +551,35 @@ class OptimizedSearchService:
                 logging.debug(f"선택: #{i+1} 최종점수={final_score:.3f} "
                             f"(벡터={vector_score:.3f}, 의도={intent_relevance:.3f}, "
                             f"개념={concept_relevance:.3f}) 타입={match['search_type']}")
+            else:
+                print(f"❌ [SEARCH DEBUG] 결과 #{i+1} 제외됨: 최종점수={final_score:.3f} < 임계값={min_threshold:.3f}")
             
             if len(final_results) >= top_k:
                 break
+    
+        # ===== 🔍 최종 결과 요약 =====
+        print("\n" + "="*80)
+        print(f"🔍 [SEARCH DEBUG] 최종 선택된 결과: {len(final_results)}개")
+        print("="*80)
+        for i, result in enumerate(final_results):
+            print(f"최종결과 #{i+1}: 점수={result['score']:.3f}, 질문={result['question'][:80]}...")
+        print("="*80)
+        
+        # 디버그 파일에도 저장
+        try:
+            with open('/home/ec2-user/python/debug_search_results.txt', 'w', encoding='utf-8') as f:
+                f.write(f"검색 질문: {query}\n")
+                f.write("="*80 + "\n")
+                f.write(f"최종 선택된 결과: {len(final_results)}개\n")
+                f.write("="*80 + "\n")
+                for i, result in enumerate(final_results):
+                    f.write(f"\n결과 #{i+1}:\n")
+                    f.write(f"점수: {result['score']:.3f}\n")
+                    f.write(f"질문: {result['question']}\n")
+                    f.write(f"답변: {result['answer'][:200]}...\n")
+                    f.write("-" * 40 + "\n")
+        except Exception as e:
+            print(f"🔍 [DEBUG] 검색결과 파일 저장 실패: {e}")
     
         return final_results
 

@@ -342,7 +342,13 @@ Important: Do not include greetings or closings. Only write the main content."""
     # Returns:
     #     str: 구성된 컨텍스트 문자열
     def create_enhanced_context(self, similar_answers: list, max_answers: int = 7, target_lang: str = 'ko') -> str:
+        # ===== 🔍 컨텍스트 생성 디버그 출력 =====
+        print("\n" + "="*80)
+        print(f"🔍 [CONTEXT DEBUG] 컨텍스트 생성 시작: {len(similar_answers) if similar_answers else 0}개 유사답변")
+        print("="*80)
+        
         if not similar_answers:
+            print("🔍 [CONTEXT DEBUG] 유사답변이 없어서 빈 컨텍스트 반환")
             return ""
         
         # ===== 1단계: 초기화 및 품질별 답변 분류 =====
@@ -353,6 +359,14 @@ Important: Do not include greetings or closings. Only write the main content."""
         high_score = [ans for ans in similar_answers if ans['score'] >= 0.7]      # 고품질
         medium_score = [ans for ans in similar_answers if 0.5 <= ans['score'] < 0.7]  # 중품질
         medium_low_score = [ans for ans in similar_answers if 0.5 <= ans['score'] < 0.6]  # 중하품질
+        
+        # ===== 🔍 품질별 분류 결과 출력 =====
+        print(f"🔍 [CONTEXT DEBUG] 품질별 분류: 고품질({len(high_score)}개), 중품질({len(medium_score)}개), 중하품질({len(medium_low_score)}개)")
+        
+        # 유사답변 상세 정보 출력
+        for i, ans in enumerate(similar_answers[:5]):  # 상위 5개만
+            print(f"유사답변 #{i+1}: 점수={ans['score']:.3f}, 질문={ans.get('question', 'N/A')[:60]}...")
+        print("="*40)
 
         # ===== 2단계: 고품질 답변 우선 포함 (최대 4개) =====
         for ans in high_score[:4]:
@@ -369,8 +383,11 @@ Important: Do not include greetings or closings. Only write the main content."""
             
             # 품질 검증 및 컨텍스트 추가
             if len(clean_answer.strip()) > 20:
+                print(f"✅ [CONTEXT DEBUG] 고품질 답변 #{used_answers+1} 추가: 점수={ans['score']:.3f}")
                 context_parts.append(f"[참고답변 {used_answers+1} - 점수: {ans['score']:.2f}]\n{clean_answer[:400]}")
                 used_answers += 1
+            else:
+                print(f"❌ [CONTEXT DEBUG] 고품질 답변 제외: 정제 후 길이={len(clean_answer.strip())}")
         
         # ===== 3단계: 중품질 답변으로 보완 (최대 3개) =====
         for ans in medium_score[:3]:
