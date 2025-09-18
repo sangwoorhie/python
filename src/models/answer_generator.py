@@ -10,9 +10,8 @@ from typing import Dict, List
 from src.utils.memory_manager import memory_cleanup
 from src.utils.text_preprocessor import TextPreprocessor
 
-
+# GPT 기반 답변 생성을 담당하는 클래스
 class AnswerGenerator:
-    """GPT 기반 답변 생성을 담당하는 클래스"""
     
     def __init__(self, openai_client):
         self.openai_client = openai_client

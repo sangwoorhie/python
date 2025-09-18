@@ -26,12 +26,10 @@ import sys
 import gc
 import logging
 import tracemalloc
-from datetime import datetime
 from typing import Optional, Dict, Any
 
 # 웹 프레임워크 관련
-from flask import Flask, request, jsonify
-from flask_cors import CORS
+from flask import Flask
 
 # AI 및 데이터베이스 관련
 from pinecone import Pinecone
@@ -44,6 +42,7 @@ from dotenv import load_dotenv
 # 최적화된 모듈들 import
 from src.main_optimized_ai_generator import OptimizedAIAnswerGenerator
 from src.services.sync_service import SyncService
+from src.api.endpoints import create_endpoints
 
 # ==================================================
 # 2. 시스템 초기화 및 설정
@@ -53,7 +52,6 @@ tracemalloc.start()
 
 # Flask 웹 애플리케이션 인스턴스 생성
 app = Flask(__name__)
-CORS(app)
 
 # ==================================================
 # 3. 로깅 시스템 설정 (콘솔 + 파일)
@@ -174,198 +172,11 @@ sync_manager = SyncService(
 )
 
 # ==================================================
-# 7. API 엔드포인트 정의
+# 7. API 엔드포인트 등록
 # ==================================================
 
-@app.route('/generate_answer', methods=['POST'])
-def generate_answer():
-    """AI 답변 생성 API 엔드포인트 (최적화 적용)"""
-    try:
-        from src.utils.memory_manager import memory_cleanup
-
-        with memory_cleanup():
-            data = request.get_json()
-            seq = data.get('seq', 0)
-            question = data.get('question', '')
-            lang = data.get('lang', 'auto')  # 자동 감지
-
-            if not question:
-                return jsonify({"success": False, "error": "질문이 필요합니다."}), 400
-
-            # 최적화된 처리 실행
-            result = generator.process(seq, question, lang)
-
-            response = jsonify(result)
-            response.headers['Content-Type'] = 'application/json; charset=utf-8'
-
-            # 메모리 사용량 모니터링
-            snapshot = tracemalloc.take_snapshot()
-            top_stats = snapshot.statistics('lineno')
-            memory_usage = sum(stat.size for stat in top_stats) / 1024 / 1024  # MB로 반환
-            logging.info(f"현재 메모리 사용량: {memory_usage:.2f}MB")
-
-            if memory_usage > 500: # 500MB 초과시 경고 및 가비지 컬렉션 강제 실행
-                logging.warning(f"높은 메모리 사용량 감지: {memory_usage:.2f}MB")
-                gc.collect()
-
-            return response
-
-    except Exception as e:
-        logging.error(f"API 호출 오류: {str(e)}")
-        return jsonify({"success": False, "error": str(e)}), 500
-
-
-@app.route('/sync_to_pinecone', methods=['POST'])
-def sync_to_pinecone():
-    """MSSQL 데이터를 Pinecone에 동기화하는 API 엔드포인트"""
-    try:
-        data = request.get_json()
-        seq = data.get('seq')
-        mode = data.get('mode', 'upsert')
-
-        logging.info(f"동기화 요청 수신: seq={seq}, mode={mode}")
-
-        if not seq:
-            logging.warning("seq 누락")
-            return jsonify({"success": False, "error": "seq가 필요합니다"}), 400
-
-        if not isinstance(seq, int):
-            seq = int(seq)
-
-        result = sync_manager.sync_to_pinecone(seq, mode)
-
-        logging.info(f"동기화 결과: {result}")
-
-        status_code = 200 if result["success"] else 500
-        return jsonify(result), status_code
-
-    except ValueError as e:
-        logging.error(f"잘못된 seq 값: {str(e)}")
-        return jsonify({"success": False, "error": f"잘못된 seq 값: {str(e)}"}), 400
-    except Exception as e:
-        logging.error(f"Pinecone 동기화 API 오류: {str(e)}")
-        return jsonify({"success": False, "error": str(e)}), 500
-
-
-@app.route('/health', methods=['GET'])
-def health_check():
-    """시스템 상태 확인을 위한 헬스체크 API 엔드포인트 (최적화 정보 포함)"""
-    try:
-        stats = index.describe_index_stats()
-        optimization_stats = generator.get_optimization_summary()
-        detailed_stats = generator.get_detailed_performance_stats()
-
-        return jsonify({
-            "status": "healthy",
-            "pinecone_vectors": stats.get('total_vector_count', 0),
-            "timestamp": datetime.now().isoformat(),
-            "services": {
-                "ai_answer": "active",
-                "pinecone_sync": "active",
-                "multilingual_support": "active",
-                "optimization_system": "active"
-            },
-            "optimization": {
-                "cache_hit_rate": f"{optimization_stats['cache_hit_rate']:.1f}%",
-                "api_calls_saved": optimization_stats['api_calls_saved'],
-                "avg_processing_time": f"{optimization_stats['avg_processing_time']:.2f}s",
-                "batch_processed": optimization_stats['batch_processed']
-            },
-            "detailed_performance": detailed_stats
-        }), 200
-    except Exception as e:
-        return jsonify({
-            "status": "unhealthy",
-            "error": str(e)
-        }), 500
-
-
-@app.route('/optimization/stats', methods=['GET'])
-def get_optimization_stats():
-    """최적화 통계 조회 API"""
-    try:
-        stats = generator.get_detailed_performance_stats()
-        return jsonify({
-            "success": True,
-            "stats": stats,
-            "timestamp": datetime.now().isoformat()
-        }), 200
-    except Exception as e:
-        logging.error(f"최적화 통계 조회 실패: {e}")
-        return jsonify({
-            "success": False,
-            "error": str(e)
-        }), 500
-
-
-@app.route('/optimization/cache/clear', methods=['POST'])
-def clear_cache():
-    """캐시 지우기 API"""
-    try:
-        data = request.get_json() or {}
-        cache_type = data.get('type', 'all')  # 'all', 'embedding', 'intent', 'translation', etc.
-        
-        if cache_type == 'all':
-            # 모든 캐시 지우기
-            generator.cache_manager.clear_cache_by_prefix('embedding')
-            generator.cache_manager.clear_cache_by_prefix('intent')
-            generator.cache_manager.clear_cache_by_prefix('translation')
-            generator.cache_manager.clear_cache_by_prefix('typo')
-            generator.cache_manager.clear_cache_by_prefix('search')
-            generator.search_service.clear_caches()
-            generator.api_manager.clear_recent_requests()
-            cleared_count = "all"
-        else:
-            # 특정 캐시만 지우기
-            cleared_count = generator.cache_manager.clear_cache_by_prefix(cache_type)
-        
-        return jsonify({
-            "success": True,
-            "message": f"캐시 지우기 완료: {cache_type}",
-            "cleared_count": cleared_count,
-            "timestamp": datetime.now().isoformat()
-        }), 200
-        
-    except Exception as e:
-        logging.error(f"캐시 지우기 실패: {e}")
-        return jsonify({
-            "success": False,
-            "error": str(e)
-        }), 500
-
-
-@app.route('/optimization/config', methods=['POST'])
-def update_optimization_config():
-    """최적화 설정 업데이트 API"""
-    try:
-        data = request.get_json()
-        
-        # API 관리자 설정 업데이트
-        api_settings = data.get('api_manager', {})
-        if api_settings:
-            generator.api_manager.optimize_settings(**api_settings)
-        
-        # 검색 서비스 설정 업데이트
-        search_settings = data.get('search_service', {})
-        if search_settings:
-            generator.search_service.update_search_config(**search_settings)
-        
-        return jsonify({
-            "success": True,
-            "message": "최적화 설정 업데이트 완료",
-            "updated_settings": {
-                "api_manager": api_settings,
-                "search_service": search_settings
-            },
-            "timestamp": datetime.now().isoformat()
-        }), 200
-        
-    except Exception as e:
-        logging.error(f"최적화 설정 업데이트 실패: {e}")
-        return jsonify({
-            "success": False,
-            "error": str(e)
-        }), 500
+# 모든 엔드포인트를 모듈화된 endpoints.py에서 등록
+app = create_endpoints(app, generator, sync_manager, index)
 
 
 # ==================================================
@@ -419,6 +230,7 @@ if __name__ == "__main__":
     print("   ├── 최적화 통계 (/optimization/stats)")
     print("   ├── 캐시 관리 (/optimization/cache/clear)")
     print("   └── 설정 관리 (/optimization/config)")
+    print("   📁 모든 엔드포인트는 src/api/endpoints.py에서 모듈화 관리")
     print("")
     print("⚡ 핵심 최적화 기능:")
     print("   ├── Redis 기반 지능형 캐싱 시스템")
