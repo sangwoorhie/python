@@ -362,16 +362,30 @@ class OptimizedAIAnswerGenerator:
             if base_answer:
                 coherence_score = self._evaluate_semantic_coherence(query, base_answer)
                 
-                if coherence_score < 0.5:
+                # 임계값을 0.3으로 낮추고, 재생성 실패시 원본 유지
+                if coherence_score < 0.3:  # 0.5 → 0.3으로 완화
                     logging.info(f"낮은 일관성 점수 ({coherence_score:.2f}), 답변 재생성 시도")
+                    
+                    # 원본 답변 백업
+                    original_answer = base_answer
+                    
                     # 관련성 낮은 답변 필터링 후 재생성
                     filtered_answers = self._filter_by_coherence(query, similar_answers)
                     if filtered_answers and len(filtered_answers) >= 2:
-                        # context_analysis가 이미 위에서 정의됨
-                        base_answer = self.generate_with_enhanced_gpt(
+                        new_answer = self.generate_with_enhanced_gpt(
                             query, filtered_answers[:3], context_analysis, lang
                         )
-                        logging.info(f"재생성 완료, 필터링된 답변 {len(filtered_answers)}개 사용")
+                        
+                        # 재생성된 답변이 유효한 경우에만 사용
+                        if new_answer and len(new_answer) > 50:  # 최소 길이 체크
+                            base_answer = new_answer
+                            logging.info(f"재생성 성공, 필터링된 답변 {len(filtered_answers)}개 사용")
+                        else:
+                            # 재생성 실패시 원본 유지
+                            base_answer = original_answer
+                            logging.warning("재생성 실패, 원본 답변 유지")
+                    else:
+                        logging.warning(f"필터링된 답변 부족 ({len(filtered_answers)}개), 원본 유지")
 
             # 강화된 답변 완성도 검증 및 재생성 로직
             base_completeness = self.check_answer_completeness(base_answer, query, lang)
@@ -571,12 +585,13 @@ class OptimizedAIAnswerGenerator:
         return 0.5  # 기본값
 
     def _filter_by_coherence(self, query: str, similar_answers: list) -> list:
-        """일관성 기반 필터링"""
+        """일관성 기반 필터링 - 더 관대한 버전"""
         try:
             query_embedding = self.create_embedding(query)
             if not query_embedding:
                 return similar_answers
             
+            import numpy as np
             q_vec = np.array(query_embedding)
             filtered = []
             
@@ -587,14 +602,25 @@ class OptimizedAIAnswerGenerator:
                         a_vec = np.array(answer_embedding)
                         similarity = np.dot(q_vec, a_vec) / (np.linalg.norm(q_vec) * np.linalg.norm(a_vec))
                         
-                        if similarity > 0.6:  # 임계값
+                        # 임계값을 0.4로 낮춤 (0.6 → 0.4)
+                        if similarity > 0.4:
                             filtered.append(answer)
                 except Exception as e:
                     logging.error(f"답변 필터링 중 오류: {e}")
                     continue
             
-            return filtered if filtered else similar_answers[:3]  # 최소 3개 보장
+            # 필터링된 답변이 너무 적으면 상위 답변 추가
+            if len(filtered) < 3:
+                # 원본 답변 중 필터링되지 않은 것들 추가
+                for answer in similar_answers:
+                    if answer not in filtered:
+                        filtered.append(answer)
+                    if len(filtered) >= 5:  # 최대 5개까지
+                        break
             
+            logging.info(f"일관성 필터링: {len(similar_answers)}개 → {len(filtered)}개")
+            return filtered
+        
         except Exception as e:
             logging.error(f"일관성 필터링 실패: {e}")
             return similar_answers
