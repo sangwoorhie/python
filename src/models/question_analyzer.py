@@ -118,7 +118,7 @@ class QuestionAnalyzer:
 
                 # ===== 3단계: GPT API 호출로 의도 분석 실행 =====
                 response = self.openai_client.chat.completions.create(
-                    model='gpt-3.5-turbo',
+                    model='gpt-4o',
                     messages=[
                         {"role": "system", "content": system_prompt},
                         {"role": "user", "content": user_prompt}

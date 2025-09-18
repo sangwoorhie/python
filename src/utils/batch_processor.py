@@ -419,7 +419,7 @@ class BatchProcessor:
                     
                     # 3-3: GPT API 호출 (배치 번역)
                     response = self.openai_client.chat.completions.create(
-                        model='gpt-3.5-turbo',
+                        model='gpt-4o',
                         messages=[
                             {"role": "system", "content": system_prompt},
                             {"role": "user", "content": combined_text}
@@ -509,7 +509,7 @@ Q2: {"core_intent": "...", "intent_category": "...", "primary_action": "...", "t
 
                 # 2-3: GPT API 호출 (배치 의도 분석)
                 response = self.openai_client.chat.completions.create(
-                    model='gpt-3.5-turbo',
+                    model='gpt-4o',
                     messages=[
                         {"role": "system", "content": system_prompt},
                         {"role": "user", "content": combined_queries}
@@ -638,7 +638,7 @@ T2: [수정된 텍스트2]
 
                 # 2-3: GPT API 호출 (배치 오타 수정)
                 response = self.openai_client.chat.completions.create(
-                    model='gpt-3.5-turbo',
+                    model='gpt-4o',
                     messages=[
                         {"role": "system", "content": system_prompt},
                         {"role": "user", "content": combined_text}

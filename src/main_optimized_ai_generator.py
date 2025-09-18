@@ -45,6 +45,8 @@ class OptimizedAIAnswerGenerator:
         self._initialize_optimization_system(redis_config) # ← REDIS_CONFIG 사용
         
         # 4단계: AI 모델 컴포넌트 초기화
+        from src.utils.unified_text_analyzer import UnifiedTextAnalyzer
+        self.unified_analyzer = UnifiedTextAnalyzer(openai_client)
         self.answer_generator = AnswerGenerator(openai_client)
         
         # 5단계: 서비스 컴포넌트 초기화 (최적화 적용)
@@ -160,41 +162,34 @@ class OptimizedAIAnswerGenerator:
         response = self.api_manager.process_request(request)
         return response.data if response.success else None
 
-    def analyze_question_intent(self, query: str) -> dict:
-        """질문 의도 분석 (캐싱 적용)"""
-        request = APICallRequest(
-            operation='intent_analysis',
-            data={'query': query},
-            priority=2,
-            strategy=APICallStrategy.CACHE_FIRST
-        )
-        
-        response = self.api_manager.process_request(request)
-        
-        if response.success and response.data:
-            return response.data
-        else:
-            # 기본값 반환
-            return {
-                "core_intent": "general_inquiry",
-                "intent_category": "일반문의",
-                "primary_action": "기타",
-                "target_object": "기타",
-                "constraint_conditions": [],
-                "standardized_query": query,
-                "semantic_keywords": [query[:20]],
-                # 기존 호환성 필드
-                "intent_type": "일반문의",
-                "main_topic": "기타",
-                "specific_request": query[:100],
-                "keywords": [query[:20]],
-                "urgency": "medium",
-                "action_type": "기타"
-            }
+    # analyze_question_intent 메서드 제거됨 - unified_analyzer.analyze_and_correct()로 통합
+    # 영어 질문의 경우에만 개별 호출이 필요하므로 기본값 반환 메서드로 대체
+    def _get_default_intent_analysis(self, query: str) -> dict:
+        """기본 의도 분석 결과 반환 (영어 질문용)"""
+        return {
+            "core_intent": "general_inquiry",
+            "intent_category": "일반문의",
+            "primary_action": "기타",
+            "target_object": "기타",
+            "constraint_conditions": [],
+            "standardized_query": query,
+            "semantic_keywords": [query[:20]],
+            # 기존 호환성 필드
+            "intent_type": "일반문의",
+            "main_topic": "기타",
+            "specific_request": query[:100],
+            "keywords": [query[:20]],
+            "urgency": "medium",
+            "action_type": "기타"
+        }
 
     def search_similar_answers(self, query: str, top_k: int = 5, similarity_threshold: float = 0.7, lang: str = 'ko') -> list:
         """유사 답변 검색 (최적화 적용)"""
         return self.search_service.search_similar_answers_optimized(query, top_k, lang)
+    
+    def search_similar_answers_with_cached_intent(self, query: str, cached_intent: Dict, top_k: int = 5, lang: str = 'ko') -> list:
+        """캐시된 의도 분석을 활용한 유사 답변 검색 (API 호출 절약)"""
+        return self.search_service.search_similar_answers_with_cached_intent(query, cached_intent, top_k, lang)
 
     def analyze_context_quality(self, similar_answers: list, query: str) -> dict:
         """컨텍스트 품질 분석 (기존 호환)"""
@@ -228,20 +223,7 @@ class OptimizedAIAnswerGenerator:
         """AI 기반 답변 관련성 검증 (기존 호환)"""
         return self.quality_validator.validate_answer_relevance_ai(answer, query, question_analysis)
 
-    def fix_korean_typos_with_ai(self, text: str) -> str:
-        """한국어 오타 수정 (캐싱 적용)"""
-        if not text or len(text.strip()) < 3 or len(text) > 500:
-            return text
-        
-        request = APICallRequest(
-            operation='typo_correction',
-            data={'text': text},
-            priority=4,
-            strategy=APICallStrategy.CACHE_FIRST
-        )
-        
-        response = self.api_manager.process_request(request)
-        return response.data if response.success else text
+    # fix_korean_typos_with_ai 메서드 제거됨 - unified_analyzer.analyze_and_correct()로 통합
 
     def translate_text(self, text: str, source_lang: str, target_lang: str) -> str:
         """번역 (캐싱 적용)"""
@@ -541,14 +523,21 @@ class OptimizedAIAnswerGenerator:
                 # 성능 통계 업데이트
                 self.performance_stats['total_requests'] += 1
                 
-                # 1. 전처리
+                # 1단계. 전처리
                 processed_question = self.preprocess_text(question)
 
-                # 2. 오타 수정 (캐싱 적용)
+                # 2단계. 통합 분석 (오타 수정 + 의도 분석) - API 호출 1회로 통합
                 if lang == 'ko' or lang == 'auto':
-                    processed_question = self.fix_korean_typos_with_ai(processed_question)
+                    corrected_text, intent_analysis = self.unified_analyzer.analyze_and_correct(processed_question)
+                    processed_question = corrected_text
+                    # 의도 분석 결과를 임시 저장 (검색 단계에서 재사용)
+                    self._cached_intent_analysis = intent_analysis
                     if processed_question != question:
-                        logging.info(f"오타 수정 적용: {question[:50]} → {processed_question[:50]}")
+                        logging.info(f"통합 분석 - 오타 수정: {question[:50]} → {processed_question[:50]}")
+                        logging.info(f"통합 분석 - 의도: {intent_analysis.get('core_intent', 'N/A')}")
+                else:
+                    # 영어인 경우 기본 의도 분석 사용 (GPT 호출 생략)
+                    self._cached_intent_analysis = self._get_default_intent_analysis(processed_question)
 
                 if not processed_question:
                     return {"success": False, "error": "질문이 비어있습니다."}
@@ -560,8 +549,9 @@ class OptimizedAIAnswerGenerator:
 
                 logging.info(f"처리 시작 - SEQ: {seq}, 언어: {lang}, 질문: {processed_question[:50]}...")
 
-                # 3. 유사 답변 검색 (최적화 적용)
-                similar_answers = self.search_similar_answers(processed_question, lang=lang)
+                # 3단계. 유사 답변 검색 (캐시된 의도 분석 활용)
+                similar_answers = self.search_similar_answers_with_cached_intent(
+                    processed_question, self._cached_intent_analysis, lang=lang)
 
                 # AI 답변 생성
                 ai_answer = self.generate_ai_answer(processed_question, similar_answers, lang)
@@ -579,7 +569,7 @@ class OptimizedAIAnswerGenerator:
                     "answer": ai_answer,
                     "similar_count": len(similar_answers),
                     "embedding_model": "text-embedding-3-small",
-                    "generation_model": "gpt-3.5-turbo",
+                    "generation_model": "gpt-4o",
                     "detected_language": lang,
                     "processing_time": processing_time,
                     "optimization_stats": self.get_optimization_summary()

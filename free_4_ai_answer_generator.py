@@ -131,7 +131,7 @@ MAX_TEXT_LENGTH = 8000      # 임베딩 생성시 최대 텍스트 길이 (토�
 
 # GPT 자연어 모델 설정
 # 🧠 GPT 모델 파라미터 설정
-GPT_MODEL = 'gpt-3.5-turbo'  # OpenAI GPT 모델 (답변 생성용)
+GPT_MODEL = 'gpt-4o'         # OpenAI GPT 모델 (답변 생성용)
 MAX_TOKENS = 600             # 생성할 최대 토큰 수 (답변 길이 제한)
 TEMPERATURE = 0.5            # 창의성 vs 일관성 조절 (0.5 = 균형)
 

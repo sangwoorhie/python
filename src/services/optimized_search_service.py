@@ -73,7 +73,8 @@ class OptimizedSearchService:
                 processed_query = self._preprocess_with_caching(query, lang)
                 
                 # ===== 3단계: 핵심 의도 분석 (캐싱 적용) =====
-                intent_analysis = self._analyze_intent_with_caching(processed_query)
+                # 통합 분석기에서 이미 처리된 의도 분석을 사용하므로 개별 호출 불필요
+                intent_analysis = self._get_default_intent_analysis(processed_query)
                 
                 # ===== 4단계: 검색 레이어 계획 수립 =====
                 search_plan = self._create_search_plan(processed_query, intent_analysis)
@@ -101,6 +102,55 @@ class OptimizedSearchService:
             logging.error(f"최적화된 검색 실패: {str(e)}")
             return []
 
+    # 캐시된 의도 분석을 활용한 최적화된 검색 - API 호출 절약
+    def search_similar_answers_with_cached_intent(self, query: str, cached_intent: Dict, top_k: int = 8, lang: str = 'ko') -> List[Dict]:
+        try:
+            # ===== 메모리 최적화 컨텍스트 시작 =====
+            with memory_cleanup():
+                search_start = time.time()
+                logging.info(f"=== 캐시된 의도 분석 활용 검색 시작 ===")
+                logging.info(f"원본 질문: {query}")
+                logging.info(f"캐시된 의도: {cached_intent.get('core_intent', 'N/A')}")
+                
+                # ===== 1단계: 검색 결과 캐시 확인 =====
+                if self.search_config['enable_result_caching']:
+                    cached_results = self._check_search_cache(query, {'top_k': top_k, 'lang': lang})
+                    if cached_results:
+                        logging.info(f"검색 결과 캐시 히트: {len(cached_results)}개 결과")
+                        return cached_results
+                
+                # ===== 2단계: 기본 전처리 (오타는 이미 수정됨) =====
+                processed_query = self.text_processor.preprocess_text(query)
+                
+                # ===== 3단계: 캐시된 의도 분석 활용 (API 호출 생략!) =====
+                intent_analysis = cached_intent  # 이미 수정된 의도 분석 사용
+                
+                # ===== 4단계: 검색 레이어 계획 수립 =====
+                search_plan = self._create_search_plan(processed_query, intent_analysis)
+                
+                # ===== 5단계: 최적화된 다층 검색 실행 =====
+                search_results = self._execute_optimized_search(search_plan, top_k)
+                
+                # ===== 6단계: 결과 후처리 및 점수 계산 =====
+                final_results = self._postprocess_results(
+                    search_results, processed_query, intent_analysis, top_k
+                )
+                
+                # ===== 7단계: 검색 결과 캐싱 =====
+                if self.search_config['enable_result_caching']:
+                    self._cache_search_results(query, {'top_k': top_k, 'lang': lang}, final_results)
+                
+                # ===== 8단계: 검색 완료 및 성능 로깅 =====
+                search_time = time.time() - search_start
+                logging.info(f"캐시된 의도 활용 검색 완료: {len(final_results)}개 결과, {search_time:.2f}s")
+                
+                return final_results
+                
+        except Exception as e:
+            # ===== 예외 처리: 검색 실패시 빈 리스트 반환 =====
+            logging.error(f"캐시된 의도 활용 검색 실패: {str(e)}")
+            return []
+
     # 캐싱 기반 텍스트 전처리 메서드
     # Args:
     #     query: 전처리할 질문 텍스트
@@ -108,27 +158,9 @@ class OptimizedSearchService:
     # Returns:
     #     str: 전처리된 질문 텍스트
     def _preprocess_with_caching(self, query: str, lang: str) -> str:
-        # ===== 1단계: 기본 텍스트 전처리 =====
+        # ===== 기본 텍스트 전처리만 수행 =====
+        # 오타 수정은 main_optimized_ai_generator.py의 통합 분석기에서 처리됨
         processed_query = self.text_processor.preprocess_text(query)
-        
-        # ===== 2단계: 한국어 오타 수정 (캐싱 적용) =====
-        if lang == 'ko' or lang == 'auto':
-            # API 요청 객체 생성 (캐시 우선 전략)
-            typo_request = APICallRequest(
-                operation='typo_correction',
-                data={'text': processed_query},
-                priority=3,
-                strategy=APICallStrategy.CACHE_FIRST
-            )
-            
-            # 오타 수정 API 호출
-            typo_response = self.api_manager.process_request(typo_request)
-            if typo_response.success and typo_response.data:
-                processed_query = typo_response.data
-                # 캐시 미스인 경우만 로깅 (새로운 수정 적용)
-                if not typo_response.cache_hit:
-                    logging.info(f"오타 수정 적용: {query[:50]} → {processed_query[:50]}")
-        
         return processed_query
 
     # 캐싱 기반 질문 의도 분석 메서드
@@ -136,31 +168,16 @@ class OptimizedSearchService:
     #     query: 의도를 분석할 질문
     # Returns:
     #     Dict: 분석된 의도 정보 (core_intent, 카테고리 등)
-    def _analyze_intent_with_caching(self, query: str) -> Dict:
-        # ===== 1단계: 의도 분석 API 요청 객체 생성 =====
-        intent_request = APICallRequest(
-            operation='intent_analysis',
-            data={'query': query},
-            priority=2,                                       # 높은 우선순위
-            strategy=APICallStrategy.CACHE_FIRST              # 캐시 우선 전략
-        )
-        
-        # ===== 2단계: 의도 분석 API 호출 =====
-        intent_response = self.api_manager.process_request(intent_request)
-        
-        # ===== 3단계: 분석 결과 처리 =====
-        if intent_response.success and intent_response.data:
-            return intent_response.data                       # 성공시 분석 결과 반환
-        else:
-            # ===== 분석 실패시 기본값 반환 =====
-            return {
-                "core_intent": "general_inquiry",
-                "intent_category": "일반문의",
-                "primary_action": "기타",
-                "target_object": "기타",
-                "standardized_query": query,
-                "semantic_keywords": [query[:20]]
-            }
+    def _get_default_intent_analysis(self, query: str) -> Dict:
+        """기본 의도 분석 결과 반환 (통합 분석기 사용시 폴백용)"""
+        return {
+            "core_intent": "general_inquiry",
+            "intent_category": "일반문의",
+            "primary_action": "기타",
+            "target_object": "기타",
+            "standardized_query": query,
+            "semantic_keywords": [query[:20]]
+        }
 
     # 지능형 다층 검색 계획 수립 메서드
     # Args:

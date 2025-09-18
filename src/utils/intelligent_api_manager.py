@@ -468,80 +468,14 @@ class IntelligentAPIManager:
     #     data: 의도 분석 요청 데이터 (query 포함)
     # Returns:
     #     Dict[str, Any]: 의도 분석 결과 딕셔너리
-    def _call_intent_analysis_api(self, data: Dict[str, Any]) -> Dict[str, Any]:
-        query = data.get('query', '')
-        
-        # ===== 바이블 앱 전용 의도 분석 시스템 프롬프트 =====
-        system_prompt = """당신은 바이블 앱 문의 분석 전문가입니다.
-질문의 본질적 의도를 파악하여 JSON 형태로 응답하세요:
-{"core_intent": "...", "intent_category": "...", "primary_action": "...", "target_object": "..."}"""
-        
-        # ===== GPT API 호출 =====
-        response = self.openai_client.chat.completions.create(
-            model='gpt-3.5-turbo',
-            messages=[
-                {"role": "system", "content": system_prompt},
-                {"role": "user", "content": f"질문: {query}"}
-            ],
-            max_tokens=200,              # 충분한 분석 결과 길이
-            temperature=0.2              # 일관성 있는 분석 (낮은 창의성)
-        )
-        
-        result_text = response.choices[0].message.content.strip()
-        
-        try:
-            # ===== JSON 파싱 및 호환성 필드 추가 =====
-            intent_data = json.loads(result_text)
-            # 기존 시스템과의 호환성을 위한 필드 추가
-            intent_data.update({
-                'intent_type': intent_data.get('intent_category', '일반문의'),
-                'main_topic': intent_data.get('target_object', '기타'),
-                'specific_request': query[:100],
-                'keywords': [query[:20]],
-                'urgency': 'medium',
-                'action_type': intent_data.get('primary_action', '기타')
-            })
-            return intent_data
-        except json.JSONDecodeError:
-            # ===== 파싱 실패시 기본값 반환 =====
-            return {
-                "core_intent": "general_inquiry",
-                "intent_category": "일반문의",
-                "primary_action": "기타",
-                "target_object": "기타",
-                "intent_type": "일반문의",
-                "main_topic": "기타",
-                "specific_request": query[:100],
-                "keywords": [query[:20]],
-                "urgency": "medium",
-                "action_type": "기타"
-            }
+    # _call_intent_analysis_api 메서드 제거됨 - unified_analyzer.analyze_and_correct()로 통합
 
     # 오타 수정 API 호출 메서드
     # Args:
     #     data: 오타 수정 요청 데이터 (text 포함)
     # Returns:
     #     str: 수정된 텍스트
-    def _call_typo_correction_api(self, data: Dict[str, Any]) -> str:
-        text = data.get('text', '')
-        
-        # ===== 한국어 맞춤법 교정 전문가 시스템 프롬프트 =====
-        system_prompt = """한국어 맞춤법 및 오타 교정 전문가입니다.
-입력된 텍스트의 맞춤법과 오타만 수정하세요. 의미와 어조는 변경하지 마세요.
-수정된 텍스트만 반환하세요."""
-        
-        # ===== GPT API 호출 =====
-        response = self.openai_client.chat.completions.create(
-            model='gpt-3.5-turbo',
-            messages=[
-                {"role": "system", "content": system_prompt},
-                {"role": "user", "content": text}
-            ],
-            max_tokens=600,              # 충분한 수정 결과 길이
-            temperature=0.1              # 매우 보수적 (일관성 중시)
-        )
-        
-        return response.choices[0].message.content.strip()
+    # _call_typo_correction_api 메서드 제거됨 - unified_analyzer.analyze_and_correct()로 통합
 
     # 번역 API 호출 메서드
     # Args:
@@ -559,7 +493,7 @@ class IntelligentAPIManager:
         
         # ===== GPT API 호출 =====
         response = self.openai_client.chat.completions.create(
-            model='gpt-3.5-turbo',
+            model='gpt-4o',
             messages=[
                 {"role": "system", "content": system_prompt},
                 {"role": "user", "content": text}

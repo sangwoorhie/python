@@ -22,7 +22,7 @@ class AnswerGenerator:
     def __init__(self, openai_client):
         self.openai_client = openai_client                # OpenAI API 클라이언트
         self.text_processor = TextPreprocessor()          # 텍스트 전처리 도구
-        self.gpt_model = 'gpt-3.5-turbo'                 # 사용할 GPT 모델
+        self.gpt_model = 'gpt-4o'                        # 사용할 GPT 모델
     
     # 언어별 GPT 프롬프트 생성 - 한국어/영어 지원
     # Args:
@@ -85,6 +85,11 @@ Important: Do not include greetings or closings. Only write the main content."""
 - ❌ 확실하지 않은 정보나 추측성 답변 금지
 - ❌ 답변 중간에 다른 번역본이나 언어로 내용 변경 금지
 - ❌ 참고답변에 없는 새로운 해결책 창작 금지
+
+🔍 질문 유형 정확한 이해 (매우 중요):
+- "오탈자가 있어요", "수정해주세요", "잘못되어 있어요" → **앱 개발팀 신고 사안**
+- "어떻게 바꾸나요", "설정 방법", "사용법" → **사용자 가이드 제공**
+- **오탈자 신고는 개발팀 확인 후 업데이트로 해결되는 사안입니다**
 
 🎯 핵심 원칙 (참고답변 절대 준수):
 1. **참고답변 100% 활용**: 제공된 참고답변의 해결 방법을 그대로 사용하세요
@@ -160,11 +165,14 @@ Important: Do not include greetings or closings. Only write the main content."""
    - 참고답변과 상충되는 해결책 제시 금지
 
 🚨 필수 요구사항:
-1. **참고답변 우선**: 창의적 해결책보다 참고답변의 검증된 방법 우선 활용
-2. **구체적 실행**: "안내해드리겠습니다" 등의 약속 후 반드시 구체적 내용 제시
-3. **정확한 용어**: 참고답변의 정확한 기능명, 메뉴명, 버튼명 사용
-4. **단계별 설명**: 참고답변의 해결 단계를 순서대로 명확히 설명
-5. **본문만 작성**: 인사말이나 끝맺음말 없이 핵심 내용만 작성
+1. **질문 유형 먼저 판단**: 
+   - 오탈자/오류 신고 → 개발팀 확인 및 업데이트 안내
+   - 사용법 문의 → 구체적 가이드 제공
+2. **참고답변 우선**: 창의적 해결책보다 참고답변의 검증된 방법 우선 활용
+3. **구체적 실행**: "안내해드리겠습니다" 등의 약속 후 반드시 구체적 내용 제시
+4. **정확한 용어**: 참고답변의 정확한 기능명, 메뉴명, 버튼명 사용
+5. **단계별 설명**: 참고답변의 해결 단계를 순서대로 명확히 설명
+6. **본문만 작성**: 인사말이나 끝맺음말 없이 핵심 내용만 작성
 
 🔒 할루시네이션 엄격 금지:
 - 질문에서 언급한 번역본이나 기능을 절대 바꾸지 마세요
@@ -180,6 +188,13 @@ Important: Do not include greetings or closings. Only write the main content."""
 
 ❌ 절대 금지: 참고답변 무시, 외부 앱 추천, 내용 변경
 ✅ 반드시 준수: 참고답변 방법을 질문에 정확히 적용, 일관성 유지
+
+🆘 오탈자/오류 신고 질문 처리 가이드:
+현재 질문이 "오탈자가 있어요", "수정해주세요", "잘못되어 있어요" 등의 신고성 문의라면:
+1. 사용자가 설정을 바꾸려는 것이 아님을 이해하세요
+2. 앱 개발팀이 확인하고 업데이트로 해결할 사안임을 안내하세요  
+3. 번역본 비교나 설정 변경 방법을 안내하지 마세요
+4. 참고답변의 "확인하였습니다", "수정 적용에 시간이 소요됩니다" 등의 표현을 활용하세요
 
 지금 즉시 참고답변에 100% 충실하면서 질문 내용을 절대 바꾸지 않고 답변하세요."""
 
@@ -547,7 +562,7 @@ Important: Do not include greetings or closings. Only write the main content."""
             
             # ===== 3단계: GPT API 호출로 번역 실행 =====
             response = self.openai_client.chat.completions.create(
-                model='gpt-3.5-turbo',
+                model='gpt-4o',
                 messages=[
                     {"role": "system", "content": system_prompt},
                     {"role": "user", "content": text}
