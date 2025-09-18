@@ -9,6 +9,7 @@ import re
 import logging
 from memory_profiler import profile
 from typing import Dict, List, Optional
+import numpy as np
 
 # 기존 모듈들
 from src.utils.text_preprocessor import TextPreprocessor
@@ -357,6 +358,21 @@ class OptimizedAIAnswerGenerator:
                 else:
                     return "<p>안녕하세요, GOODTV 바이블 애플입니다.</p><p><br></p><p>바이블 애플을 이용해 주셔서 진심으로 감사드립니다.</p><p><br></p><p>남겨주신 문의는 현재 담당자가 직접 확인하고 있습니다.</p><p><br></p><p>성도님께 도움이 될 수 있도록 내용을 꼼꼼히 살펴보고 정확하고 구체적인 답변을 준비하겠습니다.</p><p><br></p><p>답변은 최대 하루 이내에 드릴 예정이오니 조금만 기다려 주시면 감사하겠습니다.</p><p><br></p><p>항상 주님 안에서 평안하세요, 감사합니다.</p>"
 
+            # 자가 평가 로직 추가
+            if base_answer:
+                coherence_score = self._evaluate_semantic_coherence(query, base_answer)
+                
+                if coherence_score < 0.5:
+                    logging.info(f"낮은 일관성 점수 ({coherence_score:.2f}), 답변 재생성 시도")
+                    # 관련성 낮은 답변 필터링 후 재생성
+                    filtered_answers = self._filter_by_coherence(query, similar_answers)
+                    if filtered_answers and len(filtered_answers) >= 2:
+                        # context_analysis가 이미 위에서 정의됨
+                        base_answer = self.generate_with_enhanced_gpt(
+                            query, filtered_answers[:3], context_analysis, lang
+                        )
+                        logging.info(f"재생성 완료, 필터링된 답변 {len(filtered_answers)}개 사용")
+
             # 강화된 답변 완성도 검증 및 재생성 로직
             base_completeness = self.check_answer_completeness(base_answer, query, lang)
             empty_promise_score = self.detect_empty_promises(base_answer, lang)
@@ -531,6 +547,57 @@ class OptimizedAIAnswerGenerator:
         except Exception as e:
             logging.error(f"처리 중 오류 - SEQ: {seq}, 오류: {str(e)}")
             return {"success": False, "error": str(e)}
+
+    def _evaluate_semantic_coherence(self, query: str, answer: str) -> float:
+        """의미적 일관성 평가"""
+        try:
+            query_embedding = self.create_embedding(query)
+            
+            # HTML 태그 제거 후 임베딩 생성
+            clean_answer = self.text_processor.preprocess_text(answer)
+            answer_embedding = self.create_embedding(clean_answer)
+            
+            if query_embedding and answer_embedding:
+                # numpy 배열로 변환
+                q_vec = np.array(query_embedding)
+                a_vec = np.array(answer_embedding)
+                
+                # 코사인 유사도 계산
+                similarity = np.dot(q_vec, a_vec) / (np.linalg.norm(q_vec) * np.linalg.norm(a_vec))
+                return float(similarity)
+        except Exception as e:
+            logging.error(f"일관성 평가 실패: {e}")
+        
+        return 0.5  # 기본값
+
+    def _filter_by_coherence(self, query: str, similar_answers: list) -> list:
+        """일관성 기반 필터링"""
+        try:
+            query_embedding = self.create_embedding(query)
+            if not query_embedding:
+                return similar_answers
+            
+            q_vec = np.array(query_embedding)
+            filtered = []
+            
+            for answer in similar_answers:
+                try:
+                    answer_embedding = self.create_embedding(answer['question'])
+                    if answer_embedding:
+                        a_vec = np.array(answer_embedding)
+                        similarity = np.dot(q_vec, a_vec) / (np.linalg.norm(q_vec) * np.linalg.norm(a_vec))
+                        
+                        if similarity > 0.6:  # 임계값
+                            filtered.append(answer)
+                except Exception as e:
+                    logging.error(f"답변 필터링 중 오류: {e}")
+                    continue
+            
+            return filtered if filtered else similar_answers[:3]  # 최소 3개 보장
+            
+        except Exception as e:
+            logging.error(f"일관성 필터링 실패: {e}")
+            return similar_answers
 
     def _update_performance_stats(self, processing_time: float):
         """성능 통계 업데이트"""

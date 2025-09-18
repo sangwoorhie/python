@@ -11,6 +11,8 @@ from datetime import datetime
 from flask import Flask, request, jsonify
 from flask_cors import CORS
 from src.utils.memory_manager import memory_cleanup
+import json
+import os
 
 # API 엔드포인트 생성
 def create_endpoints(app: Flask, generator, sync_manager, index):
@@ -257,6 +259,51 @@ def create_endpoints(app: Flask, generator, sync_manager, index):
                 "success": False,
                 "error": str(e)
             }), 500
+    
+    # ===== 7. 오안내 피드백 수집 API 엔드포인트 =====
+    @app.route('/feedback/mismatch', methods=['POST'])
+    def report_mismatch():
+        """오안내 피드백 수집"""
+        try:
+            data = request.get_json()
+            
+            # 오안내 데이터 저장 (학습용)
+            mismatch_data = {
+                'question': data.get('question'),
+                'given_answer': data.get('given_answer'),
+                'expected_topic': data.get('expected_topic'),
+                'timestamp': datetime.now().isoformat()
+            }
+            
+            # 로그 디렉토리 확인
+            log_dir = '/home/ec2-user/python/logs'
+            os.makedirs(log_dir, exist_ok=True)
+            
+            # 패턴 분석 및 저장
+            log_file = os.path.join(log_dir, 'mismatches.jsonl')
+            with open(log_file, 'a', encoding='utf-8') as f:
+                f.write(json.dumps(mismatch_data, ensure_ascii=False) + '\n')
+            
+            logging.info(f"오안내 피드백 저장: {mismatch_data['question'][:50]}...")
+            
+            return jsonify({"success": True, "message": "피드백이 저장되었습니다"}), 200
+            
+        except Exception as e:
+            logging.error(f"피드백 저장 실패: {e}")
+            return jsonify({"success": False, "error": str(e)}), 500
+
+    # 디버그용 엔드포인트 추가
+    @app.route('/debug/last_search', methods=['GET'])
+    def get_last_search_debug():
+        """마지막 검색의 디버그 정보"""
+        try:
+            # generator의 마지막 검색 정보 가져오기
+            if hasattr(generator, '_last_search_info'):
+                return jsonify(generator._last_search_info), 200
+            else:
+                return jsonify({"message": "디버그 정보가 없습니다"}), 404
+        except Exception as e:
+            return jsonify({"error": str(e)}), 500
     
     # ===== 엔드포인트 등록 완료 =====
     return app

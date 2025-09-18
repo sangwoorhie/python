@@ -16,6 +16,7 @@ from src.utils.intelligent_api_manager import (
     IntelligentAPIManager, APICallRequest, APICallStrategy
 )
 from src.models.question_analyzer import QuestionAnalyzer
+import numpy as np
 
 # ===== 최적화된 Pinecone 벡터 검색을 담당하는 메인 클래스 =====
 class OptimizedSearchService:
@@ -472,9 +473,19 @@ class OptimizedSearchService:
     # Returns:
     #     List[Dict]: 후처리된 최종 결과
     def _postprocess_results(self, search_results: List[Dict], query: str, 
-                           intent_analysis: Dict, top_k: int) -> List[Dict]:
+                         intent_analysis: Dict, top_k: int) -> List[Dict]:
         if not search_results:
             return []
+        
+        # 벡터 유사도 기반 동적 임계값 계산
+        scores = [r['score'] for r in search_results[:top_k*2]]
+        if scores:
+            # 상위 20%와 하위 20% 점수 차이로 동적 임계값 설정
+            top_percentile = np.percentile(scores, 80)
+            bottom_percentile = np.percentile(scores, 20)
+            dynamic_threshold = (top_percentile + bottom_percentile) / 2
+        else:
+            dynamic_threshold = 0.5
         
         # 개념 관련성 계산을 위한 키워드 추출
         key_concepts = self.text_processor.extract_key_concepts(query)
@@ -503,11 +514,15 @@ class OptimizedSearchService:
             
             # 최종 점수 = 벡터 유사도(60%) + 의도 관련성(25%) + 개념 관련성(15%)
             final_score = (adjusted_score * 0.6 + 
-                          intent_relevance * 0.25 + 
-                          concept_relevance * 0.15)
+                        intent_relevance * 0.25 + 
+                        concept_relevance * 0.15)
+            
+            # === dynamic_threshold 활용 부분 추가 ===
+            # 동적 임계값 사용: final_score가 아닌 vector_score에 적용
+            min_threshold = dynamic_threshold if i >= 3 else 0.3  # 상위 3개는 더 낮은 임계값
             
             # 최소 임계값 또는 상위 순위 확인
-            if final_score >= 0.4 or i < 3:
+            if final_score >= min_threshold or i < 3:
                 final_results.append({
                     'score': final_score,
                     'vector_score': vector_score,
@@ -528,7 +543,7 @@ class OptimizedSearchService:
             
             if len(final_results) >= top_k:
                 break
-        
+    
         return final_results
 
     # 캐싱 기반 의도 관련성 계산 메서드

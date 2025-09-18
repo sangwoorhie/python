@@ -9,7 +9,7 @@
 
 import re
 import logging
-from typing import Dict, List
+from typing import Dict, List, Any
 from src.utils.memory_manager import memory_cleanup
 from src.utils.text_preprocessor import TextPreprocessor
 
@@ -724,3 +724,50 @@ class QualityValidator:
             
             # 20% 이상 키워드 일치시 관련성 있음으로 판단
             return keyword_relevance >= 0.2
+
+    # 클래스 끝부분에 추가 (기존 메서드들과 충돌 없음)
+def check_semantic_consistency(self, query: str, answer: str) -> Dict[str, Any]:
+    """의미적 일관성 실시간 검증"""
+    try:
+        # HTML 태그 제거
+        clean_answer = re.sub(r'<[^>]+>', '', answer)
+        
+        # 질문과 답변에서 핵심 개념 추출
+        query_concepts = self.text_processor.extract_key_concepts(query)
+        answer_concepts = self.text_processor.extract_key_concepts(clean_answer)
+        
+        # 개념이 없으면 중립 반환
+        if not query_concepts:
+            return {"consistent": True, "confidence": 0.5, "missing_concepts": []}
+        
+        if not answer_concepts:
+            return {
+                "consistent": False, 
+                "confidence": 0.0, 
+                "missing_concepts": query_concepts
+            }
+        
+        # 집합 연산
+        query_set = set(query_concepts)
+        answer_set = set(answer_concepts)
+        common_concepts = query_set & answer_set
+        union_concepts = query_set | answer_set
+        
+        # 교집합 비율 계산
+        overlap_ratio = len(common_concepts) / len(union_concepts) if union_concepts else 0
+        
+        # 의미적 거리 계산
+        semantic_distance = 1.0 - overlap_ratio
+        
+        return {
+            "consistent": overlap_ratio > 0.3,
+            "confidence": overlap_ratio,
+            "semantic_distance": semantic_distance,
+            "query_concepts": list(query_set),
+            "answer_concepts": list(answer_set),
+            "missing_concepts": list(query_set - answer_set)
+        }
+        
+    except Exception as e:
+        logging.error(f"의미적 일관성 검사 실패: {e}")
+        return {"consistent": True, "confidence": 0.5, "missing_concepts": []}

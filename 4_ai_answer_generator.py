@@ -4,7 +4,7 @@
 AI Answer Generator Flask API for ASP Classic Integration (OpenAI 버전)
 파일명: 4_ai_answer_generator.py
 설명: Flask API로 ASP Classic에서 호출
-모델: OpenAI text-embedding-3-small + GPT-4o-mini
+모델: OpenAI text-embedding-3-small + GPT-3.5-turbo
 """
 
 import os
@@ -128,7 +128,7 @@ class AIAnswerGenerator:
 위 참고답변들을 종합하여 현재 고객 문의에 대한 최적의 답변을 작성해주세요."""
 
             response = openai_client.chat.completions.create(
-                model="gpt-4o-mini",
+                model="gpt-3.5-turbo",
                 messages=[
                     {"role": "system", "content": system_prompt},
                     {"role": "user", "content": user_prompt}
@@ -141,7 +141,7 @@ class AIAnswerGenerator:
             return generated_answer
             
         except Exception as e:
-            logging.error(f"GPT-4o-mini 답변 생성 실패: {e}")
+            logging.error(f"GPT-3.5-turbo 답변 생성 실패: {e}")
             # 폴백: 가장 유사한 답변 사용
             if similar_answers:
                 best_match = similar_answers[0]
@@ -161,7 +161,7 @@ class AIAnswerGenerator:
                 "answer": ai_answer,
                 "similar_count": len(similar_answers),
                 "embedding_model": "text-embedding-3-small",
-                "generation_model": "gpt-4o-mini",
+                "generation_model": "gpt-3.5-turbo",
                 "similar_answers": [
                     {
                         "score": ans['score'],
