@@ -2,6 +2,9 @@
 # -*- coding: utf-8 -*-
 """
 질문 분석 모델 모듈
+- 사용자 질문의 언어 감지 및 의도 분석
+- 의미론적 유사성 계산을 통한 답변 매칭 최적화
+- GPT 기반 지능형 질문 분석 시스템
 """
 
 import json
@@ -11,41 +14,56 @@ from typing import Dict
 from langdetect import detect, LangDetectException
 from src.utils.memory_manager import memory_cleanup
 
-
+# ===== 질문 분석 및 의도 파악을 담당하는 메인 클래스 =====
 class QuestionAnalyzer:
-    """질문 분석을 담당하는 클래스"""
     
+    # QuestionAnalyzer 초기화
+    # Args:
+    #     openai_client: OpenAI API 클라이언트 인스턴스
     def __init__(self, openai_client):
-        self.openai_client = openai_client
+        self.openai_client = openai_client                    # GPT 분석을 위한 OpenAI 클라이언트
     
+    # 텍스트의 언어를 자동 감지하는 메서드
+    # Args:
+    #     text: 언어를 감지할 텍스트
+    # Returns:
+    #     str: 감지된 언어 코드 ('ko' 또는 'en')
     def detect_language(self, text: str) -> str:
-        """텍스트의 언어를 감지하는 메서드"""
         try:
-            # langdetect 라이브러리 사용
+            # ===== 1단계: langdetect 라이브러리를 사용한 자동 언어 감지 =====
             detected = detect(text)
             
-            # 영어와 한국어만 지원
+            # ===== 2단계: 지원 언어 검증 (한국어/영어만 지원) =====
             if detected == 'en':
-                return 'en'
+                return 'en'                                   # 영어로 감지됨
             elif detected == 'ko':
-                return 'ko'
+                return 'ko'                                   # 한국어로 감지됨
             else:
-                # 기본값은 한국어
+                # 기타 언어는 기본값(한국어)으로 처리
                 return 'ko'
+                
         except LangDetectException:
-            # 감지 실패시 텍스트 내 한글 비율로 판단
-            korean_chars = len(re.findall(r'[가-힣]', text))
-            english_chars = len(re.findall(r'[a-zA-Z]', text))
+            # ===== 3단계: 감지 실패시 문자 비율 기반 폴백 로직 =====
+            # 텍스트 내 한글과 영문 문자 수를 직접 카운트
+            korean_chars = len(re.findall(r'[가-힣]', text))  # 한글 문자 수
+            english_chars = len(re.findall(r'[a-zA-Z]', text)) # 영문 문자 수
             
+            # 문자 수 비교로 언어 판단
             if korean_chars > english_chars:
-                return 'ko'
+                return 'ko'                                   # 한글이 더 많으면 한국어
             else:
-                return 'en'
+                return 'en'                                   # 영문이 더 많으면 영어
 
+    # GPT를 이용해 질문의 본질적 의도와 핵심 목적을 정확히 분석하는 메서드
+    # Args:
+    #     query: 분석할 사용자 질문
+    # Returns:
+    #     dict: 의도 분석 결과 (core_intent, 카테고리, 키워드 등)
     def analyze_question_intent(self, query: str) -> dict:
-        """AI를 이용해 질문의 본질적 의도와 핵심 목적을 정확히 분석"""
         try:
+            # ===== 메모리 최적화 컨텍스트 시작 =====
             with memory_cleanup():
+                # ===== 1단계: GPT 의도 분석을 위한 시스템 프롬프트 구성 =====
                 system_prompt = """당신은 바이블 앱 문의 분석 전문가입니다. 
 고객 질문의 본질적 의도를 파악하여 의미론적으로 동등한 질문들이 같은 결과를 얻도록 분석하세요.
 
@@ -88,6 +106,7 @@ class QuestionAnalyzer:
 → 모두 standardized_query: "서로 다른 번역본을 동시에 보는 방법"
 """
 
+                # ===== 2단계: 사용자 질문 분석을 위한 프롬프트 생성 =====
                 user_prompt = f"""다음 질문을 의미론적으로 분석하여 본질적 의도를 파악해주세요:
 
 질문: {query}
@@ -97,24 +116,27 @@ class QuestionAnalyzer:
 2. 구체적 예시(성경 구절, 번역본명 등)를 제거하고 일반화하면?
 3. 비슷한 의도의 다른 질문들과 어떻게 통합할 수 있는가?"""
 
+                # ===== 3단계: GPT API 호출로 의도 분석 실행 =====
                 response = self.openai_client.chat.completions.create(
                     model='gpt-3.5-turbo',
                     messages=[
                         {"role": "system", "content": system_prompt},
                         {"role": "user", "content": user_prompt}
                     ],
-                    max_tokens=400,
-                    temperature=0.2  # 더 일관성 있는 분석을 위해 낮춤
+                    max_tokens=400,                               # 충분한 분석 결과 길이
+                    temperature=0.2                               # 일관성 있는 분석을 위해 낮은 값
                 )
                 
+                # ===== 4단계: GPT 응답 텍스트 추출 =====
                 result_text = response.choices[0].message.content.strip()
                 
-                # JSON 파싱 시도
+                # ===== 5단계: JSON 파싱 및 결과 구조화 =====
                 try:
+                    # JSON 형태로 응답 파싱
                     result = json.loads(result_text)
                     logging.info(f"강화된 의도 분석 결과: {result}")
                     
-                    # 기존 형식과의 호환성을 위해 추가 필드 생성
+                    # ===== 6단계: 기존 시스템과의 호환성을 위한 필드 추가 =====
                     result['intent_type'] = result.get('intent_category', '일반문의')
                     result['main_topic'] = result.get('target_object', '기타')
                     result['specific_request'] = result.get('standardized_query', query[:100])
@@ -124,6 +146,7 @@ class QuestionAnalyzer:
                     
                     return result
                 except json.JSONDecodeError:
+                    # ===== JSON 파싱 실패시 기본값 반환 =====
                     logging.warning(f"JSON 파싱 실패, 기본값 반환: {result_text}")
                     return {
                         "core_intent": "general_inquiry",
@@ -143,6 +166,7 @@ class QuestionAnalyzer:
                     }
                 
         except Exception as e:
+            # ===== 전체 의도 분석 프로세스 실패시 기본값 반환 =====
             logging.error(f"강화된 의도 분석 실패: {e}")
             return {
                 "core_intent": "general_inquiry",
@@ -161,20 +185,27 @@ class QuestionAnalyzer:
                 "action_type": "기타"
             }
 
+    # 질문의 의도와 참조 답변 간의 의미론적 유사성을 계산하는 메서드
+    # Args:
+    #     query_intent_analysis: 분석된 질문 의도 정보
+    #     ref_question: 참조 질문
+    #     ref_answer: 참조 답변
+    # Returns:
+    #     float: 유사성 점수 (0.0 ~ 1.0)
     def calculate_intent_similarity(self, query_intent_analysis: dict, ref_question: str, ref_answer: str) -> float:
-        """질문의 의도와 참조 답변 간의 의미론적 유사성 계산"""
         
         try:
-            # 1. 질문 의도 정보 추출
+            # ===== 1단계: 사용자 질문의 의도 정보 추출 =====
             query_core_intent = query_intent_analysis.get('core_intent', '')
             query_primary_action = query_intent_analysis.get('primary_action', '')
             query_target_object = query_intent_analysis.get('target_object', '')
             query_semantic_keywords = query_intent_analysis.get('semantic_keywords', [])
             
+            # 의도 정보가 없으면 중간값 반환
             if not query_core_intent:
-                return 0.5  # 의도 정보가 없으면 중간값
+                return 0.5
             
-            # 2. 참조 질문과 답변에서 의도 분석
+            # ===== 2단계: 참조 질문의 의도 분석 실행 =====
             ref_text = ref_question + ' ' + ref_answer
             ref_intent_analysis = self.analyze_question_intent(ref_question)
             
@@ -183,25 +214,27 @@ class QuestionAnalyzer:
             ref_target_object = ref_intent_analysis.get('target_object', '')
             ref_semantic_keywords = ref_intent_analysis.get('semantic_keywords', [])
             
-            # 3. 핵심 의도 일치도 계산 (가장 중요)
+            # ===== 3단계: 핵심 의도 일치도 계산 (가장 중요한 지표) =====
             intent_match_score = 0.0
             if query_core_intent == ref_core_intent:
+                # 완전 일치: 최고 점수
                 intent_match_score = 1.0
             elif query_core_intent and ref_core_intent:
-                # 의도 이름의 유사성 검사 (부분 일치)
+                # 부분 일치: 의도 이름의 단어 유사성 검사
                 query_intent_words = set(query_core_intent.split('_'))
                 ref_intent_words = set(ref_core_intent.split('_'))
                 
                 if query_intent_words & ref_intent_words:  # 공통 단어가 있으면
                     overlap_ratio = len(query_intent_words & ref_intent_words) / len(query_intent_words | ref_intent_words)
-                    intent_match_score = overlap_ratio * 0.8  # 완전 일치보다는 낮게
+                    intent_match_score = overlap_ratio * 0.8  # 완전 일치보다는 낮게 설정
             
-            # 4. 행동 유형 일치도 계산
+            # ===== 4단계: 행동 유형 일치도 계산 =====
             action_match_score = 0.0
             if query_primary_action == ref_primary_action:
+                # 완전 일치: 최고 점수
                 action_match_score = 1.0
             elif query_primary_action and ref_primary_action:
-                # 행동 유형 유사성 검사
+                # 유사한 행동 유형 매핑 테이블
                 action_similarity_map = {
                     ('보기', '확인'): 0.8,
                     ('복사', '저장'): 0.7,
@@ -213,17 +246,19 @@ class QuestionAnalyzer:
                 action_key = (query_primary_action, ref_primary_action)
                 reverse_key = (ref_primary_action, query_primary_action)
                 
+                # 양방향 매핑 검사
                 if action_key in action_similarity_map:
                     action_match_score = action_similarity_map[action_key]
                 elif reverse_key in action_similarity_map:
                     action_match_score = action_similarity_map[reverse_key]
             
-            # 5. 대상 객체 일치도 계산
+            # ===== 5단계: 대상 객체 일치도 계산 =====
             object_match_score = 0.0
             if query_target_object == ref_target_object:
+                # 완전 일치: 최고 점수
                 object_match_score = 1.0
             elif query_target_object and ref_target_object:
-                # 객체 유사성 검사
+                # 유사한 객체 유형 매핑 테이블
                 object_similarity_map = {
                     ('번역본', '성경'): 0.8,
                     ('텍스트', '내용'): 0.7,
@@ -234,37 +269,41 @@ class QuestionAnalyzer:
                 object_key = (query_target_object, ref_target_object)
                 reverse_key = (ref_target_object, query_target_object)
                 
+                # 양방향 매핑 검사
                 if object_key in object_similarity_map:
                     object_match_score = object_similarity_map[object_key]
                 elif reverse_key in object_similarity_map:
                     object_match_score = object_similarity_map[reverse_key]
             
-            # 6. 의미론적 키워드 일치도 계산
+            # ===== 6단계: 의미론적 키워드 일치도 계산 =====
             keyword_match_score = 0.0
             if query_semantic_keywords and ref_semantic_keywords:
                 query_keyword_set = set(query_semantic_keywords)
                 ref_keyword_set = set(ref_semantic_keywords)
                 
+                # 교집합과 합집합을 이용한 Jaccard 유사도 계산
                 common_keywords = query_keyword_set & ref_keyword_set
                 total_keywords = query_keyword_set | ref_keyword_set
                 
                 if total_keywords:
                     keyword_match_score = len(common_keywords) / len(total_keywords)
             
-            # 7. 전체 점수 계산 (가중 평균)
+            # ===== 7단계: 전체 유사성 점수 계산 (가중 평균) =====
             total_score = (
-                intent_match_score * 0.4 +      # 핵심 의도 일치 (40%)
+                intent_match_score * 0.4 +      # 핵심 의도 일치 (40% - 가장 중요)
                 action_match_score * 0.25 +     # 행동 유형 일치 (25%)
                 object_match_score * 0.2 +      # 대상 객체 일치 (20%)
                 keyword_match_score * 0.15      # 키워드 일치 (15%)
             )
             
+            # ===== 8단계: 디버그 로깅 및 결과 반환 =====
             logging.debug(f"의도 유사성 분석: 의도={intent_match_score:.2f}, "
                          f"행동={action_match_score:.2f}, 객체={object_match_score:.2f}, "
                          f"키워드={keyword_match_score:.2f}, 전체={total_score:.2f}")
             
-            return min(total_score, 1.0)
+            return min(total_score, 1.0)  # 1.0을 초과하지 않도록 제한
             
         except Exception as e:
+            # ===== 예외 처리: 유사성 계산 실패시 기본값 반환 =====
             logging.error(f"의도 유사성 계산 실패: {e}")
-            return 0.3  # 오류시 낮은 기본값
+            return 0.3  # 오류시 낮은 기본값 반환

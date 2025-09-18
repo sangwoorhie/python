@@ -2,6 +2,9 @@
 # -*- coding: utf-8 -*-
 """
 답변 생성 모델 모듈
+- GPT 기반 AI 답변 생성
+- 다국어 지원 (한국어/영어)
+- 컨텍스트 기반 답변 품질 최적화
 """
 
 import logging
@@ -10,17 +13,27 @@ from typing import Dict, List
 from src.utils.memory_manager import memory_cleanup
 from src.utils.text_preprocessor import TextPreprocessor
 
-# GPT 기반 답변 생성을 담당하는 클래스
+# ===== GPT 기반 답변 생성을 담당하는 메인 클래스 =====
 class AnswerGenerator:
     
+    # AnswerGenerator 초기화
+    # Args:
+    #     openai_client: OpenAI API 클라이언트 인스턴스
     def __init__(self, openai_client):
-        self.openai_client = openai_client
-        self.text_processor = TextPreprocessor()
-        self.gpt_model = 'gpt-3.5-turbo'
+        self.openai_client = openai_client                # OpenAI API 클라이언트
+        self.text_processor = TextPreprocessor()          # 텍스트 전처리 도구
+        self.gpt_model = 'gpt-3.5-turbo'                 # 사용할 GPT 모델
     
+    # 언어별 GPT 프롬프트 생성 - 한국어/영어 지원
+    # Args:
+    #     query: 사용자 질문
+    #     context: 참고답변 컨텍스트
+    #     lang: 언어 코드 ('ko' 또는 'en')
+    # Returns:
+    #     tuple: (시스템 프롬프트, 사용자 프롬프트)
     def get_gpt_prompts(self, query: str, context: str, lang: str = 'ko') -> tuple:
-        """언어별 GPT 프롬프트 생성"""
-        if lang == 'en': # 영어
+        # ===== 언어별 프롬프트 생성 =====
+        if lang == 'en': # 영어 프롬프트
             system_prompt = """You are a GOODTV Bible App customer service representative.
 
 Guidelines:
@@ -57,7 +70,7 @@ Reference answers (main content only, greetings and closings removed):
 Based on the reference answers' solution methods and tone, write a specific answer to the customer's problem.
 Important: Do not include greetings or closings. Only write the main content."""
 
-        else:  # 한국어
+        else:  # 한국어 프롬프트 (기본값)
             system_prompt = """당신은 GOODTV 바이블 애플 고객센터 상담원입니다.
 
 🏆 바이블 애플 핵심 기능 (절대 준수):
@@ -170,36 +183,49 @@ Important: Do not include greetings or closings. Only write the main content."""
 
 지금 즉시 참고답변에 100% 충실하면서 질문 내용을 절대 바꾸지 않고 답변하세요."""
 
+        # ===== 프롬프트 반환 =====
         return system_prompt, user_prompt
 
+    # 향상된 GPT 생성 - 일관성과 품질 보장
+    # Args:
+    #     query: 사용자 질문
+    #     similar_answers: 유사한 참고답변 리스트
+    #     context_analysis: 컨텍스트 분석 결과
+    #     lang: 언어 코드
+    # Returns:
+    #     str: 생성된 답변 텍스트
     def generate_with_enhanced_gpt(self, query: str, similar_answers: list, context_analysis: dict, lang: str = 'ko') -> str:
-        """향상된 GPT 생성 - 일관성과 품질 보장"""
         try:
+            # 메모리 최적화 컨텍스트 시작
             with memory_cleanup():
+                # 1단계: 컨텍스트 분석 및 생성
                 approach = context_analysis['recommended_approach']
                 context = self.create_enhanced_context(similar_answers, target_lang=lang)
                 
+                # 컨텍스트 유효성 검증
                 if not context:
                     logging.warning("유효한 컨텍스트가 없어 GPT 생성 중단")
                     return ""
                 
-                # 통일된 프롬프트 생성
+                # 2단계: 언어별 프롬프트 생성
                 system_prompt, user_prompt = self.get_gpt_prompts(query, context, lang)
                 
-                # 일관성을 위한 보수적 temperature 설정
+                # 3단계: 접근 방식에 따른 GPT 파라미터 설정
                 if approach == 'gpt_with_strong_context':
+                    # 강한 컨텍스트: 낮은 temperature로 일관성 확보
                     temperature = 0.3 if context_analysis.get('context_relevance') == 'high' else 0.4
                     max_tokens = 700
                 elif approach == 'gpt_with_weak_context':
+                    # 약한 컨텍스트: 적당한 창의성 허용
                     temperature = 0.4
                     max_tokens = 650
-                else: # fallback이나 기타
+                else: # fallback이나 기타 - 생성 중단
                     return ""
                 
-                # 답변 품질 보장을 위한 3회 재시도 메커니즘
+                # 4단계: 답변 품질 보장을 위한 3회 재시도 메커니즘
                 max_attempts = 3
                 for attempt in range(max_attempts):
-                    # GPT API 호출
+                    # GPT API 호출 (핵심 생성 로직)
                     response = self.openai_client.chat.completions.create(
                         model=self.gpt_model,
                         messages=[
@@ -208,26 +234,28 @@ Important: Do not include greetings or closings. Only write the main content."""
                         ],
                         max_tokens=max_tokens,
                         temperature=temperature,
-                        top_p=0.9,
-                        frequency_penalty=0.1,
-                        presence_penalty=0.1
+                        top_p=0.9,                    # 다양성 제어
+                        frequency_penalty=0.1,        # 반복 방지
+                        presence_penalty=0.1          # 주제 일관성
                     )
                     
+                    # 5단계: 응답 추출 및 정리
                     generated = response.choices[0].message.content.strip()
-                    del response
+                    del response  # 메모리 해제
                     
-                    # 생성된 텍스트 정리
+                    # 텍스트 후처리 (불필요한 문구 제거 등)
                     generated = self.text_processor.clean_generated_text(generated)
                     
-                    # 최소 길이 검증
+                    # 6단계: 품질 검증 (최소 길이 체크)
                     if len(generated.strip()) >= 20:
                         logging.info(f"GPT 생성 성공 (시도 #{attempt+1}, {approach}): {len(generated)}자")
                         return generated
                     
-                    # 마지막 시도가 아니면 temperature 조정
+                    # 7단계: 재시도를 위한 파라미터 조정
                     if attempt < max_attempts - 1:
-                        temperature = min(temperature + 0.1, 0.6)
+                        temperature = min(temperature + 0.1, 0.6)  # 창의성 증가
                 
+                # 모든 시도 실패시
                 logging.warning("모든 GPT 생성 시도 실패")
                 return ""
                 
@@ -235,36 +263,45 @@ Important: Do not include greetings or closings. Only write the main content."""
             logging.error(f"향상된 GPT 생성 실패: {e}")
             return ""
 
+    # GPT용 향상된 컨텍스트 생성 - 품질별 우선순위 적용
+    # Args:
+    #     similar_answers: 유사한 답변 리스트
+    #     max_answers: 최대 포함할 답변 수
+    #     target_lang: 대상 언어
+    # Returns:
+    #     str: 구성된 컨텍스트 문자열
     def create_enhanced_context(self, similar_answers: list, max_answers: int = 7, target_lang: str = 'ko') -> str:
-        """GPT용 향상된 컨텍스트 생성"""
         if not similar_answers:
             return ""
         
+        # ===== 1단계: 초기화 및 품질별 답변 분류 =====
         context_parts = []
         used_answers = 0
         
-        # 유사도 점수에 따른 답변 그룹핑
-        high_score = [ans for ans in similar_answers if ans['score'] >= 0.7]
-        medium_score = [ans for ans in similar_answers if 0.5 <= ans['score'] < 0.7]
-        medium_low_score = [ans for ans in similar_answers if 0.5 <= ans['score'] < 0.6]
+        # 유사도 점수에 따른 답변 그룹핑 (품질별 분류)
+        high_score = [ans for ans in similar_answers if ans['score'] >= 0.7]      # 고품질
+        medium_score = [ans for ans in similar_answers if 0.5 <= ans['score'] < 0.7]  # 중품질
+        medium_low_score = [ans for ans in similar_answers if 0.5 <= ans['score'] < 0.6]  # 중하품질
 
-        # 1단계: 고품질 답변 우선 포함 (최대 4개)
+        # ===== 2단계: 고품질 답변 우선 포함 (최대 4개) =====
         for ans in high_score[:4]:
             if used_answers >= max_answers:
                 break
             
+            # 텍스트 전처리 및 인사말/끝맺음말 제거
             clean_answer = self.text_processor.preprocess_text(ans['answer'])
             clean_answer = self.remove_greeting_and_closing(clean_answer, 'ko')
             
-            # 영어 질문인 경우 답변을 번역
+            # 다국어 지원: 영어 질문인 경우 답변을 번역
             if target_lang == 'en' and ans.get('lang', 'ko') == 'ko':
                 clean_answer = self.translate_text(clean_answer, 'ko', 'en')
             
+            # 품질 검증 및 컨텍스트 추가
             if len(clean_answer.strip()) > 20:
                 context_parts.append(f"[참고답변 {used_answers+1} - 점수: {ans['score']:.2f}]\n{clean_answer[:400]}")
                 used_answers += 1
         
-        # 2단계: 중품질 답변으로 보완 (최대 3개)
+        # ===== 3단계: 중품질 답변으로 보완 (최대 3개) =====
         for ans in medium_score[:3]:
             if used_answers >= max_answers:
                 break
@@ -279,7 +316,7 @@ Important: Do not include greetings or closings. Only write the main content."""
                 context_parts.append(f"[참고답변 {used_answers+1} - 점수: {ans['score']:.2f}]\n{clean_answer[:300]}")
                 used_answers += 1
 
-        # 3단계: 답변이 부족한 경우 중간 품질 답변 추가
+        # ===== 4단계: 답변 부족시 중하품질 답변 추가 =====
         if used_answers < 3:
             for ans in medium_low_score[:2]:
                 if used_answers >= max_answers:
@@ -295,16 +332,24 @@ Important: Do not include greetings or closings. Only write the main content."""
                     context_parts.append(f"[참고답변 {used_answers+1} - 점수: {ans['score']:.2f}]\n{clean_answer[:250]}")
                     used_answers += 1
         
+        # ===== 5단계: 최종 컨텍스트 구성 및 반환 =====
         logging.info(f"컨텍스트 생성: {used_answers}개의 답변 포함 (언어: {target_lang})")
         
         return "\n\n" + "="*50 + "\n\n".join(context_parts)
 
+    # 참고 답변에서 인사말과 끝맺음말을 제거하는 메서드
+    # Args:
+    #     text: 처리할 텍스트
+    #     lang: 언어 코드 ('ko' 또는 'en')
+    # Returns:
+    #     str: 인사말/끝맺음말이 제거된 텍스트
     def remove_greeting_and_closing(self, text: str, lang: str = 'ko') -> str:
-        """참고 답변에서 인사말과 끝맺음말을 제거하는 메서드"""
         if not text:
             return ""
         
+        # ===== 언어별 패턴 정의 =====
         if lang == 'ko':
+            # 한국어 인사말 패턴
             greeting_patterns = [
                 r'^안녕하세요[^.]*\.\s*',
                 r'^GOODTV\s+바이블\s*애플[^.]*\.\s*',
@@ -317,6 +362,7 @@ Important: Do not include greetings or closings. Only write the main content."""
                 r'^바이블\s*애플을\s*애용해\s*주셔서[^.]*\.\s*'
             ]
             
+            # 한국어 끝맺음말 패턴
             closing_patterns = [
                 r'\s*감사합니다[^.]*\.?\s*$',
                 r'\s*감사드립니다[^.]*\.?\s*$',
@@ -329,7 +375,8 @@ Important: Do not include greetings or closings. Only write the main content."""
                 r'\s*주님의\s*은총이[^.]*\.?\s*$',
                 r'\s*기도드리겠습니다[^.]*\.?\s*$'
             ]
-        else:  # 영어
+        else:  # 영어 패턴
+            # 영어 인사말 패턴
             greeting_patterns = [
                 r'^Hello[^.]*\.\s*',
                 r'^Hi[^.]*\.\s*',
@@ -339,6 +386,7 @@ Important: Do not include greetings or closings. Only write the main content."""
                 r'^This is GOODTV Bible App[^.]*\.\s*',
             ]
             
+            # 영어 끝맺음말 패턴
             closing_patterns = [
                 r'\s*Thank you[^.]*\.?\s*$',
                 r'\s*Thanks[^.]*\.?\s*$',
@@ -348,39 +396,52 @@ Important: Do not include greetings or closings. Only write the main content."""
                 r'\s*May God[^.]*\.?\s*$',
             ]
         
-        # 인사말 제거
+        # ===== 패턴 적용하여 텍스트 정리 =====
+        # 1단계: 인사말 제거
         for pattern in greeting_patterns:
             text = re.sub(pattern, '', text, flags=re.IGNORECASE)
         
-        # 끝맺음말 제거
+        # 2단계: 끝맺음말 제거
         for pattern in closing_patterns:
             text = re.sub(pattern, '', text, flags=re.IGNORECASE)
         
+        # 3단계: 공백 정리 및 반환
         text = text.strip()
         return text
 
+    # GPT를 사용한 다국어 번역 - 원문 톤앤매너 유지
+    # Args:
+    #     text: 번역할 텍스트
+    #     source_lang: 원본 언어 코드
+    #     target_lang: 목적 언어 코드
+    # Returns:
+    #     str: 번역된 텍스트 (실패시 원문 반환)
     def translate_text(self, text: str, source_lang: str, target_lang: str) -> str:
-        """GPT를 사용한 번역"""
         try:
+            # ===== 1단계: 언어 매핑 =====
             lang_map = {
                 'ko': 'Korean',
                 'en': 'English'
             }
             
+            # ===== 2단계: 번역 프롬프트 생성 =====
             system_prompt = f"You are a professional translator. Translate the following text from {lang_map[source_lang]} to {lang_map[target_lang]}. Keep the same tone and style. Only provide the translation without any explanation."
             
+            # ===== 3단계: GPT API 호출로 번역 실행 =====
             response = self.openai_client.chat.completions.create(
                 model='gpt-3.5-turbo',
                 messages=[
                     {"role": "system", "content": system_prompt},
                     {"role": "user", "content": text}
                 ],
-                max_tokens=600,
-                temperature=0.5
+                max_tokens=600,              # 충분한 번역 길이 허용
+                temperature=0.5              # 일관성과 창의성 균형
             )
             
+            # ===== 4단계: 번역 결과 반환 =====
             return response.choices[0].message.content.strip()
             
         except Exception as e:
+            # 번역 실패시 원문 반환
             logging.error(f"번역 실패: {e}")
             return text

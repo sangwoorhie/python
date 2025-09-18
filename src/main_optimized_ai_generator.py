@@ -31,28 +31,33 @@ class OptimizedAIAnswerGenerator:
 
     def __init__(self, pinecone_index, openai_client, connection_string=None, 
                  category_mapping=None, redis_config=None):
-        # 기본 컴포넌트들
+        # 1단계. 기본 컴포넌트 초기화
         self.index = pinecone_index
         self.openai_client = openai_client
         
-        # 유틸리티 컴포넌트
+        # 2단계. 유틸리티 컴포넌트 생성
         self.text_processor = TextPreprocessor()
         
-        # 최적화 시스템 초기화
-        self._initialize_optimization_system(redis_config)
+        # 3단계. 최적화 시스템 초기화
+        self._initialize_optimization_system(redis_config) # ← REDIS_CONFIG 사용
         
-        # 모델 컴포넌트들
+        # 4단계: AI 모델 컴포넌트 초기화
         self.answer_generator = AnswerGenerator(openai_client)
         
-        # 서비스 컴포넌트들 (최적화 적용)
+        # 5단계: 서비스 컴포넌트 초기화 (최적화 적용)
         self.search_service = OptimizedSearchService(pinecone_index, self.api_manager)
         self.quality_validator = QualityValidator(openai_client)
         
-        # 동기화 서비스 (옵셔널)
+        # 6단계: 동기화 서비스 초기화 (조건부)
         if connection_string and category_mapping:
-            self.sync_service = SyncService(pinecone_index, openai_client, connection_string, category_mapping)
+            self.sync_service = SyncService(
+                pinecone_index, 
+                openai_client, 
+                connection_string, 
+                category_mapping
+                )
         
-        # 성능 모니터링
+        # 7단계: 성능 모니터링 초기화
         self.performance_stats = {
             'total_requests': 0,
             'cache_hit_rate': 0.0,

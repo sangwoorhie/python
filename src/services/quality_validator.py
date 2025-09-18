@@ -2,6 +2,9 @@
 # -*- coding: utf-8 -*-
 """
 품질 검증 서비스 모듈
+- AI가 생성한 답변의 품질을 다각도로 검증
+- 텍스트 유효성, 완성도, 관련성, 할루시네이션 감지
+- 한국어/영어 다국어 지원 품질 검증 시스템
 """
 
 import re
@@ -10,32 +13,47 @@ from typing import Dict, List
 from src.utils.memory_manager import memory_cleanup
 from src.utils.text_preprocessor import TextPreprocessor
 
-
+# ===== AI 답변 품질 검증을 담당하는 메인 클래스 =====
 class QualityValidator:
-    """답변 품질 검증을 담당하는 클래스"""
     
+    # QualityValidator 초기화 - 품질 검증에 필요한 도구들 설정
+    # Args:
+    #     openai_client: OpenAI API 클라이언트 (AI 검증용)
     def __init__(self, openai_client):
-        self.openai_client = openai_client
-        self.text_processor = TextPreprocessor()
+        self.openai_client = openai_client                    # GPT 기반 품질 검증용
+        self.text_processor = TextPreprocessor()              # 텍스트 전처리 도구
     
+    # 다국어 텍스트 유효성 검증 - 메인 진입점
+    # Args:
+    #     text: 검증할 텍스트
+    #     lang: 언어 코드 ('ko' 또는 'en')
+    # Returns:
+    #     bool: 텍스트 유효성 여부
     def is_valid_text(self, text: str, lang: str = 'ko') -> bool:
-        """텍스트 유효성 검증 메서드"""
+        # ===== 1단계: 기본 유효성 검사 =====
         if not text or len(text.strip()) < 3:
             return False
         
+        # ===== 2단계: 언어별 전문 검증 =====
         if lang == 'ko':
-            return self.is_valid_korean_text(text)
+            return self.is_valid_korean_text(text)          # 한국어 전용 검증
         else:  # 영어
-            return self.is_valid_english_text(text)
+            return self.is_valid_english_text(text)         # 영어 전용 검증
 
+    # 한국어 텍스트 전용 유효성 검증 메서드
+    # Args:
+    #     text: 검증할 한국어 텍스트
+    # Returns:
+    #     bool: 한국어 텍스트 유효성 여부
     def is_valid_korean_text(self, text: str) -> bool:
-        """한국어 텍스트의 유효성을 검증하는 메서드"""
+        # ===== 1단계: 기본 길이 검증 =====
         if not text or len(text.strip()) < 3:
             logging.info(f"한국어 검증 실패: 텍스트가 너무 짧음 (길이: {len(text.strip()) if text else 0})")
             return False
         
-        korean_chars = len(re.findall(r'[가-힣]', text))
-        total_chars = len(re.sub(r'\s', '', text))
+        # ===== 2단계: 한국어 문자 비율 계산 =====
+        korean_chars = len(re.findall(r'[가-힣]', text))       # 한글 문자 개수
+        total_chars = len(re.sub(r'\s', '', text))             # 공백 제외 전체 문자
         
         if total_chars == 0:
             logging.info("한국어 검증 실패: 총 글자 수가 0")
@@ -44,19 +62,19 @@ class QualityValidator:
         korean_ratio = korean_chars / total_chars
         logging.info(f"한국어 비율: {korean_ratio:.3f} (한국어: {korean_chars}, 전체: {total_chars})")
         
-        # 한국어 비율 기준을 완화 (0.2 → 0.1)
+        # ===== 3단계: 한국어 비율 기준 검사 (완화된 기준 10%) =====
         if korean_ratio < 0.1:
             logging.info(f"한국어 검증 실패: 한국어 비율 부족 ({korean_ratio:.3f} < 0.1)")
             return False
         
-        # 무의미한 패턴 감지 (GPT 할루시네이션 방지)
+        # ===== 4단계: GPT 할루시네이션 방지 - 무의미한 패턴 감지 =====
         meaningless_patterns = [
-            r'^[a-z\s\.,;:\(\)\[\]\-_&\/\'"]+$', # 영어
-            r'^[A-Z\s\.,;:\(\)\[\]\-_&\/\'"]+$', # 영어 대문자
-            r'^[\s\.,;:\(\)\[\]\-_&\/\'"]+$',    # 공백
-            r'^[0-9\s\.,;:\(\)\[\]\-_&\/\'"]+$', # 숫자
-            r'.*[а-я].*',                        # 러시아어
-            r'.*[α-ω].*',                        # 그리스어
+            r'^[a-z\s\.,;:\(\)\[\]\-_&\/\'"]+$',             # 순수 영어 소문자
+            r'^[A-Z\s\.,;:\(\)\[\]\-_&\/\'"]+$',             # 순수 영어 대문자
+            r'^[\s\.,;:\(\)\[\]\-_&\/\'"]+$',                # 공백/기호만
+            r'^[0-9\s\.,;:\(\)\[\]\-_&\/\'"]+$',             # 숫자/기호만
+            r'.*[а-я].*',                                    # 러시아어 문자
+            r'.*[α-ω].*',                                    # 그리스어 문자
         ]
         
         for pattern in meaningless_patterns:
@@ -64,73 +82,94 @@ class QualityValidator:
                 logging.info(f"한국어 검증 실패: 무의미한 패턴 감지")
                 return False
         
-        # 반복 문자 감지: 같은 문자가 5번 이상 연속으로 나타나면 비정상 텍스트로 간주
+        # ===== 5단계: 반복 문자 오류 감지 =====
+        # 같은 문자가 5번 이상 연속으로 나타나면 비정상 텍스트로 간주
         if re.search(r'(.)\1{5,}', text):
             logging.info("한국어 검증 실패: 반복 문자 감지")
             return False
         
-        # 영어 비율 검사를 완화 (0.5 → 0.7)
-        random_pattern = r'[a-zA-Z]{8,}'
+        # ===== 6단계: 영어 단어 길이 검사 (GPT 오류 방지) =====
+        # 긴 영어 단어가 있으면서 한국어 비율이 낮으면 오류로 판단
+        random_pattern = r'[a-zA-Z]{8,}'                     # 8자 이상 영어 단어
         if re.search(random_pattern, text) and korean_ratio < 0.3:
             logging.info(f"한국어 검증 실패: 긴 영어 단어와 낮은 한국어 비율")
             return False
         
+        # ===== 7단계: 검증 완료 =====
         logging.info("한국어 검증 성공")
         return True
 
+    # 영어 텍스트 전용 유효성 검증 메서드
+    # Args:
+    #     text: 검증할 영어 텍스트
+    # Returns:
+    #     bool: 영어 텍스트 유효성 여부
     def is_valid_english_text(self, text: str) -> bool:
-        """영어 텍스트의 유효성을 검증하는 메서드"""
+        # ===== 1단계: 기본 길이 검증 =====
         if not text or len(text.strip()) < 3:
             return False
         
-        english_chars = len(re.findall(r'[a-zA-Z]', text))
-        total_chars = len(re.sub(r'\s', '', text))
+        # ===== 2단계: 영어 문자 비율 계산 =====
+        english_chars = len(re.findall(r'[a-zA-Z]', text))    # 영문 문자 개수
+        total_chars = len(re.sub(r'\s', '', text))            # 공백 제외 전체 문자
         
         if total_chars == 0:
             return False
             
         english_ratio = english_chars / total_chars
         
+        # ===== 3단계: 영어 비율 기준 검사 (70% 이상) =====
         if english_ratio < 0.7:  # 영어 비율이 70% 미만이면 무효
             return False
         
-        # 반복 문자 감지
+        # ===== 4단계: 반복 문자 오류 감지 =====
         if re.search(r'(.)\1{5,}', text):
             return False
         
+        # ===== 5단계: 검증 완료 =====
         return True
 
+    # AI 생성 답변의 완성도와 유용성을 종합 평가하는 메서드
+    # Args:
+    #     answer: 검증할 AI 생성 답변
+    #     query: 원본 사용자 질문
+    #     lang: 언어 코드
+    # Returns:
+    #     float: 답변 완성도 점수 (0.0 ~ 1.0)
     def check_answer_completeness(self, answer: str, query: str, lang: str = 'ko') -> float:
-        """생성된 답변의 완성도와 유용성을 평가"""
-        
         try:
-            # 1. 기본 길이 검사
+            # ===== 1단계: 기본 길이 검사 =====
             if len(answer.strip()) < 10:
                 return 0.0
                 
-            # 2. 실질적 내용 비율 검사
+            # ===== 2단계: 실질적 내용 비율 검사 =====
+            # 인사말, 끝맺음말 등을 제외한 순수 정보 비율 계산
             meaningful_content_ratio = self.calculate_meaningful_content_ratio(answer, lang)
             
-            # 3. 질문-답변 관련성 키워드 매칭
+            # ===== 3단계: 질문-답변 관련성 키워드 매칭 =====
+            # 질문과 답변에서 공통 키워드 추출하여 관련성 측정
             query_keywords = set(self.text_processor.extract_keywords(query.lower()))
             answer_keywords = set(self.text_processor.extract_keywords(answer.lower()))
             keyword_overlap = len(query_keywords & answer_keywords)
             keyword_relevance = keyword_overlap / max(len(query_keywords), 1) if query_keywords else 0.5
             
-            # 4. 답변 완결성 검사 (문장이 완성되어 있는지)
+            # ===== 4단계: 답변 완결성 검사 =====
+            # 문장이 완성되어 있는지, 중도에 끊기지 않았는지 확인
             completeness_score = self.check_sentence_completeness(answer, lang)
             
-            # 5. 구체성 검사 (구체적인 정보가 포함되어 있는지)
+            # ===== 5단계: 구체성 검사 =====
+            # 구체적인 정보가 포함되어 있는지, 빈 약속만 하지 않는지 확인
             specificity_score = self.check_answer_specificity(answer, query, lang)
             
-            # 6. 종합 점수 계산 (가중 평균)
+            # ===== 6단계: 종합 점수 계산 (가중 평균) =====
             final_score = (
-                meaningful_content_ratio * 0.3 +    # 의미있는 내용 비율
-                keyword_relevance * 0.25 +          # 키워드 관련성
-                completeness_score * 0.25 +         # 문장 완결성
-                specificity_score * 0.2             # 구체성
+                meaningful_content_ratio * 0.3 +    # 의미있는 내용 비율 (30%)
+                keyword_relevance * 0.25 +          # 키워드 관련성 (25%)
+                completeness_score * 0.25 +         # 문장 완결성 (25%)
+                specificity_score * 0.2             # 구체성 (20%)
             )
             
+            # ===== 7단계: 상세 로깅 및 결과 반환 =====
             logging.info(f"답변 완성도 분석: 내용비율={meaningful_content_ratio:.2f}, "
                         f"키워드관련성={keyword_relevance:.2f}, 완결성={completeness_score:.2f}, "
                         f"구체성={specificity_score:.2f}, 최종점수={final_score:.2f}")
@@ -138,55 +177,62 @@ class QualityValidator:
             return min(final_score, 1.0)
             
         except Exception as e:
+            # ===== 예외 처리: 검증 실패시 중간값 반환 =====
             logging.error(f"답변 완성도 검증 실패: {e}")
             return 0.5  # 오류시 중간값 반환
 
+    # 텍스트에서 의미있는 실제 내용의 비율을 계산하는 메서드
+    # Args:
+    #     text: 분석할 텍스트
+    #     lang: 언어 코드
+    # Returns:
+    #     float: 의미있는 내용 비율 (0.0 ~ 1.0)
     def calculate_meaningful_content_ratio(self, text: str, lang: str = 'ko') -> float:
-        """텍스트에서 의미있는 내용의 비율을 계산"""
-        
+        # ===== 1단계: 기본 유효성 검사 =====
         if not text:
             return 0.0
             
-        # HTML 태그 제거
+        # ===== 2단계: HTML 태그 제거 =====
         clean_text = re.sub(r'<[^>]+>', '', text)
         
+        # ===== 3단계: 언어별 불용구 패턴 정의 =====
         if lang == 'ko':
-            # 한국어 불용구 제거
+            # 한국어 인사말/끝맺음말 패턴
             filler_patterns = [
-                r'안녕하세요[^.]*\.',
-                r'감사[드립]*니다[^.]*\.',
-                r'평안하세요[^.]*\.',
-                r'주님\s*안에서[^.]*\.',
-                r'바이블\s*애플[^.]*\.',
-                r'GOODTV[^.]*\.',
-                r'문의[해주셔서]*\s*감사[^.]*\.',
-                r'안내[해]*드리겠습니다[^.]*\.',
-                r'도움이\s*[되]*[시]*[길]*[바라]*[며]*[^.]*\.',
-                r'항상[^.]*바이블\s*애플[^.]*\.'
+                r'안녕하세요[^.]*\.',                              # 인사말
+                r'감사[드립]*니다[^.]*\.',                         # 감사 인사
+                r'평안하세요[^.]*\.',                              # 마무리 인사
+                r'주님\s*안에서[^.]*\.',                           # 종교적 인사
+                r'바이블\s*애플[^.]*\.',                           # 앱 이름 언급
+                r'GOODTV[^.]*\.',                                # 회사명 언급
+                r'문의[해주셔서]*\s*감사[^.]*\.',                   # 문의 감사
+                r'안내[해]*드리겠습니다[^.]*\.',                    # 안내 약속
+                r'도움이\s*[되]*[시]*[길]*[바라]*[며]*[^.]*\.',      # 도움 희망
+                r'항상[^.]*바이블\s*애플[^.]*\.'                   # 마무리 멘트
             ]
         else:
-            # 영어 불용구 제거
+            # 영어 인사말/끝맺음말 패턴
             filler_patterns = [
-                r'Hello[^.]*\.',
-                r'Thank you[^.]*\.',
-                r'Best regards[^.]*\.',
-                r'God bless[^.]*\.',
-                r'Bible App[^.]*\.',
-                r'GOODTV[^.]*\.',
-                r'We will[^.]*\.',
-                r'Please contact[^.]*\.'
+                r'Hello[^.]*\.',                                  # 인사말
+                r'Thank you[^.]*\.',                              # 감사 인사
+                r'Best regards[^.]*\.',                           # 마무리 인사
+                r'God bless[^.]*\.',                              # 종교적 인사
+                r'Bible App[^.]*\.',                              # 앱 이름 언급
+                r'GOODTV[^.]*\.',                                # 회사명 언급
+                r'We will[^.]*\.',                                # 약속 표현
+                r'Please contact[^.]*\.'                          # 연락 요청
             ]
         
-        # 불용구 제거
+        # ===== 4단계: 불용구 제거 =====
         for pattern in filler_patterns:
             clean_text = re.sub(pattern, '', clean_text, flags=re.IGNORECASE)
         
-        # 공백 정리
+        # ===== 5단계: 공백 정리 =====
         clean_text = re.sub(r'\s+', ' ', clean_text).strip()
         
-        # 의미있는 내용 비율 계산
-        original_length = len(re.sub(r'<[^>]+>', '', text).strip())
-        meaningful_length = len(clean_text)
+        # ===== 6단계: 의미있는 내용 비율 계산 =====
+        original_length = len(re.sub(r'<[^>]+>', '', text).strip())    # 원본 길이
+        meaningful_length = len(clean_text)                             # 정제 후 길이
         
         if original_length == 0:
             return 0.0
@@ -417,64 +463,75 @@ class QualityValidator:
         
         return 0.5  # 기본값
 
+    # AI 생성 답변에서 할루시네이션과 일관성 문제를 종합 감지하는 메서드
+    # Args:
+    #     answer: 검증할 AI 생성 답변
+    #     query: 원본 사용자 질문
+    #     lang: 언어 코드
+    # Returns:
+    #     dict: 감지된 문제들과 전체 점수
     def detect_hallucination_and_inconsistency(self, answer: str, query: str, lang: str = 'ko') -> dict:
-        """생성된 답변에서 할루시네이션과 일관성 문제를 감지"""
-        
+        # ===== 1단계: 검증 결과 구조 초기화 =====
         issues = {
-            'external_app_recommendation': False,
-            'bible_app_domain_violation': False,
-            'content_inconsistency': False,
-            'translation_switching': False,
-            'invalid_features': False,
-            'overall_score': 1.0,
-            'detected_issues': []
+            'external_app_recommendation': False,           # 외부 앱 추천 감지
+            'bible_app_domain_violation': False,           # 도메인 위반 감지
+            'content_inconsistency': False,                # 내용 일관성 문제
+            'translation_switching': False,                # 번역본 변경 문제
+            'invalid_features': False,                     # 존재하지 않는 기능 안내
+            'overall_score': 1.0,                         # 전체 점수 (1.0 = 완벽)
+            'detected_issues': []                          # 감지된 문제 목록
         }
         
+        # ===== 2단계: 기본 유효성 검사 =====
         if not answer:
             return issues
         
-        # HTML 태그 제거하여 순수 텍스트로 분석
+        # ===== 3단계: 텍스트 정제 (HTML 태그 제거) =====
         clean_answer = re.sub(r'<[^>]+>', '', answer)
         clean_query = re.sub(r'<[^>]+>', '', query)
         
         if lang == 'ko':
-            # 1. 외부 앱 추천 감지 (치명적)
+            # ===== 4단계: 외부 앱 추천 감지 (치명적 오류) =====
             external_app_patterns = [
-                r'Parallel\s*Bible',
-                r'병렬\s*성경\s*앱',
-                r'다른\s*앱을?\s*(다운로드|설치)',
-                r'앱\s*스토어에서\s*(검색|다운로드)',
-                r'구글\s*플레이\s*스토어',
-                r'외부\s*(앱|어플리케이션)',
-                r'별도[의]*\s*(앱|어플)',
-                r'추가로\s*(앱을|어플을)\s*설치'
+                r'Parallel\s*Bible',                           # 외부 성경 앱명
+                r'병렬\s*성경\s*앱',                             # 외부 앱 언급
+                r'다른\s*앱을?\s*(다운로드|설치)',                # 다른 앱 설치 유도
+                r'앱\s*스토어에서\s*(검색|다운로드)',             # 앱스토어 유도
+                r'구글\s*플레이\s*스토어',                       # 외부 스토어 언급
+                r'외부\s*(앱|어플리케이션)',                     # 명시적 외부 앱
+                r'별도[의]*\s*(앱|어플)',                       # 별도 앱 언급
+                r'추가로\s*(앱을|어플을)\s*설치'                 # 추가 앱 설치 유도
             ]
             
             for pattern in external_app_patterns:
                 if re.search(pattern, clean_answer, re.IGNORECASE):
                     issues['external_app_recommendation'] = True
                     issues['detected_issues'].append(f"외부 앱 추천 감지: {pattern}")
-                    issues['overall_score'] -= 0.8  # 매우 심각한 감점
+                    issues['overall_score'] -= 0.8  # 매우 심각한 감점 (80% 감점)
             
-            # 2. 번역본 변경/교체 감지 (질문 vs 답변)
+            # ===== 5단계: 번역본 변경/교체 감지 (일관성 위반) =====
+            # 질문에서 언급한 번역본이 답변에서 다른 번역본으로 바뀌면 문제
             query_translations = self.text_processor.extract_translations_from_text(clean_query)
             answer_translations = self.text_processor.extract_translations_from_text(clean_answer)
             
             if query_translations and answer_translations:
-                # 질문에서 언급한 번역본이 답변에서 다른 번역본으로 바뀌었는지 확인
+                # 질문과 답변의 번역본 집합 비교
                 query_set = set(query_translations)
                 answer_set = set(answer_translations)
                 
                 # 질문에 없던 번역본이 답변에 추가되었는지 확인
                 unexpected_translations = answer_set - query_set
                 if unexpected_translations:
-                    # 완전히 다른 번역본(예: 개역한글 → 영문성경)은 금지
+                    # 언어 계열이 완전히 다른 번역본 변경은 금지
+                    # 예: 개역한글(한국어) → NIV(영어) 변경
                     problematic = False
                     for trans in unexpected_translations:
+                        # 영어 번역본으로 변경 (원래 질문은 한국어 번역본)
                         if any(forbidden in trans.lower() for forbidden in ['영어', 'english', 'niv', 'kjv', 'esv']) and \
                            not any(allowed in q_trans.lower() for q_trans in query_translations for allowed in ['영어', 'english', 'niv', 'kjv', 'esv']):
                             problematic = True
                             break
+                        # 한국어 번역본으로 변경 (원래 질문은 영어 번역본)
                         elif any(forbidden in trans.lower() for forbidden in ['한글', '개역', 'korean']) and \
                              not any(allowed in q_trans.lower() for q_trans in query_translations for allowed in ['한글', '개역', 'korean']):
                             problematic = True
@@ -483,30 +540,33 @@ class QualityValidator:
                     if problematic:
                         issues['translation_switching'] = True
                         issues['detected_issues'].append(f"번역본 변경: {query_translations} → {list(unexpected_translations)}")
-                        issues['overall_score'] -= 0.7
+                        issues['overall_score'] -= 0.7  # 심각한 감점 (70% 감점)
         
-        # 3. 존재하지 않는 기능 안내 감지 (치명적)
+        # ===== 6단계: 존재하지 않는 기능 안내 감지 (치명적 오류) =====
+        # 실제 앱에 없는 기능을 안내하는 경우를 감지
         invalid_feature_result = self._detect_non_existent_features(clean_answer, clean_query, lang)
         if invalid_feature_result:
             issues['invalid_features'] = True
             issues['detected_issues'].append("존재하지 않는 기능에 대한 잘못된 안내 감지")
-            issues['overall_score'] -= 0.9  # 매우 심각한 감점
+            issues['overall_score'] -= 0.9  # 매우 심각한 감점 (90% 감점)
         else:
             issues['invalid_features'] = False
         
-        # 최종 점수 정규화
-        issues['overall_score'] = max(issues['overall_score'], 0.0)
+        # ===== 7단계: 최종 점수 정규화 및 안전장치 =====
+        issues['overall_score'] = max(issues['overall_score'], 0.0)  # 음수 방지
         
-        # 심각한 문제가 하나라도 있으면 전체 점수를 매우 낮게
+        # ===== 8단계: 치명적 문제 종합 평가 =====
+        # 하나라도 치명적 문제가 있으면 전체 점수를 매우 낮게 설정
         critical_issues = [
-            issues['external_app_recommendation'],
-            issues['translation_switching'],
-            issues['invalid_features']
+            issues['external_app_recommendation'],         # 외부 앱 추천
+            issues['translation_switching'],              # 번역본 무단 변경
+            issues['invalid_features']                    # 존재하지 않는 기능 안내
         ]
         
         if any(critical_issues):
-            issues['overall_score'] = min(issues['overall_score'], 0.1)
+            issues['overall_score'] = min(issues['overall_score'], 0.1)  # 최대 10%만 허용
         
+        # ===== 9단계: 검증 결과 로깅 및 반환 =====
         logging.info(f"할루시네이션 검증 결과: 점수={issues['overall_score']:.2f}, 문제={len(issues['detected_issues'])}개")
         
         return issues
@@ -586,11 +646,19 @@ class QualityValidator:
         
         return False
 
+    # GPT를 활용한 AI 답변 관련성 엄격 검증 메서드
+    # Args:
+    #     answer: 검증할 AI 생성 답변
+    #     query: 원본 사용자 질문
+    #     question_analysis: 질문 분석 결과
+    # Returns:
+    #     bool: 답변이 질문과 관련성이 있는지 여부
     def validate_answer_relevance_ai(self, answer: str, query: str, question_analysis: dict) -> bool:
-        """AI를 이용해 생성된 답변이 질문과 관련성이 있는지 엄격하게 검증"""
-        
         try:
+            # ===== 메모리 최적화 컨텍스트 시작 =====
             with memory_cleanup():
+                # ===== 1단계: GPT 시스템 프롬프트 구성 =====
+                # 답변-질문 일치도를 엄격하게 평가하는 전문가 역할 부여
                 system_prompt = """당신은 답변 품질 검증 전문가입니다.
 생성된 답변이 고객의 질문에 적절히 대응하는지 엄격하게 평가하세요.
 
@@ -608,6 +676,7 @@ class QualityValidator:
 
 결과: "relevant" 또는 "irrelevant" 중 하나만 반환하세요."""
 
+                # ===== 2단계: 사용자 프롬프트 구성 (상세 분석 정보 포함) =====
                 user_prompt = f"""질문 분석:
 의도: {question_analysis.get('intent_type', 'N/A')}
 주제: {question_analysis.get('main_topic', 'N/A')}
@@ -621,18 +690,21 @@ class QualityValidator:
 ⚠️ 특히 주의: 질문의 행동유형과 답변에서 다루는 행동이 다르면 "irrelevant"입니다.
 이 답변이 질문에 적절한지 엄격하게 평가해주세요."""
 
+                # ===== 3단계: GPT API 호출 (관련성 검증) =====
                 response = self.openai_client.chat.completions.create(
                     model='gpt-3.5-turbo',
                     messages=[
                         {"role": "system", "content": system_prompt},
                         {"role": "user", "content": user_prompt}
                     ],
-                    max_tokens=30,
-                    temperature=0.1
+                    max_tokens=30,                              # 짧은 답변 (relevant/irrelevant)
+                    temperature=0.1                             # 일관성 중시 (낮은 창의성)
                 )
                 
+                # ===== 4단계: GPT 응답 분석 및 결과 판정 =====
                 result = response.choices[0].message.content.strip().lower()
                 
+                # "relevant"가 포함되고 "irrelevant"가 없으면 관련성 있음
                 is_relevant = 'relevant' in result and 'irrelevant' not in result
                 
                 logging.info(f"AI 답변 관련성 검증: {result} -> {is_relevant}")
@@ -640,12 +712,15 @@ class QualityValidator:
                 return is_relevant
                 
         except Exception as e:
+            # ===== 예외 처리: GPT 실패시 폴백 로직 =====
             logging.error(f"AI 답변 관련성 검증 실패: {e}")
-            # 폴백: 기본적인 키워드 매칭
+            
+            # 기본적인 키워드 매칭으로 폴백
             query_keywords = set(self.text_processor.extract_keywords(query.lower()))
             answer_keywords = set(self.text_processor.extract_keywords(answer.lower()))
             
             keyword_overlap = len(query_keywords & answer_keywords)
             keyword_relevance = keyword_overlap / max(len(query_keywords), 1)
             
-            return keyword_relevance >= 0.2  # 20% 이상 키워드 일치시 관련성 있음으로 판단
+            # 20% 이상 키워드 일치시 관련성 있음으로 판단
+            return keyword_relevance >= 0.2
