@@ -202,6 +202,26 @@ Important: Do not include greetings or closings. Only write the main content."""
                 approach = context_analysis['recommended_approach']
                 context = self.create_enhanced_context(similar_answers, target_lang=lang)
                 
+                # ===== 🔍 참고답변 컨텍스트 디버그 출력 =====
+                print("="*80)
+                print("🔍 [DEBUG] GPT에 전달되는 참고답변 컨텍스트:")
+                print("="*80)
+                print(context)
+                print("="*80)
+                
+                # 디버그 파일에도 저장 (EC2에서 쉽게 확인 가능)
+                try:
+                    with open('/home/ec2-user/python/debug_context.txt', 'w', encoding='utf-8') as f:
+                        f.write("GPT에 전달되는 참고답변 컨텍스트:\n")
+                        f.write("="*80 + "\n")
+                        f.write(f"질문: {query}\n")
+                        f.write("="*80 + "\n")
+                        f.write(context)
+                        f.write("\n" + "="*80 + "\n")
+                    print("🔍 [DEBUG] 컨텍스트가 /home/ec2-user/python/debug_context.txt 파일에 저장되었습니다.")
+                except Exception as e:
+                    print(f"🔍 [DEBUG] 파일 저장 실패: {e}")
+                
                 # 컨텍스트 유효성 검증
                 if not context:
                     logging.warning("유효한 컨텍스트가 없어 GPT 생성 중단")
@@ -209,6 +229,29 @@ Important: Do not include greetings or closings. Only write the main content."""
                 
                 # 2단계: 언어별 프롬프트 생성
                 system_prompt, user_prompt = self.get_gpt_prompts(query, context, lang)
+                
+                # ===== 🔍 전체 프롬프트 디버그 출력 =====
+                print("\n" + "="*80)
+                print("🔍 [DEBUG] GPT에 전달되는 전체 프롬프트:")
+                print("="*80)
+                print("📋 [SYSTEM PROMPT]:")
+                print(system_prompt[:500] + "..." if len(system_prompt) > 500 else system_prompt)
+                print("\n📝 [USER PROMPT]:")
+                print(user_prompt)
+                print("="*80)
+                
+                # 프롬프트도 파일에 추가 저장
+                try:
+                    with open('/home/ec2-user/python/debug_context.txt', 'a', encoding='utf-8') as f:
+                        f.write("\n\n전체 프롬프트 정보:\n")
+                        f.write("="*80 + "\n")
+                        f.write("SYSTEM PROMPT:\n")
+                        f.write(system_prompt + "\n\n")
+                        f.write("USER PROMPT:\n")
+                        f.write(user_prompt + "\n")
+                        f.write("="*80 + "\n")
+                except Exception as e:
+                    print(f"🔍 [DEBUG] 프롬프트 파일 저장 실패: {e}")
                 
                 # 3단계: 접근 방식에 따른 GPT 파라미터 설정
                 if approach == 'gpt_with_strong_context':
@@ -240,11 +283,39 @@ Important: Do not include greetings or closings. Only write the main content."""
                     )
                     
                     # 5단계: 응답 추출 및 정리
-                    generated = response.choices[0].message.content.strip()
+                    original_response = response.choices[0].message.content.strip()
+                    generated = original_response
                     del response  # 메모리 해제
+                    
+                    # ===== 🔍 GPT 응답 디버그 출력 =====
+                    print("\n" + "="*80)
+                    print("🤖 [DEBUG] GPT 원본 응답:")
+                    print("="*80)
+                    print(original_response)
+                    print("="*80)
                     
                     # 텍스트 후처리 (불필요한 문구 제거 등)
                     generated = self.text_processor.clean_generated_text(generated)
+                    
+                    # ===== 🔍 후처리된 응답 디버그 출력 =====
+                    print("\n" + "="*80)
+                    print("✨ [DEBUG] 후처리된 최종 응답:")
+                    print("="*80)
+                    print(generated)
+                    print("="*80)
+                    
+                    # GPT 응답도 파일에 저장
+                    try:
+                        with open('/home/ec2-user/python/debug_context.txt', 'a', encoding='utf-8') as f:
+                            f.write(f"\n\nGPT 원본 응답 (시도 #{attempt+1}):\n")
+                            f.write("="*80 + "\n")
+                            f.write(original_response)
+                            f.write(f"\n\n후처리된 최종 응답:\n")
+                            f.write("="*80 + "\n")
+                            f.write(generated)
+                            f.write("\n" + "="*80 + "\n")
+                    except Exception as e:
+                        print(f"🔍 [DEBUG] GPT 응답 파일 저장 실패: {e}")
                     
                     # 6단계: 품질 검증 (최소 길이 체크)
                     if len(generated.strip()) >= 20:

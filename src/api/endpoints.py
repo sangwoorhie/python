@@ -32,7 +32,7 @@ def create_endpoints(app: Flask, generator, sync_manager, index):
                 data = request.get_json()
                 seq = data.get('seq', 0)                    # 시퀀스 ID (기본값: 0)
                 question = data.get('question', '')         # 사용자 질문
-                lang = data.get('lang', 'auto')             # 언어 설정 (자동 감지)
+                lang = data.get('lang', 'auto')             # 언어 설정 (자동 감지) 프론트엔드에서 받을 수 있음, 기본값 'auto'
                 
                 # 2단계: 필수 데이터 검증
                 if not question:

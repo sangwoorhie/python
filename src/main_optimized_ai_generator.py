@@ -7,9 +7,11 @@
 
 import re
 import logging
+import time
 from memory_profiler import profile
 from typing import Dict, List, Optional
 import numpy as np
+from langdetect import detect, LangDetectException
 
 # 기존 모듈들
 from src.utils.text_preprocessor import TextPreprocessor
@@ -106,12 +108,41 @@ class OptimizedAIAnswerGenerator:
     # ================================
 
     def detect_language(self, text: str) -> str:
-        """언어 감지 (캐싱 적용)"""
-        # 간단한 룰 기반 감지 (빠름)
-        korean_chars = len(re.findall(r'[가-힣]', text))
-        english_chars = len(re.findall(r'[a-zA-Z]', text))
-        
-        return 'ko' if korean_chars > english_chars else 'en'
+        """언어 감지 (langdetect 기반 - 정확한 언어 패턴 분석)"""
+        try:
+            # ===== 1단계: langdetect 라이브러리를 사용한 자동 언어 감지 =====
+            detected = detect(text)
+            
+            # ===== 2단계: 지원 언어 검증 (한국어/영어만 지원) =====
+            if detected == 'ko':
+                return 'ko'                                   # 한국어로 감지됨
+            elif detected == 'en':
+                return 'en'                                   # 영어로 감지됨
+            else:
+                # 기타 언어는 기본값(한국어)으로 처리
+                return 'ko'
+                
+        except LangDetectException as e:
+            logging.warning(f"langdetect 언어 감지 실패: {e}, 폴백 로직 사용")
+            
+            # ===== 3단계: 감지 실패시 개선된 문자 비율 기반 폴백 로직 =====
+            # 기본 문자 카운트
+            korean_chars = len(re.findall(r'[가-힣]', text))
+            english_chars = len(re.findall(r'[a-zA-Z]', text))
+            
+            # 한국어 문법 패턴 가중치 (조사, 어미 등)
+            korean_particles = len(re.findall(r'[을를이가에서로과와의도만까지부터께서에게한테]', text))
+            korean_endings = len(re.findall(r'습니다|세요|어요|겠어요|았어요|었어요|하게|주세요', text))
+            
+            # 가중치 적용한 점수 계산
+            korean_score = korean_chars + (korean_particles * 2) + (korean_endings * 3)
+            english_score = english_chars
+            
+            # 문자 수 비교로 언어 판단 (개선된 버전)
+            if korean_score > english_score:
+                return 'ko'                                   # 한국어로 판단
+            else:
+                return 'en'                                   # 영어로 판단
 
     def preprocess_text(self, text: str) -> str:
         """텍스트 전처리 (기존 호환)"""
@@ -503,7 +534,6 @@ class OptimizedAIAnswerGenerator:
 
     def process(self, seq: int, question: str, lang: str) -> dict:
         """최적화된 메인 처리 메서드"""
-        import time
         start_time = time.time()
         
         try:
@@ -591,7 +621,6 @@ class OptimizedAIAnswerGenerator:
             if not query_embedding:
                 return similar_answers
             
-            import numpy as np
             q_vec = np.array(query_embedding)
             filtered = []
             
@@ -667,19 +696,19 @@ class OptimizedAIAnswerGenerator:
         """프로덕션 환경 최적화 설정"""
         # API 관리자 최적화
         self.api_manager.optimize_settings(
-            enable_smart_caching=True,
-            enable_batch_processing=True,
-            min_batch_size=3,
-            max_wait_time=1.5,
-            cache_hit_bonus=0.9
+            enable_smart_caching=True, # 캐싱 활성화
+            enable_batch_processing=True, # 배치 처리 활성화
+            min_batch_size=3, # 최소 배치 크기
+            max_wait_time=1.5, # 최대 대기 시간
+            cache_hit_bonus=0.9 # 캐시 히트 보너스
         )
         
         # 검색 서비스 최적화
         self.search_service.update_search_config(
-            adaptive_layer_count=True,
-            early_termination=True,
-            similarity_threshold=0.8,
-            enable_result_caching=True
+            adaptive_layer_count=True, # 동적 레이어 카운트 활성화
+            early_termination=True, # 조기 종료 활성화
+            similarity_threshold=0.8, # 유사도 임계값
+            enable_result_caching=True # 결과 캐싱 활성화
         )
         
         logging.info("프로덕션 최적화 설정 적용 완료")
