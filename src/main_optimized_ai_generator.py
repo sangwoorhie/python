@@ -19,6 +19,7 @@ from src.utils.memory_manager import memory_cleanup
 from src.models.answer_generator import AnswerGenerator
 from src.services.quality_validator import QualityValidator
 from src.services.sync_service import SyncService
+from src.utils.unified_text_analyzer import UnifiedTextAnalyzer
 
 # 최적화 모듈들
 from src.utils.cache_manager import CacheManager
@@ -45,7 +46,6 @@ class OptimizedAIAnswerGenerator:
         self._initialize_optimization_system(redis_config) # ← REDIS_CONFIG 사용
         
         # 4단계: AI 모델 컴포넌트 초기화
-        from src.utils.unified_text_analyzer import UnifiedTextAnalyzer
         self.unified_analyzer = UnifiedTextAnalyzer(openai_client)
         self.answer_generator = AnswerGenerator(openai_client)
         
