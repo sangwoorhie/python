@@ -64,10 +64,10 @@ class OptimizedAIAnswerGenerator:
         
         # 7단계: 성능 모니터링 초기화
         self.performance_stats = {
-            'total_requests': 0,
-            'cache_hit_rate': 0.0,
-            'avg_processing_time': 0.0,
-            'api_calls_saved': 0
+            'total_requests': 0, # 총 요청 수
+            'cache_hit_rate': 0.0, # 캐시 히트율
+            'avg_processing_time': 0.0, # 평균 처리 시간
+            'api_calls_saved': 0 # 절약된 API 호출 수
         }
         
         logging.info("최적화된 AI 답변 생성기 초기화 완료")
@@ -530,6 +530,7 @@ class OptimizedAIAnswerGenerator:
                 if lang == 'ko' or lang == 'auto':
                     corrected_text, intent_analysis = self.unified_analyzer.analyze_and_correct(processed_question)
                     processed_question = corrected_text
+                    
                     # 의도 분석 결과를 임시 저장 (검색 단계에서 재사용)
                     self._cached_intent_analysis = intent_analysis
                     if processed_question != question:
@@ -569,7 +570,7 @@ class OptimizedAIAnswerGenerator:
                     "answer": ai_answer,
                     "similar_count": len(similar_answers),
                     "embedding_model": "text-embedding-3-small",
-                    "generation_model": "gpt-4o",
+                    "generation_model": "gpt-5-mini",
                     "detected_language": lang,
                     "processing_time": processing_time,
                     "optimization_stats": self.get_optimization_summary()

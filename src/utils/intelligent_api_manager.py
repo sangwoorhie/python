@@ -493,7 +493,7 @@ class IntelligentAPIManager:
         
         # ===== GPT API 호출 =====
         response = self.openai_client.chat.completions.create(
-            model='gpt-4o',
+            model='gpt-5-mini',
             messages=[
                 {"role": "system", "content": system_prompt},
                 {"role": "user", "content": text}

@@ -22,7 +22,7 @@ class AnswerGenerator:
     def __init__(self, openai_client):
         self.openai_client = openai_client                # OpenAI API 클라이언트
         self.text_processor = TextPreprocessor()          # 텍스트 전처리 도구
-        self.gpt_model = 'gpt-4o'                        # 사용할 GPT 모델
+        self.gpt_model = 'gpt-5-mini'                        # 사용할 GPT 모델
     
     # 언어별 GPT 프롬프트 생성 - 한국어/영어 지원
     # Args:
@@ -562,7 +562,7 @@ Important: Do not include greetings or closings. Only write the main content."""
             
             # ===== 3단계: GPT API 호출로 번역 실행 =====
             response = self.openai_client.chat.completions.create(
-                model='gpt-4o',
+                model='gpt-5-mini',
                 messages=[
                     {"role": "system", "content": system_prompt},
                     {"role": "user", "content": text}

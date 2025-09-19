@@ -692,7 +692,7 @@ class QualityValidator:
 
                 # ===== 3단계: GPT API 호출 (관련성 검증) =====
                 response = self.openai_client.chat.completions.create(
-                    model='gpt-4o',
+                    model='gpt-5-mini',
                     messages=[
                         {"role": "system", "content": system_prompt},
                         {"role": "user", "content": user_prompt}

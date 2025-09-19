@@ -16,18 +16,15 @@ class UnifiedTextAnalyzer:
     
     def __init__(self, openai_client):
         self.openai_client = openai_client
-        self.model = 'gpt-4o'
+        self.model = 'gpt-5-mini'
     
+    # 한 번의 GPT 호출로 오타 수정과 의도 분석을 동시에 수행    
+    # Args:
+    #     text: 분석할 텍스트
+    # Returns:
+    #     Tuple[str, Dict]: (수정된_텍스트, 의도_분석_결과)
     def analyze_and_correct(self, text: str) -> Tuple[str, Dict]:
-        """
-        한 번의 GPT 호출로 오타 수정과 의도 분석을 동시에 수행
-        
-        Args:
-            text: 분석할 텍스트
-            
-        Returns:
-            Tuple[str, Dict]: (수정된_텍스트, 의도_분석_결과)
-        """
+
         try:
             with memory_cleanup():
                 # 통합 시스템 프롬프트
