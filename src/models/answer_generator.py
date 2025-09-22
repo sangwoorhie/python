@@ -272,11 +272,11 @@ Important: Do not include greetings or closings. Only write the main content."""
                 if approach == 'gpt_with_strong_context':
                     # 강한 컨텍스트: 낮은 temperature로 일관성 확보
                     temperature = 0.3 if context_analysis.get('context_relevance') == 'high' else 0.4
-                    max_tokens = 700
+                    max_completion_tokens = 700
                 elif approach == 'gpt_with_weak_context':
                     # 약한 컨텍스트: 적당한 창의성 허용
                     temperature = 0.4
-                    max_tokens = 650
+                    max_completion_tokens = 650
                 else: # fallback이나 기타 - 생성 중단
                     return ""
                 
@@ -290,7 +290,7 @@ Important: Do not include greetings or closings. Only write the main content."""
                             {"role": "system", "content": system_prompt},
                             {"role": "user", "content": user_prompt}
                         ],
-                        max_tokens=max_tokens,
+                        max_completion_tokens=max_completion_tokens,
                         temperature=temperature,
                         top_p=0.9,                    # 다양성 제어
                         frequency_penalty=0.1,        # 반복 방지
@@ -567,7 +567,7 @@ Important: Do not include greetings or closings. Only write the main content."""
                     {"role": "system", "content": system_prompt},
                     {"role": "user", "content": text}
                 ],
-                max_tokens=600,              # 충분한 번역 길이 허용
+                max_completion_tokens=600,              # 충분한 번역 길이 허용
                 temperature=0.5              # 일관성과 창의성 균형
             )
             

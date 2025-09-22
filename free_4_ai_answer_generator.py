@@ -80,7 +80,7 @@ app = Flask(__name__)
 
 # 루트 로거 가져오기 및 로그 레벨 설정
 logger = logging.getLogger()
-logger.setLevel(logging.INFO)  # INFO 레벨 이상의 로그만 출력 (DEBUG 제외)
+logger.setLevel(logging.DEBUG)  
 
 # 로그 포맷 정의: 시간, 레벨, 메시지 순서로 출력
 # 예시: 2024-09-18 15:30:25,123 - INFO - 서버 시작됨
