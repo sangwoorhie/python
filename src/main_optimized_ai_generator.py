@@ -12,6 +12,7 @@ from memory_profiler import profile
 from typing import Dict, List, Optional
 import numpy as np
 from langdetect import detect, LangDetectException
+import json
 
 # 기존 모듈들
 from src.utils.text_preprocessor import TextPreprocessor
@@ -532,6 +533,18 @@ class OptimizedAIAnswerGenerator:
                     corrected_text, intent_analysis = self.unified_analyzer.analyze_and_correct(processed_question)
                     processed_question = corrected_text
                     
+                    print("="*80)
+                    print("🔍 [통합 분석 결과]")
+                    print(f"원본 질문: {processed_question}")
+                    print(f"수정된 질문: {corrected_text}")
+                    print(f"의도 분석 JSON: {json.dumps(intent_analysis, ensure_ascii=False, indent=2)}")
+                    print("="*80)
+                    
+                    # 로그 파일에도 기록
+                    logging.info(f"통합 분석 - 원본: {processed_question}")
+                    logging.info(f"통합 분석 - 수정: {corrected_text}")
+                    logging.info(f"통합 분석 - 의도: {json.dumps(intent_analysis, ensure_ascii=False)}")
+
                     # 의도 분석 결과를 임시 저장 (검색 단계에서 재사용)
                     self._cached_intent_analysis = intent_analysis
                     if processed_question != question:
