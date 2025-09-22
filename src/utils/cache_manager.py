@@ -40,11 +40,21 @@ class CacheManager:
             )
             
             # ===== 2단계: Redis 연결 테스트 =====
-            self.redis_client.ping()
+            try:
+                pong = self.redis_client.ping()
+                logging.info(f"Redis 연결 성공: PONG={pong}, 비밀번호 사용됨={bool(redis_password)}")
+            except redis.exceptions.AuthenticationError as auth_err:
+                logging.error(f"Redis 인증 실패: {auth_err} - 비밀번호 확인 필요")
+                raise
+            except redis.exceptions.ConnectionError as conn_err:
+                logging.error(f"Redis 연결 실패: {conn_err} - 호스트/포트 확인 필요")
+                raise
+            
+            # ===== 3단계: 초기화 완료 로깅 =====
             logging.info("Redis 캐시 연결 성공")
             
         except Exception as e:
-            # ===== 3단계: Redis 연결 실패시 메모리 캐시 폴백 =====
+            # ===== 4단계: Redis 연결 실패시 메모리 캐시 폴백 =====
             logging.warning(f"Redis 연결 실패, 메모리 캐시로 폴백: {e}")
             self.redis_client = None                 # Redis 클라이언트 비활성화
             self._memory_cache = {}                  # 인메모리 캐시 딕셔너리 초기화
@@ -469,7 +479,7 @@ class CacheManager:
         try:
             if self.redis_client:
                 # ===== Redis keyspace 통계로 히트 비율 계산 =====
-                info = self.redis_client.info()
+                info = self.redis_client.info()             # Redis 서버 정보 조회
                 hits = info.get('keyspace_hits', 0)        # 캐시 히트 횟수
                 misses = info.get('keyspace_misses', 0)     # 캐시 미스 횟수
                 total = hits + misses                       # 총 요청 수

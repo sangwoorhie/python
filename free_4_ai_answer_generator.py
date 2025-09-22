@@ -144,6 +144,10 @@ REDIS_CONFIG = {
     'password': os.getenv('REDIS_PASSWORD')              # Redis 비밀번호 (있는 경우)
 }
 
+# REDIS_CONFIG 출력으로 비밀번호 불러오기 확인 (디버깅용)
+print("REDIS_CONFIG:", {k: v for k, v in REDIS_CONFIG.items() if k != 'password'})  # 비밀번호 제외 출력
+print("REDIS_PASSWORD:", REDIS_CONFIG['password'])  # 비밀번호 별도 출력 (보안상 프로덕션에서 제거 추천)
+
 # 고객 문의 카테고리 매핑 테이블
 # 📋 도메인 지식: 성경 앱의 고객 문의 유형 분류
 # 역할: 고객 문의를 적절한 카테고리로 분류하여 답변 품질 향상
