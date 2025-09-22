@@ -67,7 +67,7 @@ class UnifiedTextAnalyzer:
                         {"role": "system", "content": system_prompt},
                         {"role": "user", "content": user_prompt}
                     ],
-                    max_tokens=600,
+                    max_completion_tokens=600,
                     temperature=0.1  # 일관성 중시
                 )
                 
@@ -110,7 +110,7 @@ class UnifiedTextAnalyzer:
                     logging.info(f"수정된 텍스트: {corrected_text}")
                     logging.info(f"의도 분석: {json.dumps(intent_analysis, ensure_ascii=False, indent=2)}")
                     logging.info("="*60)
-                    
+
                     return corrected_text, intent_analysis
                     
                 except json.JSONDecodeError:
