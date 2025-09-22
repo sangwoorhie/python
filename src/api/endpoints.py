@@ -52,11 +52,6 @@ def create_endpoints(app: Flask, generator, sync_manager, index):
                 top_stats = snapshot.statistics('lineno')
                 memory_usage = sum(stat.size for stat in top_stats) / 1024 / 1024  # MB 단위 변환
                 logging.info(f"현재 메모리 사용량: {memory_usage:.2f}MB")
-                
-                # 메모리 사용량이 임계치(500MB) 초과시 가비지 컬렉션 실행
-                if memory_usage > 500:
-                    logging.warning(f"높은 메모리 사용량 감지: {memory_usage:.2f}MB")
-                    gc.collect()  # 강제 가비지 컬렉션
 
                 return response
             

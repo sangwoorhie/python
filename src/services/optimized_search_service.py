@@ -206,7 +206,7 @@ class OptimizedSearchService:
         # Layer 1: 원본 질문 (필수 레이어 - 가장 높은 가중치)
         search_layers.append({
             'query': query,
-            'weight': 1.0,                                    # 최고 가중치
+            'weight': 1.0,  # 최고 가중치
             'type': 'original',
             'priority': 1
         })
