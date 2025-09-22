@@ -105,22 +105,34 @@ class CacheManager:
         try:
             # ===== 1단계: 캐시 키 생성 =====
             cache_key = self._generate_cache_key("embedding", text)
+            logging.info(f"임베딩 캐시 조회 시작: 키={cache_key}, 텍스트={text[:50]}...")  # 조회 시작 로그 추가
             
             # ===== 2단계: Redis 캐시 조회 =====
             if self.redis_client:
-                cached_data = self.redis_client.get(cache_key)
-                if cached_data:
-                    # 2-1: 바이너리 데이터를 임베딩 벡터로 역직렬화
-                    embedding = self._deserialize_data(cached_data)
-                    logging.info(f"임베딩 캐시 히트: {text[:50]}...")
-                    return embedding
+                try:
+                    cached_data = self.redis_client.get(cache_key)
+                    if cached_data:
+                        # 2-1: 바이너리 데이터를 임베딩 벡터로 역직렬화
+                        embedding = self._deserialize_data(cached_data)
+                        logging.info(f"임베딩 캐시 히트 (Redis): 키={cache_key}, 길이={len(embedding)}")
+                        return embedding
+                    else:
+                        logging.info(f"임베딩 캐시 미스 (Redis): 키={cache_key}")  # 미스 로그 추가
+                except Exception as redis_err:
+                    logging.error(f"Redis 조회 실패: {redis_err} - 메모리 폴백으로 전환")
             else:
-                # ===== 3단계: 메모리 캐시 폴백 조회 =====
-                if cache_key in self._memory_cache:
-                    logging.info(f"메모리 임베딩 캐시 히트: {text[:50]}...")
-                    return self._memory_cache[cache_key]
+                logging.info("Redis 클라이언트 없음 - 메모리 캐시 폴백 사용")  # 폴백 이유 로그 추가
+            
+            # ===== 3단계: 메모리 캐시 폴백 조회 =====
+            if cache_key in self._memory_cache:
+                embedding = self._memory_cache[cache_key]
+                logging.info(f"임베딩 캐시 히트 (Memory): 키={cache_key}, 길이={len(embedding)}")
+                return embedding
+            else:
+                logging.info(f"임베딩 캐시 미스 (Memory): 키={cache_key}")  # 미스 로그 추가
             
             # ===== 4단계: 캐시 미스 =====
+            logging.info("임베딩 캐시 전체 미스 - 새로 생성 필요")
             return None
             
         except Exception as e:
