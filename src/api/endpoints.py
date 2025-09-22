@@ -36,6 +36,13 @@ def create_endpoints(app: Flask, generator, sync_manager, index):
                 question = data.get('question', '')         # 사용자 질문
                 lang = data.get('lang', 'auto')             # 언어 설정 (자동 감지) 프론트엔드에서 받을 수 있음, 기본값 'auto'
                 
+                # 🔍 추가 로그
+                logging.info(f"=== API 요청 수신 ===")
+                logging.info(f"SEQ: {seq}")
+                logging.info(f"질문: {question}")
+                logging.info(f"언어: {lang}")
+                logging.info(f"사용된 generator 타입: {type(generator).__name__}")
+
                 # 2단계: 필수 데이터 검증
                 if not question:
                     return jsonify({"success": False, "error": "질문이 필요합니다."}), 400
@@ -45,6 +52,11 @@ def create_endpoints(app: Flask, generator, sync_manager, index):
                 # - T5 모델로 최종 답변 생성
                 result = generator.process(seq, question, lang)
                 
+                # 🔍 결과 로그
+                logging.info(f"=== 처리 결과 ===")
+                logging.info(f"성공 여부: {result.get('success', False)}")
+                logging.info(f"답변 길이: {len(result.get('answer', ''))}")
+
                 # 4단계: 응답 준비 (UTF-8 인코딩 설정)
                 response = jsonify(result)
                 response.headers['Content-Type'] = 'application/json; charset=utf-8'
