@@ -22,6 +22,8 @@ def create_endpoints(app: Flask, generator, sync_manager, index):
     CORS(app)
     
     # ===== 1. AI 답변 생성 API 엔드포인트 =====
+    # ☆ 1. 사용자 질문 입력 (/generate_answer 엔드포인트)
+    # POST요청 수신, JSON 데이터에서 seq, question, lang 파싱
     @app.route('/generate_answer', methods=['POST'])
     def generate_answer():
         """AI 답변 생성 API 엔드포인트 - 메인 기능"""

@@ -76,8 +76,8 @@ class UnifiedTextAnalyzer:
                 try:
                     # JSON 파싱
                     result = json.loads(result_text)
-                    corrected_text = result.get('corrected_text', text)
-                    intent_analysis = result.get('intent_analysis', {})
+                    corrected_text = result.get('corrected_text', text) # 오타 수정된 텍스트
+                    intent_analysis = result.get('intent_analysis', {}) # 의도 분석 결과
                     
                     # 기존 호환성을 위한 필드 추가
                     intent_analysis.update({

@@ -23,6 +23,8 @@ class TextPreprocessor:
         self.MAX_TEXT_LENGTH = 8000  # 최대 텍스트 길이 제한 (AI API 호환성)
     
     # 입력 텍스트를 AI 처리에 적합하게 전처리하는 메서드
+    # ☆ 실제 전처리 메서드
+    # HTML 태그 제거, 앱 이름 통일, 공백 정규화
     def preprocess_text(self, text: str) -> str:
         # 1단계: 입력 텍스트 유효성 검사 및 로깅
         logging.info(f"전처리 시작: 입력 길이={len(text) if text else 0}")

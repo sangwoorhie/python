@@ -514,9 +514,10 @@ class OptimizedAIAnswerGenerator:
             else:
                 return "<p>안녕하세요, GOODTV 바이블 애플입니다.</p><p><br></p><p>바이블 애플을 이용해 주셔서 진심으로 감사드립니다.</p><p><br></p><p>남겨주신 문의는 현재 담당자가 직접 확인하고 있습니다.</p><p><br></p><p>성도님께 도움이 될 수 있도록 내용을 꼼꼼히 살펴보고 정확하고 구체적인 답변을 준비하겠습니다.</p><p><br></p><p>답변은 최대 하루 이내에 드릴 예정이오니 조금만 기다려 주시면 감사하겠습니다.</p><p><br></p><p>항상 주님 안에서 평안하세요, 감사합니다.</p>"
 
+    # ☆ 2. 기본 전처리 메서드
     def process(self, seq: int, question: str, lang: str) -> dict:
         """최적화된 메인 처리 메서드"""
-        start_time = time.time()
+        start_time = time.time() # 현재 시간을 타임스탬프로 기록하는 코드
         
         try:
             with memory_cleanup():
