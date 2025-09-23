@@ -603,8 +603,8 @@ class OptimizedAIAnswerGenerator:
                 
                 # 7. 다층 검색 계획 수립
                 search_plan = self.search_service._create_search_plan(processed_question, intent_analysis)
-                layer_summary = [f'{l["type"]} (w={l["weight"]})' for l in search_plan["layers"]]  # 수정: 별도 변수
-                logging.info(f"7. 검색 계획: {len(search_plan['layers'])} 레이어 생성 ({', '.join(layer_summary)})")
+                # layer_summary = [f'{l["type"]} (w={l["weight"]})' for l in search_plan["layers"]]  # 수정: 별도 변수
+                # logging.info(f"7. 검색 계획: {len(search_plan['layers'])} 레이어 생성 ({', '.join(layer_summary)})")
     
                 # 8. 임베딩 배치 생성
                 embedding_requests = [{'layer_index': i, 'query': layer['query']} for i, layer in enumerate(search_plan['layers'])]
