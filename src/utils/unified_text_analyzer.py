@@ -138,55 +138,55 @@ class UnifiedTextAnalyzer:
             logging.error(f"통합 텍스트 분석 실패: {e}")
             return text, self._get_default_intent_analysis(text)
 
-def _parse_text_response(self, response_text: str, original_text: str) -> Tuple[str, Dict]:
-    """텍스트 응답을 파싱하여 의도 분석 결과 추출"""
-    try:
-        # 기본값 설정
-        corrected_text = original_text
-        intent_analysis = {
-            "core_intent": "general_inquiry",
-            "intent_category": "일반문의",
-            "primary_action": "기타",
-            "target_object": "기타",
-            "constraint_conditions": [],
-            "standardized_query": original_text,
-            "semantic_keywords": [original_text[:20]],
-            "intent_type": "일반문의",
-            "main_topic": "기타",
-            "specific_request": original_text[:100],
-            "keywords": [original_text[:20]],
-            "urgency": "medium",
-            "action_type": "기타"
-        }
-        
-        # 텍스트에서 키워드 추출 시도
-        if "오타" in response_text or "수정" in response_text:
-            # 오타 수정이 있는 경우
-            lines = response_text.split('\n')
-            for line in lines:
-                if "수정된" in line or "corrected" in line.lower():
-                    corrected_text = line.split(':')[-1].strip() if ':' in line else line.strip()
-                    break
-        
-        # 의도 분석 키워드 추출
-        if "의도" in response_text or "intent" in response_text.lower():
-            lines = response_text.split('\n')
-            for line in lines:
-                if "핵심" in line or "core" in line.lower():
-                    intent_analysis["core_intent"] = line.split(':')[-1].strip() if ':' in line else "general_inquiry"
-                elif "행동" in line or "action" in line.lower():
-                    intent_analysis["primary_action"] = line.split(':')[-1].strip() if ':' in line else "기타"
-                elif "대상" in line or "target" in line.lower():
-                    intent_analysis["target_object"] = line.split(':')[-1].strip() if ':' in line else "기타"
-        
-        logging.info(f"텍스트 파싱 결과 - 수정된 텍스트: '{corrected_text}'")
-        logging.info(f"텍스트 파싱 결과 - 의도 분석: {json.dumps(intent_analysis, ensure_ascii=False)}")
-        
-        return corrected_text, intent_analysis
-        
-    except Exception as e:
-        logging.error(f"텍스트 파싱 실패: {e}")
-        return original_text, self._get_default_intent_analysis(original_text)
+    def _parse_text_response(self, response_text: str, original_text: str) -> Tuple[str, Dict]:
+        """텍스트 응답을 파싱하여 의도 분석 결과 추출"""
+        try:
+            # 기본값 설정
+            corrected_text = original_text
+            intent_analysis = {
+                "core_intent": "general_inquiry",
+                "intent_category": "일반문의",
+                "primary_action": "기타",
+                "target_object": "기타",
+                "constraint_conditions": [],
+                "standardized_query": original_text,
+                "semantic_keywords": [original_text[:20]],
+                "intent_type": "일반문의",
+                "main_topic": "기타",
+                "specific_request": original_text[:100],
+                "keywords": [original_text[:20]],
+                "urgency": "medium",
+                "action_type": "기타"
+            }
+            
+            # 텍스트에서 키워드 추출 시도
+            if "오타" in response_text or "수정" in response_text:
+                # 오타 수정이 있는 경우
+                lines = response_text.split('\n')
+                for line in lines:
+                    if "수정된" in line or "corrected" in line.lower():
+                        corrected_text = line.split(':')[-1].strip() if ':' in line else line.strip()
+                        break
+            
+            # 의도 분석 키워드 추출
+            if "의도" in response_text or "intent" in response_text.lower():
+                lines = response_text.split('\n')
+                for line in lines:
+                    if "핵심" in line or "core" in line.lower():
+                        intent_analysis["core_intent"] = line.split(':')[-1].strip() if ':' in line else "general_inquiry"
+                    elif "행동" in line or "action" in line.lower():
+                        intent_analysis["primary_action"] = line.split(':')[-1].strip() if ':' in line else "기타"
+                    elif "대상" in line or "target" in line.lower():
+                        intent_analysis["target_object"] = line.split(':')[-1].strip() if ':' in line else "기타"
+            
+            logging.info(f"텍스트 파싱 결과 - 수정된 텍스트: '{corrected_text}'")
+            logging.info(f"텍스트 파싱 결과 - 의도 분석: {json.dumps(intent_analysis, ensure_ascii=False)}")
+            
+            return corrected_text, intent_analysis
+            
+        except Exception as e:
+            logging.error(f"텍스트 파싱 실패: {e}")
+            return original_text, self._get_default_intent_analysis(original_text)
     
     def _get_default_intent_analysis(self, text: str) -> Dict:
         """분석 실패시 기본 의도 분석 결과"""
