@@ -401,6 +401,7 @@ class CacheManager:
             # 동일 질문이라도 검색 파라미터가 다르면 다른 결과를 생성
             cache_data = f"{query}:{json.dumps(search_params, sort_keys=True)}"
             cache_key = self._generate_cache_key("search", cache_data)
+            logging.info(f"캐시 조회 시작: 검색 결과, 키={cache_key}, 쿼리={query[:50]}...")
             
             # ===== 2단계: Redis 캐시 조회 =====
             if self.redis_client:
@@ -408,13 +409,26 @@ class CacheManager:
                 if cached_data:
                     # 2-1: 바이너리 데이터를 검색 결과 리스트로 역직렬화
                     search_results = self._deserialize_data(cached_data)
-                    logging.info(f"검색 결과 캐시 히트: {query[:50]}...")
+                    if search_results:
+                        top_result = search_results[0]
+                        logging.info(f"검색 결과 캐시 히트 (Redis): 키={cache_key}, 결과 수={len(search_results)}, 상위 점수={top_result.get('score', 'N/A'):.3f}, 상위 질문={top_result.get('question', 'N/A')[:50]}...")
+                    else:
+                        logging.info(f"검색 결과 캐시 히트 (Redis): 키={cache_key}, 빈 결과")
                     return search_results
             else:
                 # ===== 3단계: 메모리 캐시 폴백 조회 =====
                 if cache_key in self._memory_cache:
-                    logging.info(f"메모리 검색 결과 캐시 히트: {query[:50]}...")
-                    return self._memory_cache[cache_key]
+                    search_results = self._memory_cache[cache_key]
+                    if search_results:
+                        top_result = search_results[0]
+                        logging.info(f"검색 결과 캐시 히트 (Memory): 키={cache_key}, 결과 수={len(search_results)}, 상위 점수={top_result.get('score', 'N/A'):.3f}, 상위 질문={top_result.get('question', 'N/A')[:50]}...")
+                    else:
+                        logging.info(f"검색 결과 캐시 히트 (Memory): 키={cache_key}, 빈 결과")
+                    return search_results
+                else:
+                    logging.info(f"검색 결과 캐시 미스 (Memory): 키={cache_key}")
+            
+            logging.info("검색 결과 캐시 전체 미스 - 새 검색 필요")
             
             # ===== 4단계: 캐시 미스 =====
             return None
