@@ -580,6 +580,12 @@ class OptimizedSearchService:
                 intent_analysis, question, answer
             )
             
+            # 🔍 의도 관련성 계산 상세 로그
+            logging.info(f"🔍 의도 관련성 계산:")
+            logging.info(f"   └── 사용자 의도: {intent_analysis.get('core_intent', 'N/A')}")
+            logging.info(f"   └── 기존 질문: {question[:80]}...")
+            logging.info(f"   └── 의도 관련성 점수: {intent_relevance:.3f}")
+            
             # 개념 관련성 계산
             concept_relevance = self._calculate_concept_relevance(
                 query, key_concepts, question, answer
@@ -589,6 +595,13 @@ class OptimizedSearchService:
             final_score = (adjusted_score * 0.6 + 
                         intent_relevance * 0.25 + 
                         concept_relevance * 0.15)
+            
+            # 🔍 최종 점수 계산 상세 로그
+            logging.info(f"🔍 최종 점수 계산:")
+            logging.info(f"   └── 벡터 유사도: {adjusted_score:.3f} × 0.6 = {adjusted_score * 0.6:.3f}")
+            logging.info(f"   └── 의도 관련성: {intent_relevance:.3f} × 0.25 = {intent_relevance * 0.25:.3f}")
+            logging.info(f"   └── 개념 관련성: {concept_relevance:.3f} × 0.15 = {concept_relevance * 0.15:.3f}")
+            logging.info(f"   └── 최종 점수: {final_score:.3f}")
             
             # === dynamic_threshold 활용 부분 추가 ===
             # 동적 임계값 사용: final_score가 아닌 vector_score에 적용

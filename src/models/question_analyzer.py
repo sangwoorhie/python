@@ -207,7 +207,19 @@ class QuestionAnalyzer:
             
             # ===== 2단계: 참조 질문의 의도 분석 실행 =====
             ref_text = ref_question + ' ' + ref_answer
+                
+            # 🔍 실시간 의도 분석 시작 로그
+            logging.info(f"🔍 기존 답변 실시간 의도 분석 시작:")
+            logging.info(f"   └── 기존 질문: {ref_question[:80]}...")
+                
             ref_intent_analysis = self.analyze_question_intent(ref_question)
+                
+                # 🔍 실시간 의도 분석 결과 로그
+            logging.info(f"🔍 기존 답변 의도 분석 결과:")
+            logging.info(f"   └── 핵심 의도: {ref_intent_analysis.get('core_intent', 'N/A')}")
+            logging.info(f"   └── 주요 행동: {ref_intent_analysis.get('primary_action', 'N/A')}")
+            logging.info(f"   └── 대상 객체: {ref_intent_analysis.get('target_object', 'N/A')}")
+            logging.info(f"   └── 키워드: {ref_intent_analysis.get('semantic_keywords', [])}")
             
             ref_core_intent = ref_intent_analysis.get('core_intent', '')
             ref_primary_action = ref_intent_analysis.get('primary_action', '')
@@ -300,6 +312,16 @@ class QuestionAnalyzer:
             logging.debug(f"의도 유사성 분석: 의도={intent_match_score:.2f}, "
                          f"행동={action_match_score:.2f}, 객체={object_match_score:.2f}, "
                          f"키워드={keyword_match_score:.2f}, 전체={total_score:.2f}")
+            
+            # 🔍 의도 유사성 계산 상세 로그
+            logging.info(f"🔍 의도 유사성 계산 상세:")
+            logging.info(f"   └── 사용자 의도: {query_core_intent}")
+            logging.info(f"   └── 기존 답변 의도: {ref_core_intent}")
+            logging.info(f"   └── 의도 일치도: {intent_match_score:.3f} (40%)")
+            logging.info(f"   └── 행동 일치도: {action_match_score:.3f} (25%)")
+            logging.info(f"   └── 객체 일치도: {object_match_score:.3f} (20%)")
+            logging.info(f"   └── 키워드 일치도: {keyword_match_score:.3f} (15%)")
+            logging.info(f"   └── 최종 의도 관련성: {total_score:.3f}")
             
             return min(total_score, 1.0)  # 1.0을 초과하지 않도록 제한
             

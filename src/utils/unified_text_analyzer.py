@@ -110,10 +110,14 @@ class UnifiedTextAnalyzer:
                     intent_analysis = result.get('intent_analysis', {})
                     
                     # 🔍 디버그: 파싱된 결과 출력
-                    logging.info("📝 [파싱 결과]")
+                    logging.info("📝 [사용자 질문 의도 분석 결과]")
                     logging.info(f"입력 텍스트: {text}")
                     logging.info(f"수정된 텍스트: {corrected_text}")
-                    logging.info(f"의도 분석: {json.dumps(intent_analysis, ensure_ascii=False, indent=2)}")
+                    logging.info(f"핵심 의도: {intent_analysis.get('core_intent', 'N/A')}")
+                    logging.info(f"주요 행동: {intent_analysis.get('primary_action', 'N/A')}")
+                    logging.info(f"대상 객체: {intent_analysis.get('target_object', 'N/A')}")
+                    logging.info(f"의미론적 키워드: {intent_analysis.get('semantic_keywords', [])}")
+                    logging.info(f"전체 의도 분석: {json.dumps(intent_analysis, ensure_ascii=False, indent=2)}")
                     logging.info("="*60)
 
                     return corrected_text, intent_analysis
