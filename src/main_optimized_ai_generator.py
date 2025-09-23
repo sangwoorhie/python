@@ -592,71 +592,34 @@ class OptimizedAIAnswerGenerator:
                 search_time = time.time() - search_start
                 logging.info(f"5. 검색 완료: {len(similar_answers)}개 유사답변, 시간={search_time:.2f}s")
 
-                # 6. 검색 결과 캐시 확인
-                cache_key = self.cache_manager._generate_cache_key("search", f"{corrected_text}:{json.dumps({'top_k': 3, 'lang': lang})}")
-                similar_answers = self.search_similar_answers_with_cached_intent(corrected_text, intent_analysis, lang=lang)
-                if similar_answers and similar_answers.get('from_cache'):
-                    top_result = similar_answers[0] if similar_answers else {}
-                    logging.info(f"6. 캐시 확인: 검색 결과 캐시 히트, 키={cache_key}, 결과 수={len(similar_answers)}, 상위 점수={top_result.get('score', 'N/A'):.3f}, 상위 질문={top_result.get('question', 'N/A')[:50]}...")
-                else:
-                    logging.info(f"6. 캐시 확인: 검색 결과 캐시 미스, 키={cache_key}")
+                # 6-14단계: AI 답변 생성 (상세 로그 포함)
+                generation_start = time.time()
+                ai_answer = self.generate_ai_answer_with_detailed_logs(processed_question, similar_answers, lang)
+                generation_time = time.time() - generation_start
                 
-                # 7. 다층 검색 계획 수립
-                search_plan = self.search_service._create_search_plan(processed_question, intent_analysis)
-                # layer_summary = [f'{l["type"]} (w={l["weight"]})' for l in search_plan["layers"]]  # 수정: 별도 변수
-                # logging.info(f"7. 검색 계획: {len(search_plan['layers'])} 레이어 생성 ({', '.join(layer_summary)})")
-    
-                # 8. 임베딩 배치 생성
-                embedding_requests = [{'layer_index': i, 'query': layer['query']} for i, layer in enumerate(search_plan['layers'])]
-                embeddings = self.api_manager.get_embeddings_batch(embedding_requests)
-                logging.info(f"8. 임베딩 배치: {len(embeddings)}개 임베딩 생성, 배치 시간={self.api_manager.last_batch_time:.2f}s, 캐싱된 임베딩={self.api_manager.last_batch_cache_hits}개")
-                
-                # 9. Pinecone 벡터 검색
-                search_results = self.search_service._execute_optimized_search(search_plan, embeddings, top_k=3)
-                logging.info(f"9. Pinecone 검색: {[f'레이어{i+1} {len(r['results'])}개' for i, r in enumerate(search_results)]}, 조기 종료={search_plan.get('early_termination_enabled', False)}")
-                
-                # 10. 결과 후처리
-                final_results = self.search_service._postprocess_results(search_results, corrected_text, intent_analysis, top_k=3)
-                logging.info(f"10. 결과 후처리: {len(final_results)}개 필터링, 상위 점수={final_results[0]['score'] if final_results else 0:.3f}")
-                
-                # 11. 컨텍스트 품질 분석
-                context_analysis = self.analyze_context_quality(final_results, corrected_text)
-                logging.info(f"11. 컨텍스트 분석: recommended_approach='{context_analysis['recommended_approach']}'")
-                
-                # 12. GPT-4o로 최종 답변 생성
-                ai_answer = self.generate_ai_answer(corrected_text, final_results, lang)
-                logging.info(f"12. GPT 생성: API 호출 완료, 시간={self.last_gpt_time:.2f}s")
-                
-                # 13. 품질 검증 및 재생성
-                completeness = self.check_answer_completeness(ai_answer, corrected_text, lang)
-                hallucination = self.detect_hallucination_and_inconsistency(ai_answer, corrected_text, lang)
-                logging.info(f"13. 품질 검증: completeness={completeness:.2f}, hallucination_score={hallucination['overall_score']:.2f}, 재생성={completeness < 0.6 or hallucination['overall_score'] < 0.5}")
-                if completeness < 0.6 or hallucination['overall_score'] < 0.5:
-                    logging.info("13. 품질 검증: 재생성 수행")
-                    ai_answer = self.generate_ai_answer(corrected_text, final_results, lang)  # 재생성
-                
-                # 14. HTML 포맷팅 및 최종 반환
-                final_answer = self._format_answer_with_html_paragraphs(ai_answer, lang)
-                processing_time = time.time() - start_time
-                logging.info(f"14. HTML 포맷팅: 길이={len(final_answer)}자, 총 시간={processing_time:.2f}s")
-                
-                logging.info(f"처리 완료 - SEQ: {seq}, 언어: {lang}, 총 시간: {processing_time:.2f}s")
-                return {
+                logging.info(f"AI 답변 생성 완료: 길이={len(ai_answer)}자, 생성 시간={generation_time:.2f}s")
+
+                # 특수문자 정리
+                ai_answer = ai_answer.replace('"', '"').replace('"', '"')
+                ai_answer = ai_answer.replace(''', "'").replace(''', "'")
+
+                # 성능 통계 업데이트
+                total_time = time.time() - start_time
+                self._update_performance_stats(total_time)
+
+                result = {
                     "success": True,
-                    "answer": final_answer,
+                    "answer": ai_answer,
+                    "similar_count": len(similar_answers),
+                    "embedding_model": "text-embedding-3-small",
+                    "generation_model": "gpt-5-mini",
                     "detected_language": lang,
-                    "embedding_model": self.embedding_model,
-                    "generation_model": self.gpt_model,
-                    "optimization_stats": {
-                        "api_calls_saved": self.api_manager.api_calls_saved,
-                        "avg_processing_time": self.api_manager.avg_processing_time,
-                        "batch_processed": self.api_manager.batch_processed,
-                        "cache_hit_rate": self.cache_manager.get_cache_hit_rate(),
-                        "embedding_cache_size": self.cache_manager.get_embedding_cache_size()
-                    },
-                    "processing_time": processing_time,
-                    "similar_count": len(final_results)
+                    "processing_time": total_time,
+                    "optimization_stats": self.get_optimization_summary()
                 }
+
+                logging.info(f"처리 완료 - SEQ: {seq}, 언어: {lang}, 총 시간: {total_time:.2f}s")
+                return result
 
         except Exception as e:
             logging.error(f"처리 중 오류 - SEQ: {seq}, 오류: {str(e)}")
