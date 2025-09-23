@@ -30,6 +30,9 @@ class OptimizedSearchService:
         self.api_manager = api_manager                        # 캐싱/배치 API 관리자
         self.text_processor = TextPreprocessor()              # 텍스트 전처리 도구
         
+        # QuestionAnalyzer 초기화 (의도 관련성 계산용)
+        self._question_analyzer = QuestionAnalyzer(api_manager.openai_client)
+        
         # ===== 검색 최적화 설정 =====
         self.search_config = {
             'max_layers': 5,                                  # 최대 검색 레이어 수
@@ -133,6 +136,7 @@ class OptimizedSearchService:
                 
                 # ===== 3단계: 캐시된 의도 분석 활용 (API 호출 생략!) =====
                 intent_analysis = cached_intent  # 이미 수정된 의도 분석 사용
+                logging.info(f"🔍 캐시된 의도 분석 활용: {intent_analysis.get('core_intent', 'N/A')}")
                 
                 # ===== 4단계: 검색 레이어 계획 수립 =====
                 search_plan = self._create_search_plan(processed_query, intent_analysis)
@@ -151,7 +155,7 @@ class OptimizedSearchService:
                 
                 # ===== 8단계: 검색 완료 및 성능 로깅 =====
                 search_time = time.time() - search_start
-                logging.info(f"캐시된 의도 활용 검색 완료: {len(final_results)}개 결과, {search_time:.2f}s")
+                logging.info(f"🔍 캐시된 의도 활용 검색 완료: {len(final_results)}개 결과, {search_time:.2f}s")
                 
                 return final_results
                 
@@ -547,7 +551,7 @@ class OptimizedSearchService:
         print("="*80)
         
         if not search_results:
-            print("🔍 [SEARCH DEBUG] 검색 결과가 없어서 빈 리스트 반환")
+            logging.info("🔍 [SEARCH DEBUG] 검색 결과가 없어서 빈 리스트 반환")
             return []
         
         # 벡터 유사도 기반 동적 임계값 계산
@@ -565,20 +569,27 @@ class OptimizedSearchService:
         
         final_results = []
         
+        logging.info(f"🔍 검색 결과 후처리 시작: {len(search_results)}개 결과")
+        
         for i, match in enumerate(search_results[:top_k*2]):
             metadata = match.get('metadata', {})
             question = metadata.get('question', '')
             answer = metadata.get('answer', '')
             category = metadata.get('category', '일반')
             
+            logging.info(f"🔍 결과 #{i+1} 처리 시작: 질문='{question[:50]}...'")
+            
             # 기본 점수
             vector_score = match['score']
             adjusted_score = match['adjusted_score']
             
             # 의도 관련성 계산 (캐싱 적용)
+            logging.info(f"🔍 의도 관련성 계산 시작: 질문='{question[:50]}...'")
+            logging.info(f"🔍 사용자 의도 분석: {intent_analysis.get('core_intent', 'N/A')}")
             intent_relevance = self._calculate_intent_relevance_cached(
                 intent_analysis, question, answer
             )
+            logging.info(f"🔍 의도 관련성 계산 완료: {intent_relevance:.3f}")
             
             # 🔍 의도 관련성 계산 상세 로그
             logging.info(f"🔍 의도 관련성 계산:")
@@ -694,12 +705,15 @@ class OptimizedSearchService:
         try:
             # QuestionAnalyzer를 사용하되 캐싱 적용
             if not hasattr(self, '_question_analyzer'):
-                # 임시로 question analyzer 생성 (실제로는 의존성 주입)
+                logging.error("QuestionAnalyzer가 초기화되지 않음!")
                 return 0.5
             
-            return self._question_analyzer.calculate_intent_similarity(
+            logging.info(f"🔍 QuestionAnalyzer를 통한 의도 유사성 계산 시작")
+            result = self._question_analyzer.calculate_intent_similarity(
                 query_intent_analysis, ref_question, ref_answer
             )
+            logging.info(f"🔍 QuestionAnalyzer 계산 결과: {result:.3f}")
+            return result
         except Exception as e:
             logging.error(f"의도 유사성 계산 실패: {e}")
             return 0.3
