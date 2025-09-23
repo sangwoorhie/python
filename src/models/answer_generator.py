@@ -271,11 +271,11 @@ Important: Do not include greetings or closings. Only write the main content."""
                 # 3단계: 접근 방식에 따른 GPT 파라미터 설정
                 if approach == 'gpt_with_strong_context':
                     # 강한 컨텍스트: 낮은 temperature로 일관성 확보
-                    temperature = 0.3 if context_analysis.get('context_relevance') == 'high' else 0.4
+                    temperature = 1.0
                     max_completion_tokens = 700
                 elif approach == 'gpt_with_weak_context':
                     # 약한 컨텍스트: 적당한 창의성 허용
-                    temperature = 0.4
+                    temperature = 1.0
                     max_completion_tokens = 650
                 else: # fallback이나 기타 - 생성 중단
                     return ""
