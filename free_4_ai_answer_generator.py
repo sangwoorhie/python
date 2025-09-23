@@ -100,27 +100,25 @@ try:
     file_handler = logging.FileHandler('/home/ec2-user/python/logs/bible_app_ai.log', encoding='utf-8')
     file_handler.setLevel(logging.INFO)
     file_handler.setFormatter(formatter)
-    file_handler.stream.flush = lambda: file_handler.stream.flush() or sys.stdout.flush()
-    logger.addHandler(file_handler)
 
     # 콘솔 핸들러도 추가 (디버깅용)
     console_handler = logging.StreamHandler()
     console_handler.setLevel(logging.INFO)
     console_handler.setFormatter(formatter)
-    logger.addHandler(console_handler)
     
+    # 루트 로거 설정
+    logger = logging.getLogger()
+    logger.setLevel(logging.INFO)
+    logger.addHandler(file_handler)
+    logger.addHandler(console_handler)
+        
     print(f"✅ 로그 파일 설정 완료: /home/ec2-user/python/logs/bible_app_ai.log")
+    logging.info("=== 로그 시스템 초기화 완료 ===")
     
 except Exception as e:
     # 파일 로깅 실패시 콘솔 로깅으로 대체
     print(f"❌ 로그 파일 핸들러 생성 실패: {e}")
     print("📝 콘솔 로깅으로 대체합니다.")
-    
-    # 콘솔 핸들러 설정 (파일 로깅 실패시에만)
-    console_handler = logging.StreamHandler()
-    console_handler.setLevel(logging.INFO)
-    console_handler.setFormatter(formatter)
-    logger.addHandler(console_handler)
 
 # ==================================================
 # 4. 환경변수 로드 및 시스템 상수 정의
