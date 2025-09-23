@@ -69,7 +69,6 @@ tracemalloc.start()
 # 🌐 역할: HTTP 요청을 받고 응답하는 웹 서버의 핵심 객체
 # __name__ 파라미터: 현재 모듈명을 Flask에 전달 (템플릿, 정적 파일 경로 찾기용)
 app = Flask(__name__)
-logging.getLogger('werkzeug').setLevel(logging.ERROR)
 
 # ==================================================
 # 3. 로깅 시스템 설정 (통합 로그 파일)
@@ -79,46 +78,122 @@ logging.getLogger('werkzeug').setLevel(logging.ERROR)
 # - UTF-8 인코딩: 한글 로그 지원
 # - 로그 중복 방지: 파일 또는 콘솔 중 하나만 선택
 
-# 루트 로거 가져오기 및 로그 레벨 설정
-logger = logging.getLogger()
-logger.setLevel(logging.INFO)  
-
-# 기존 핸들러 모두 제거 (중복 방지)
-for handler in logger.handlers[:]:
-    logger.removeHandler(handler)
-
-# 로그 포맷 정의: 시간, 레벨, 메시지 순서로 출력
-# 예시: 2024-09-18 15:30:25,123 - INFO - 서버 시작됨
-formatter = logging.Formatter('%(asctime)s - %(levelname)s - %(message)s')
-
-# 통합 로그 파일 핸들러 설정
-try:
-    # AWS EC2 환경의 로그 디렉토리 생성 (없으면 자동 생성)
-    os.makedirs('/home/ec2-user/python/logs', exist_ok=True)
+def setup_logging():
+    """로깅 시스템 초기화 함수"""
+    # 모든 기존 핸들러 제거 (중복 방지)
+    root_logger = logging.getLogger()
+    root_logger.handlers.clear()
     
-    # 파일 핸들러 생성: UTF-8 인코딩으로 한글 지원
-    file_handler = logging.FileHandler('/home/ec2-user/python/logs/bible_app_ai.log', encoding='utf-8')
-    file_handler.setLevel(logging.INFO)
-    file_handler.setFormatter(formatter)
-
-    # 콘솔 핸들러도 추가 (디버깅용)
-    console_handler = logging.StreamHandler()
-    console_handler.setLevel(logging.INFO)
-    console_handler.setFormatter(formatter)
+    # 루트 로거 레벨 설정
+    root_logger.setLevel(logging.INFO)
     
-    # 루트 로거 설정
-    logger = logging.getLogger()
-    logger.setLevel(logging.INFO)
-    logger.addHandler(file_handler)
-    logger.addHandler(console_handler)
+    # 로그 포맷 정의: 시간, 레벨, 모듈명, 메시지 순서로 출력
+    formatter = logging.Formatter(
+        '%(asctime)s - %(levelname)s - %(name)s - %(message)s',
+        datefmt='%Y-%m-%d %H:%M:%S'
+    )
+    
+    # 더 상세한 포맷터 (디버깅용)
+    detailed_formatter = logging.Formatter(
+        '%(asctime)s - %(levelname)s - %(name)s - %(filename)s:%(lineno)d - %(message)s',
+        datefmt='%Y-%m-%d %H:%M:%S'
+    )
+    
+    try:
+        # AWS EC2 환경의 로그 디렉토리 생성 (없으면 자동 생성)
+        os.makedirs('/home/ec2-user/python/logs', exist_ok=True)
         
-    print(f"✅ 로그 파일 설정 완료: /home/ec2-user/python/logs/bible_app_ai.log")
-    logging.info("=== 로그 시스템 초기화 완료 ===")
-    
-except Exception as e:
-    # 파일 로깅 실패시 콘솔 로깅으로 대체
-    print(f"❌ 로그 파일 핸들러 생성 실패: {e}")
-    print("📝 콘솔 로깅으로 대체합니다.")
+        # 파일 핸들러 생성: UTF-8 인코딩으로 한글 지원
+        file_handler = logging.FileHandler('/home/ec2-user/python/logs/bible_app_ai.log', encoding='utf-8')
+        file_handler.setLevel(logging.INFO)
+        file_handler.setFormatter(detailed_formatter)  # 상세한 포맷터 사용
+        
+        # 콘솔 핸들러 생성 (디버깅용)
+        console_handler = logging.StreamHandler()
+        console_handler.setLevel(logging.INFO)
+        console_handler.setFormatter(formatter)
+        
+        # 루트 로거에 핸들러 추가
+        root_logger.addHandler(file_handler)
+        root_logger.addHandler(console_handler)
+        
+        # 모든 하위 로거들이 루트 로거를 사용하도록 설정
+        # 이렇게 하면 모든 모듈의 로그가 동일한 파일에 기록됩니다
+        src_loggers = [
+            'src', 'src.main_optimized_ai_generator', 'src.models', 
+            'src.services', 'src.utils', 'src.api'
+        ]
+        
+        for logger_name in src_loggers:
+            logger = logging.getLogger(logger_name)
+            logger.setLevel(logging.INFO)
+            # 하위 로거의 핸들러를 제거하고 propagate=True로 설정
+            logger.handlers.clear()
+            logger.propagate = True
+            logger.disabled = False
+        
+        # 추가 디버깅: 로거 설정 확인
+        print(f"🔍 루트 로거 레벨: {root_logger.level}")
+        print(f"🔍 루트 로거 핸들러 수: {len(root_logger.handlers)}")
+        for i, handler in enumerate(root_logger.handlers):
+            print(f"   핸들러 {i+1}: {type(handler).__name__}, 레벨: {handler.level}")
+        
+        # 각 모듈별 로거 설정 확인
+        for module_name in src_loggers:
+            module_logger = logging.getLogger(module_name)
+            print(f"🔍 {module_name} 로거 레벨: {module_logger.level}, 핸들러 수: {len(module_logger.handlers)}, propagate: {module_logger.propagate}")
+        
+        # Werkzeug 로거 레벨 조정 (Flask 관련 로그 억제)
+        logging.getLogger('werkzeug').setLevel(logging.WARNING)
+        
+        # 추가 로깅 테스트 (설정 완료 후)
+        logging.info("=== 로그 시스템 초기화 완료 ===")
+        logging.info("모든 모듈의 로그가 이 파일에 기록됩니다.")
+        
+        print(f"✅ 로그 파일 설정 완료: /home/ec2-user/python/logs/bible_app_ai.log")
+        
+        return True
+        
+    except Exception as e:
+        # 파일 로깅 실패시 콘솔 로깅으로 대체
+        print(f"❌ 로그 파일 핸들러 생성 실패: {e}")
+        print("📝 콘솔 로깅으로 대체합니다.")
+        
+        # 콘솔 핸들러만 추가
+        console_handler = logging.StreamHandler()
+        console_handler.setLevel(logging.INFO)
+        console_handler.setFormatter(formatter)
+        root_logger.addHandler(console_handler)
+        
+        return False
+
+# 로깅 시스템 초기화 실행
+setup_logging()
+
+# 로깅 테스트 (시스템 초기화 후 즉시 실행)
+logging.info("=== 로깅 시스템 테스트 시작 ===")
+logging.info("이 메시지가 보이면 로깅이 정상 작동합니다.")
+
+# 각 모듈별 로깅 테스트
+src_logger = logging.getLogger('src')
+src_logger.info("src 모듈 로깅 테스트")
+
+main_logger = logging.getLogger('src.main_optimized_ai_generator')
+main_logger.info("main_optimized_ai_generator 모듈 로깅 테스트")
+
+models_logger = logging.getLogger('src.models')
+models_logger.info("models 모듈 로깅 테스트")
+
+services_logger = logging.getLogger('src.services')
+services_logger.info("services 모듈 로깅 테스트")
+
+utils_logger = logging.getLogger('src.utils')
+utils_logger.info("utils 모듈 로깅 테스트")
+
+api_logger = logging.getLogger('src.api')
+api_logger.info("api 모듈 로깅 테스트")
+
+logging.info("=== 로깅 시스템 테스트 완료 ===")
 
 # ==================================================
 # 4. 환경변수 로드 및 시스템 상수 정의
@@ -365,19 +440,51 @@ if __name__ == "__main__":
     # 시스템 구성 요소별 헬스체크 (프로덕션 모니터링)
     # 🏥 역할: 서버 시작 전 모든 주요 시스템의 상태를 확인하여 문제 조기 발견
     
+    # 로깅 테스트 (시스템 초기화 후)
+    logging.info("=== 시스템 헬스체크 시작 ===")
+    
     # 캐시 시스템 상태 확인
     cache_available = generator.cache_manager.is_cache_available()
     cache_stats = generator.cache_manager.get_cache_stats()
     print(f"💾 캐싱 시스템: {'✅ 연결됨' if cache_available else '❌ 연결 실패'}")
     print(f"   └── 타입: {cache_stats.get('cache_type', 'Unknown')}")
+    logging.info(f"캐싱 시스템 상태: {'연결됨' if cache_available else '연결 실패'}, 타입: {cache_stats.get('cache_type', 'Unknown')}")
     
     # 배치 프로세서 상태 확인
     batch_running = generator.batch_processor.running
     print(f"⚡ 배치 프로세서: {'✅ 실행 중' if batch_running else '❌ 중지됨'}")
+    logging.info(f"배치 프로세서 상태: {'실행 중' if batch_running else '중지됨'}")
     
     # API 매니저 상태 확인
     api_health = generator.api_manager.health_check()
     print(f"🧠 API 관리자: {'✅ 정상' if api_health['openai_client_available'] else '❌ 오류'}")
+    logging.info(f"API 관리자 상태: {'정상' if api_health['openai_client_available'] else '오류'}")
+    
+    # 로깅 시스템 최종 테스트
+    logging.info("=== 로깅 시스템 최종 테스트 ===")
+    logging.info("이 메시지가 로그 파일에 기록되면 로깅이 정상 작동합니다.")
+    
+    # 각 모듈별 로깅 테스트 (실제 모듈에서 사용하는 로거들)
+    src_logger = logging.getLogger('src')
+    src_logger.info("src 모듈 로깅 테스트 - 실제 모듈에서 사용")
+    
+    main_logger = logging.getLogger('src.main_optimized_ai_generator')
+    main_logger.info("main_optimized_ai_generator 모듈 로깅 테스트 - 실제 모듈에서 사용")
+    
+    # 추가 로깅 테스트 (각 모듈별)
+    models_logger = logging.getLogger('src.models')
+    models_logger.info("models 모듈 로깅 테스트 - 실제 모듈에서 사용")
+    
+    services_logger = logging.getLogger('src.services')
+    services_logger.info("services 모듈 로깅 테스트 - 실제 모듈에서 사용")
+    
+    utils_logger = logging.getLogger('src.utils')
+    utils_logger.info("utils 모듈 로깅 테스트 - 실제 모듈에서 사용")
+    
+    api_logger = logging.getLogger('src.api')
+    api_logger.info("api 모듈 로깅 테스트 - 실제 모듈에서 사용")
+    
+    logging.info("=== 시스템 헬스체크 완료 ===")
     
     print("="*80)
     print("🎯 시스템 준비 완료! API 요청을 받을 준비가 되었습니다.")
