@@ -292,7 +292,6 @@ Important: Do not include greetings or closings. Only write the main content."""
                         ],
                         max_completion_tokens=max_completion_tokens,
                         temperature=temperature,
-                        top_p=0.9,                    # 다양성 제어
                         frequency_penalty=0.1,        # 반복 방지
                         presence_penalty=0.1          # 주제 일관성
                     )
