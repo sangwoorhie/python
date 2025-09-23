@@ -27,6 +27,9 @@ class UnifiedTextAnalyzer:
 
         try:
             with memory_cleanup():
+                # 분석 시작 로그
+                logging.info(f"통합 분석기 시작: 입력 텍스트='{text}'")
+
                 # 통합 시스템 프롬프트
                 system_prompt = """당신은 바이블 앱 문의 전문 분석가입니다.
 사용자의 질문에 대해 다음 두 가지 작업을 동시에 수행하세요:
@@ -72,6 +75,9 @@ class UnifiedTextAnalyzer:
                 )
                 
                 result_text = response.choices[0].message.content.strip()
+
+                # GPT 원본 응답 로그
+                logging.info(f"통합 분석 - GPT 원본 응답: {result_text}")
                 
                 try:
                     # JSON 파싱
@@ -89,17 +95,15 @@ class UnifiedTextAnalyzer:
                         'action_type': intent_analysis.get('primary_action', '기타')
                     })
                     
+                    # 상세 결과 로그
+                    logging.info(f"통합 분석 완료 - 수정된 텍스트: '{corrected_text}'")
+                    logging.info(f"통합 분석 완료 - 의도 분석: {json.dumps(intent_analysis, ensure_ascii=False)}")
+                
                     # 로깅
                     if corrected_text != text:
                         logging.info(f"통합 분석 - 오타 수정: '{text[:50]}...' → '{corrected_text[:50]}...'")
                     
                     logging.info(f"통합 분석 - 의도: {intent_analysis.get('core_intent', 'N/A')}")
-                    # 🔍 디버그: GPT 응답 전체 출력
-                    logging.info("="*60)
-                    logging.info("📊 [통합 분석 결과]")
-                    logging.info(f"입력 텍스트: {text}")
-                    logging.info(f"GPT 원본 응답: {result_text}")
-                    logging.info("="*60)
                     
                     result = json.loads(result_text)
                     corrected_text = result.get('corrected_text', text)
@@ -107,6 +111,7 @@ class UnifiedTextAnalyzer:
                     
                     # 🔍 디버그: 파싱된 결과 출력
                     logging.info("📝 [파싱 결과]")
+                    logging.info(f"입력 텍스트: {text}")
                     logging.info(f"수정된 텍스트: {corrected_text}")
                     logging.info(f"의도 분석: {json.dumps(intent_analysis, ensure_ascii=False, indent=2)}")
                     logging.info("="*60)

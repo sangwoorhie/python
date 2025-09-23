@@ -83,6 +83,10 @@ logging.getLogger('werkzeug').setLevel(logging.ERROR)
 logger = logging.getLogger()
 logger.setLevel(logging.INFO)  
 
+# 기존 핸들러 모두 제거 (중복 방지)
+for handler in logger.handlers[:]:
+    logger.removeHandler(handler)
+
 # 로그 포맷 정의: 시간, 레벨, 메시지 순서로 출력
 # 예시: 2024-09-18 15:30:25,123 - INFO - 서버 시작됨
 formatter = logging.Formatter('%(asctime)s - %(levelname)s - %(message)s')
@@ -96,7 +100,14 @@ try:
     file_handler = logging.FileHandler('/home/ec2-user/python/logs/bible_app_ai.log', encoding='utf-8')
     file_handler.setLevel(logging.INFO)
     file_handler.setFormatter(formatter)
+    file_handler.stream.flush = lambda: file_handler.stream.flush() or sys.stdout.flush()
     logger.addHandler(file_handler)
+
+    # 콘솔 핸들러도 추가 (디버깅용)
+    console_handler = logging.StreamHandler()
+    console_handler.setLevel(logging.INFO)
+    console_handler.setFormatter(formatter)
+    logger.addHandler(console_handler)
     
     print(f"✅ 로그 파일 설정 완료: /home/ec2-user/python/logs/bible_app_ai.log")
     

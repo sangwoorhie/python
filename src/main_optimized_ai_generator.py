@@ -522,37 +522,52 @@ class OptimizedAIAnswerGenerator:
         
         try:
             with memory_cleanup():
+                # === 처리 시작 로그 ===
+                logging.info(f"=== 처리 시작: seq={seq}, question='{question}', lang='{lang}' ===")
+                
                 # 성능 통계 업데이트
                 self.performance_stats['total_requests'] += 1
                 
-                # 1단계. 전처리
+                # 1단계: POST 요청 수신 로그
+                logging.info(f"1. POST /generate_answer: seq={seq}, question='{question}', lang='{lang}'")
+                
+                # 2단계: 전처리
+                preprocess_start = time.time()
                 processed_question = self.preprocess_text(question)
+                preprocess_time = time.time() - preprocess_start
+                logging.info(f"2. 전처리: '{question}' → '{processed_question}', 시간={preprocess_time:.3f}s")
 
-                # 2단계. 통합 분석 (오타 수정 + 의도 분석) - API 호출 1회로 통합
+                # 3단계: 통합 분석 (오타 수정 + 의도 분석)
+                analysis_start = time.time()
                 if lang == 'ko' or lang == 'auto':
+                    logging.info(f"통합 분석 시작: 텍스트='{processed_question}', lang='{lang}'")
+                    
                     corrected_text, intent_analysis = self.unified_analyzer.analyze_and_correct(processed_question)
                     processed_question = corrected_text
+                    analysis_time = time.time() - analysis_start
                     
-                    print("="*80)
-                    print("🔍 [통합 분석 결과]")
-                    print(f"원본 질문: {processed_question}")
-                    print(f"수정된 질문: {corrected_text}")
-                    print(f"의도 분석 JSON: {json.dumps(intent_analysis, ensure_ascii=False, indent=2)}")
-                    print("="*80)
-                    
-                    # 로그 파일에도 기록
-                    logging.info(f"통합 분석 - 원본: {processed_question}")
+                    # ===== 통합 분석 결과 상세 로그 (강제 출력) =====
+                    logging.info(f"통합 분석 - 원본: {question}")
                     logging.info(f"통합 분석 - 수정: {corrected_text}")
                     logging.info(f"통합 분석 - 의도: {json.dumps(intent_analysis, ensure_ascii=False)}")
-
+                    
+                    # 추가로 print도 사용하여 확실히 출력
+                    print(f"[LOG] 통합 분석 - 원본: {question}")
+                    print(f"[LOG] 통합 분석 - 수정: {corrected_text}")
+                    print(f"[LOG] 통합 분석 - 의도: {json.dumps(intent_analysis, ensure_ascii=False)}")
+                    
+                    logging.info(f"3. 통합 분석 완료: corrected='{corrected_text}', intent={{'core_intent': '{intent_analysis.get('core_intent', 'N/A')}', 'primary_action': '{intent_analysis.get('primary_action', 'N/A')}'}}, 시간={analysis_time:.2f}s")
+                    
                     # 의도 분석 결과를 임시 저장 (검색 단계에서 재사용)
                     self._cached_intent_analysis = intent_analysis
+                    
                     if processed_question != question:
-                        logging.info(f"통합 분석 - 오타 수정: {question[:50]} → {processed_question[:50]}")
-                        logging.info(f"통합 분석 - 의도: {intent_analysis.get('core_intent', 'N/A')}")
+                        logging.info(f"통합 분석 - 오타 수정 적용됨: {question[:50]} → {processed_question[:50]}")
                 else:
                     # 영어인 경우 기본 의도 분석 사용 (GPT 호출 생략)
                     self._cached_intent_analysis = self._get_default_intent_analysis(processed_question)
+                    analysis_time = time.time() - analysis_start
+                    logging.info(f"3. 기본 의도 분석 (영어): 시간={analysis_time:.3f}s")
 
                 if not processed_question:
                     return {"success": False, "error": "질문이 비어있습니다."}
