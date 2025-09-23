@@ -93,7 +93,16 @@ class OptimizedSearchService:
                 
                 # ===== 8단계: 검색 완료 및 성능 로깅 =====
                 search_time = time.time() - search_start
-                logging.info(f"최적화된 검색 완료: {len(final_results)}개 결과, {search_time:.2f}s")
+                logging.info(f"✅ 캐시된 의도 분석 활용 검색 완료: {len(final_results)}개 결과, {search_time:.2f}s")
+                
+                # 🔍 최종 검색 결과 상세 로깅
+                if final_results:
+                    logging.info(f"🎯 캐시된 의도 분석 검색 결과:")
+                    for i, result in enumerate(final_results[:3]):
+                        score = result.get('adjusted_score', 0.0)
+                        question = result.get('question', 'N/A')[:80]
+                        answer = result.get('answer', 'N/A')[:80]
+                        logging.info(f"   └── 결과 {i+1}: 점수={score:.3f}, 질문='{question}...', 답변='{answer}...'")
                 
                 return final_results
                 
@@ -365,12 +374,35 @@ class OptimizedSearchService:
                     include_metadata=True
                 )
                 
+                # 🔍 벡터 DB 검색 결과 상세 로깅
+                logging.info(f"🔍 벡터 DB 검색 결과 (레이어 {i+1}):")
+                logging.info(f"   └── 검색 쿼리: '{layer['query'][:100]}...'")
+                logging.info(f"   └── 검색 타입: {layer_type}")
+                logging.info(f"   └── 가중치: {weight}")
+                logging.info(f"   └── 요청된 결과 수: {search_top_k}")
+                logging.info(f"   └── 실제 반환된 결과 수: {len(results.matches) if hasattr(results, 'matches') else 0}")
+                
+                # 상위 3개 결과 상세 로깅
+                if hasattr(results, 'matches') and results.matches:
+                    for j, match in enumerate(results.matches[:3]):
+                        similarity_score = getattr(match, 'score', 0.0)
+                        metadata = getattr(match, 'metadata', {})
+                        question = metadata.get('question', 'N/A')[:100]
+                        answer = metadata.get('answer', 'N/A')[:100]
+                        logging.info(f"   └── 결과 {j+1}: 유사도={similarity_score:.3f}, 질문='{question}...', 답변='{answer}...'")
+                
                 # 결과 처리 및 가중치 적용
                 layer_results = self._process_layer_results(
                     results, weight, layer_type, seen_ids
                 )
                 
                 all_results.extend(layer_results)
+                
+                # 처리된 결과 로깅
+                logging.info(f"   └── 처리된 결과 수: {len(layer_results)}")
+                if layer_results:
+                    for j, result in enumerate(layer_results[:3]):
+                        logging.info(f"   └── 처리된 결과 {j+1}: 조정된 점수={result.get('adjusted_score', 0.0):.3f}, 질문='{result.get('question', 'N/A')[:50]}...'")
                 
                 # 조기 종료 조건 확인
                 if (search_plan['early_termination_enabled'] and 
@@ -386,6 +418,20 @@ class OptimizedSearchService:
         
         # 결과 정렬
         all_results.sort(key=lambda x: x['adjusted_score'], reverse=True)
+        
+        # 🔍 최종 검색 결과 상세 로깅
+        logging.info(f"🎯 최종 검색 결과 요약:")
+        logging.info(f"   └── 실행된 레이어 수: {len(layers)}")
+        logging.info(f"   └── 총 검색된 결과 수: {len(all_results)}")
+        logging.info(f"   └── 조기 종료 여부: {'예' if sufficient_results else '아니오'}")
+        
+        if all_results:
+            logging.info(f"   └── 상위 3개 결과:")
+            for i, result in enumerate(all_results[:3]):
+                score = result.get('adjusted_score', 0.0)
+                question = result.get('question', 'N/A')[:80]
+                answer = result.get('answer', 'N/A')[:80]
+                logging.info(f"      {i+1}. 점수={score:.3f}, 질문='{question}...', 답변='{answer}...'")
         
         logging.info(f"검색 실행 완료: {len(layers)}개 레이어, {len(all_results)}개 결과"
                     f"{', 조기종료' if sufficient_results else ''}")

@@ -63,15 +63,15 @@ class UnifiedTextAnalyzer:
 
                 user_prompt = f"다음 텍스트를 분석해주세요:\n\n{text}"
                 
-                # GPT API 호출
+                # GPT API 호출 (gpt-5-mini 모델에 맞는 파라미터 사용)
                 response = self.openai_client.chat.completions.create(
                     model=self.model,
                     messages=[
                         {"role": "system", "content": system_prompt},
                         {"role": "user", "content": user_prompt}
                     ],
-                    max_completion_tokens=600,
-                    temperature=0.1  # 일관성 중시
+                    max_completion_tokens=600
+                    # temperature 파라미터 제거 (gpt-5-mini에서 지원하지 않음)
                 )
                 
                 result_text = response.choices[0].message.content.strip()

@@ -290,10 +290,8 @@ Important: Do not include greetings or closings. Only write the main content."""
                             {"role": "system", "content": system_prompt},
                             {"role": "user", "content": user_prompt}
                         ],
-                        max_completion_tokens=max_completion_tokens,
-                        temperature=temperature,
-                        frequency_penalty=0.1,        # 반복 방지
-                        presence_penalty=0.1          # 주제 일관성
+                        max_completion_tokens=max_completion_tokens
+                        # gpt-5-mini 모델에서 지원하지 않는 파라미터들 제거
                     )
                     
                     # 5단계: 응답 추출 및 정리

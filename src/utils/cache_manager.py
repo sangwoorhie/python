@@ -185,6 +185,7 @@ class CacheManager:
         try:
             # ===== 1단계: 캐시 키 생성 =====
             cache_key = self._generate_cache_key("intent", query)
+            logging.info(f"🔍 의도 분석 캐시 조회 시작: 질문='{query[:50]}...', 키='{cache_key}'")
             
             # ===== 2단계: Redis 캐시 조회 =====
             if self.redis_client:
@@ -192,13 +193,18 @@ class CacheManager:
                 if cached_data:
                     # 2-1: 바이너리 데이터를 의도 분석 딕셔너리로 역직렬화
                     intent_data = self._deserialize_data(cached_data)
-                    logging.info(f"의도 분석 캐시 히트: {query[:50]}...")
+                    logging.info(f"✅ 의도 분석 캐시 히트 (Redis): 질문='{query[:50]}...', 의도='{intent_data.get('core_intent', 'N/A')}', 액션='{intent_data.get('primary_action', 'N/A')}'")
                     return intent_data
+                else:
+                    logging.info(f"❌ 의도 분석 캐시 미스 (Redis): 질문='{query[:50]}...'")
             else:
                 # ===== 3단계: 메모리 캐시 폴백 조회 =====
                 if cache_key in self._memory_cache:
-                    logging.info(f"메모리 의도 분석 캐시 히트: {query[:50]}...")
-                    return self._memory_cache[cache_key]
+                    intent_data = self._memory_cache[cache_key]
+                    logging.info(f"✅ 의도 분석 메모리 캐시 히트: 질문='{query[:50]}...', 의도='{intent_data.get('core_intent', 'N/A')}', 액션='{intent_data.get('primary_action', 'N/A')}'")
+                    return intent_data
+                else:
+                    logging.info(f"❌ 의도 분석 메모리 캐시 미스: 질문='{query[:50]}...'")
             
             # ===== 4단계: 캐시 미스 =====
             return None
