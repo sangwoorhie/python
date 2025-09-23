@@ -110,7 +110,7 @@ def setup_logging():
         
         # 콘솔 핸들러 생성 (디버깅용)
         console_handler = logging.StreamHandler()
-        console_handler.setLevel(logging.INFO)
+        console_handler.setLevel(logging.DEBUG)
         console_handler.setFormatter(formatter)
         
         # 루트 로거에 핸들러 추가
@@ -126,7 +126,7 @@ def setup_logging():
         
         for logger_name in src_loggers:
             logger = logging.getLogger(logger_name)
-            logger.setLevel(logging.INFO)
+            logger.setLevel(logging.DEBUG)
             # 하위 로거의 핸들러를 제거하고 propagate=True로 설정
             logger.handlers.clear()
             logger.propagate = True
