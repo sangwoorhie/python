@@ -602,12 +602,10 @@ class OptimizedAIAnswerGenerator:
                     logging.info(f"6. 캐시 확인: 검색 결과 캐시 미스, 키={cache_key}")
                 
                 # 7. 다층 검색 계획 수립
-                search_plan = self.search_service._create_search_plan(processed_question, self._cached_intent_analysis)
-                # 수정: f-string 충돌 피하기 위해 리스트를 문자열로 변환
-                layer_descriptions = [f"{l['type']} (w={l['weight']})" for l in search_plan['layers']]
-                layer_str = ', '.join(layer_descriptions)
-                logging.info(f"7. 검색 계획: {len(search_plan['layers'])} 레이어 생성 ({layer_str})")
-
+                search_plan = self.search_service._create_search_plan(processed_question, intent_analysis)
+                layer_summary = [f'{l["type"]} (w={l["weight"]})' for l in search_plan["layers"]]  # 수정: 별도 변수
+                logging.info(f"7. 검색 계획: {len(search_plan['layers'])} 레이어 생성 ({', '.join(layer_summary)})")
+    
                 # 8. 임베딩 배치 생성
                 embedding_requests = [{'layer_index': i, 'query': layer['query']} for i, layer in enumerate(search_plan['layers'])]
                 embeddings = self.api_manager.get_embeddings_batch(embedding_requests)
