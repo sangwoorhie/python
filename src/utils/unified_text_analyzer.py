@@ -29,37 +29,24 @@ class UnifiedTextAnalyzer:
                 logging.info(f"통합 분석기 시작: 입력 텍스트='{text}'")
                 
                 # 통합 시스템 프롬프트
-                system_prompt = """당신은 바이블 앱 문의 전문 분석가입니다.
-    사용자의 질문에 대해 다음 두 가지 작업을 동시에 수행하세요:
-
-    1. 맞춤법 및 오타 수정 (의미와 어조는 유지)
-    2. 질문의 본질적 의도 분석
+                system_prompt = """바이블 앱 문의 전문 분석가로서, 사용자의 질문에 대해 다음 두 가지 작업을 동시에 수행하세요:
 
     응답 형식 (JSON):
     {
-        "corrected_text": "오타가 수정된 텍스트",
+        "corrected_text": "수정된 텍스트",
         "intent_analysis": {
-            "core_intent": "핵심 의도 (표준화된 형태)",
-            "intent_category": "의도 카테고리",
+            "core_intent": "핵심 의도",
+            "intent_category": "카테고리",
             "primary_action": "주요 행동",
-            "target_object": "대상 객체",
-            "constraint_conditions": ["제약 조건들"],
-            "standardized_query": "표준화된 질문 형태",
-            "semantic_keywords": ["의미론적 핵심 키워드들"]
+            "semantic_keywords": ["키워드"]
         }
     }
 
-    오타 수정 지침:
-    - 앱/어플리케이션 → 앱으로 통일
-    - 띄어쓰기, 맞춤법, 조사 사용법 정확히 교정
-    - 원문의 의미와 어조는 절대 변경 금지
-
-    의도 분석 지침:
-    - 질문의 본질적 목적 파악
-    - 구체적 예시 제거하고 일반화
-    - 의미론적으로 동등한 질문들이 같은 결과 도출하도록 분석
-
-    중요: 반드시 유효한 JSON 형식으로만 응답하고, 다른 설명은 포함하지 마세요."""
+    규칙:
+    - 앱/어플리케이션 → 앱 통일
+    - 띄어쓰기, 맞춤법 교정
+    - 의미/어조 유지
+    - 유효한 JSON만 반환"""
 
                 user_prompt = f"다음 텍스트를 분석해주세요:\n\n{text}"
                 
@@ -70,7 +57,7 @@ class UnifiedTextAnalyzer:
                         {"role": "system", "content": system_prompt},
                         {"role": "user", "content": user_prompt}
                     ],
-                    max_completion_tokens=600,
+                    max_completion_tokens=1200,
                     response_format={"type": "json_object"}
                     # temperature 파라미터 제거 (gpt-5-mini에서 지원하지 않음)
                 )
