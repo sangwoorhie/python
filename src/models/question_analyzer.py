@@ -123,19 +123,24 @@ class QuestionAnalyzer:
                         {"role": "system", "content": system_prompt},
                         {"role": "user", "content": user_prompt}
                     ],
-                    max_completion_tokens=400,                               # 충분한 분석 결과 길이
-                    # temperature=0.2                               # 일관성 있는 분석을 위해 낮은 값
+                    max_completion_tokens=1200,                               # 충분한 분석 결과 길이
                     response_format={"type": "json_object"}                  # JSON 형식으로 응답
+                    # temperature=0.2                               # 일관성 있는 분석을 위해 낮은 값
                 )
                 
                 # ===== 4단계: GPT 응답 텍스트 추출 =====
-                result_text = response.choices[0].message.content.strip()
+                raw_content = response.choices[0].message.content
+                if isinstance(raw_content, list):
+                    # content가 리스트인 경우 (새 SDK 포맷)
+                    result_text = "".join([c.get("text", "") for c in raw_content if c.get("type") == "text"]).strip()
+                else:
+                    result_text = (raw_content or "").strip()
                 
                 # ===== 5단계: JSON 파싱 및 결과 구조화 =====
                 try:
                     # JSON 형태로 응답 파싱
-                    content = response.choices[0].message.content
-                    result = json.loads(content) 
+                    # content = response.choices[0].message.content
+                    result = json.loads(result_text) 
                     logging.info(f"강화된 의도 분석 결과: {result}")
                     
                     # ===== 6단계: 기존 시스템과의 호환성을 위한 필드 추가 =====
