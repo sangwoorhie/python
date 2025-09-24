@@ -425,7 +425,7 @@ class BatchProcessor:
                             {"role": "user", "content": combined_text}
                         ],
                         max_completion_tokens=1000,                      # 충분한 번역 길이 허용
-                        temperature=0.3                       # 일관성 있는 번역 (낮은 창의성)
+                        # temperature=0.3                       # 일관성 있는 번역 (낮은 창의성)
                     )
                     
                     # 3-4: 번역 결과 분리 및 파싱
@@ -515,7 +515,7 @@ Q2: {"core_intent": "...", "intent_category": "...", "primary_action": "...", "t
                         {"role": "user", "content": combined_queries}
                     ],
                     max_completion_tokens=800,                       # 충분한 분석 결과 길이
-                    temperature=0.2                       # 일관성 있는 분석 (낮은 창의성)
+                    # temperature=0.2                       # 일관성 있는 분석 (낮은 창의성)
                 )
                 
                 # 2-4: 분석 결과 추출 및 처리 시간 계산
@@ -644,7 +644,7 @@ T2: [수정된 텍스트2]
                         {"role": "user", "content": combined_text}
                     ],
                     max_completion_tokens=800,                       # 충분한 수정 결과 길이
-                    temperature=0.1                       # 매우 보수적 (일관성 중시)
+                    # temperature=0.1                       # 매우 보수적 (일관성 중시)
                 )
                 
                 # 2-4: 수정 결과 추출 및 처리 시간 계산

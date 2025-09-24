@@ -124,7 +124,7 @@ class QuestionAnalyzer:
                         {"role": "user", "content": user_prompt}
                     ],
                     max_completion_tokens=400,                               # 충분한 분석 결과 길이
-                    temperature=0.2                               # 일관성 있는 분석을 위해 낮은 값
+                    # temperature=0.2                               # 일관성 있는 분석을 위해 낮은 값
                 )
                 
                 # ===== 4단계: GPT 응답 텍스트 추출 =====

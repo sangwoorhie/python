@@ -271,11 +271,11 @@ Important: Do not include greetings or closings. Only write the main content."""
                 # 3단계: 접근 방식에 따른 GPT 파라미터 설정
                 if approach == 'gpt_with_strong_context':
                     # 강한 컨텍스트: 낮은 temperature로 일관성 확보
-                    temperature = 1.0
+                    # temperature = 1.0
                     max_completion_tokens = 700
                 elif approach == 'gpt_with_weak_context':
                     # 약한 컨텍스트: 적당한 창의성 허용
-                    temperature = 1.0
+                    # temperature = 1.0
                     max_completion_tokens = 650
                 else: # fallback이나 기타 - 생성 중단
                     return ""
@@ -335,8 +335,8 @@ Important: Do not include greetings or closings. Only write the main content."""
                         return generated
                     
                     # 7단계: 재시도를 위한 파라미터 조정
-                    if attempt < max_attempts - 1:
-                        temperature = min(temperature + 0.1, 0.6)  # 창의성 증가
+                    # if attempt < max_attempts - 1:
+                    #     temperature = min(temperature + 0.1, 0.6)  # 창의성 증가
                 
                 # 모든 시도 실패시
                 logging.warning("모든 GPT 생성 시도 실패")
@@ -565,7 +565,7 @@ Important: Do not include greetings or closings. Only write the main content."""
                     {"role": "user", "content": text}
                 ],
                 max_completion_tokens=600,              # 충분한 번역 길이 허용
-                temperature=0.5              # 일관성과 창의성 균형
+                # temperature=0.5              # 일관성과 창의성 균형
             )
             
             # ===== 4단계: 번역 결과 반환 =====

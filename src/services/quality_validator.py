@@ -698,7 +698,7 @@ class QualityValidator:
                         {"role": "user", "content": user_prompt}
                     ],
                     max_completion_tokens=30,                              # 짧은 답변 (relevant/irrelevant)
-                    temperature=0.1                             # 일관성 중시 (낮은 창의성)
+                    # temperature=0.1                             # 일관성 중시 (낮은 창의성)
                 )
                 
                 # ===== 4단계: GPT 응답 분석 및 결과 판정 =====

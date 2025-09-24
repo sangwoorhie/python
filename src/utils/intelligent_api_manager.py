@@ -499,7 +499,7 @@ class IntelligentAPIManager:
                 {"role": "user", "content": text}
             ],
             max_completion_tokens=600,              # 충분한 번역 결과 길이
-            temperature=0.3              # 일관성 있는 번역 (낮은 창의성)
+            # temperature=0.3              # 일관성 있는 번역 (낮은 창의성)
         )
         
         return response.choices[0].message.content.strip()

@@ -80,7 +80,7 @@ class SyncService:
                         {"role": "user", "content": user_prompt}
                     ],
                     max_completion_tokens=600,                                 # 충분한 텍스트 길이 허용
-                    temperature=0.1,                                # 매우 보수적 설정 (일관성 중시)
+                    # temperature=0.1,                                # 매우 보수적 설정 (일관성 중시)
                     top_p=0.8,                                      # 상위 80% 토큰만 사용
                     frequency_penalty=0.0,                          # 반복 페널티 없음
                     presence_penalty=0.0                            # 새로운 주제 페널티 없음
