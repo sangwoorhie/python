@@ -120,7 +120,7 @@ class OptimizedSearchService:
             # ===== 메모리 최적화 컨텍스트 시작 =====
             with memory_cleanup():
                 search_start = time.time()
-                logging.info(f"=== 캐시된 의도 분석 활용 검색 시작 ===")
+                logging.info(f"==================================== 캐시된 의도 분석 활용 검색 시작 ====================================")
                 logging.info(f"원본 질문: {query}")
                 logging.info(f"캐시된 의도: {cached_intent.get('core_intent', 'N/A')}")
                 
@@ -207,6 +207,14 @@ class OptimizedSearchService:
         # ===== 2단계: 기존 개념 추출 (추가 분석) =====
         key_concepts = self.text_processor.extract_key_concepts(query)
         
+        # ===== 레이어 계획 수립 로깅 시작 =====
+        logging.info(f"🏗️ ===================================== 검색 레이어 계획 수립 시작 ====================================")
+        logging.info(f"   └── 원본 질문: {query}")
+        logging.info(f"   └── 핵심 의도: {core_intent}")
+        logging.info(f"   └── 표준화된 질문: {standardized_query}")
+        logging.info(f"   └── 의미론적 키워드 ({len(semantic_keywords)}개): {semantic_keywords}")
+        logging.info(f"   └── 핵심 개념 ({len(key_concepts)}개): {key_concepts}")
+
         # ===== 3단계: 동적 레이어 개수 결정 =====
         if self.search_config['adaptive_layer_count']:
             layer_count = self._determine_optimal_layer_count(intent_analysis, key_concepts)
@@ -217,14 +225,18 @@ class OptimizedSearchService:
         search_layers = []
         
         # Layer 1: 원본 질문 (필수 레이어 - 가장 높은 가중치)
+        logging.info(f"🔍 Layer 1 구성 시도: 원본 질문")
         search_layers.append({
             'query': query,
             'weight': 1.0,  # 최고 가중치
             'type': 'original',
             'priority': 1
         })
+        logging.info(f"   ✅ Layer 1 추가됨: '{query}' (가중치: 1.0)")
         
         # Layer 2: 표준화된 의도 기반 질문 (GPT 분석 결과)
+        logging.info(f"🔍 Layer 2 구성 시도: 표준화된 의도 기반")
+        logging.info(f"   └── 조건 확인: standardized_query='{standardized_query}', 원본과 동일여부={standardized_query == query}")
         if standardized_query and standardized_query != query:
             search_layers.append({
                 'query': standardized_query,
@@ -232,17 +244,31 @@ class OptimizedSearchService:
                 'type': 'intent_based',
                 'priority': 2
             })
+            logging.info(f"   ✅ Layer 2 추가됨: '{standardized_query}' (가중치: 0.95)")
+        else:
+            logging.info(f"   ❌ Layer 2 제외됨: 표준화된 질문이 원본과 동일하거나 비어있음")
         
         # Layer 3: 핵심 의도만 (추상화된 검색)
+        logging.info(f"🔍 Layer 3 구성 시도: 핵심 의도")
+        logging.info(f"   └── 조건 확인: core_intent='{core_intent}', layer_count={layer_count} >= 3")
         if core_intent and layer_count >= 3:
+            intent_query = core_intent.replace('_', ' ')
             search_layers.append({
-                'query': core_intent.replace('_', ' '),       # 언더스코어 제거
+                'query': intent_query,
                 'weight': 0.9,
                 'type': 'core_intent',
                 'priority': 3
             })
+            logging.info(f"   ✅ Layer 3 추가됨: '{intent_query}' (가중치: 0.9)")
+        else:
+            if not core_intent:
+                logging.info(f"   ❌ Layer 3 제외됨: 핵심 의도가 비어있음")
+            else:
+                logging.info(f"   ❌ Layer 3 제외됨: 레이어 수 제한 (현재: {layer_count}, 필요: 3)")
         
         # Layer 4: 의미론적 키워드 조합 (GPT 추출 키워드)
+        logging.info(f"🔍 Layer 4 구성 시도: 의미론적 키워드")
+        logging.info(f"   └── 조건 확인: 키워드 개수={len(semantic_keywords)}, layer_count={layer_count} >= 4")
         if semantic_keywords and len(semantic_keywords) >= 2 and layer_count >= 4:
             semantic_query = ' '.join(semantic_keywords[:3]) # 상위 3개 키워드
             search_layers.append({
@@ -251,8 +277,16 @@ class OptimizedSearchService:
                 'type': 'semantic_keywords',
                 'priority': 4
             })
+            logging.info(f"   ✅ Layer 4 추가됨: '{semantic_query}' (가중치: 0.8)")
+        else:
+            if not semantic_keywords or len(semantic_keywords) < 2:
+                logging.info(f"   ❌ Layer 4 제외됨: 의미론적 키워드가 2개 미만 ({len(semantic_keywords)}개)")
+            else:
+                logging.info(f"   ❌ Layer 4 제외됨: 레이어 수 제한 (현재: {layer_count}, 필요: 4)")
         
         # Layer 5: 기존 개념 기반 검색 (규칙 기반 키워드)
+        logging.info(f"🔍 Layer 5 구성 시도: 개념 기반")
+        logging.info(f"   └── 조건 확인: 개념 개수={len(key_concepts)}, layer_count={layer_count} >= 5")
         if key_concepts and len(key_concepts) >= 2 and layer_count >= 5:
             concept_query = ' '.join(key_concepts[:3])       # 상위 3개 개념
             search_layers.append({
@@ -261,7 +295,20 @@ class OptimizedSearchService:
                 'type': 'concept_based',
                 'priority': 5
             })
+            logging.info(f"   ✅ Layer 5 추가됨: '{concept_query}' (가중치: 0.7)")
+        else:
+            if not key_concepts or len(key_concepts) < 2:
+                logging.info(f"   ❌ Layer 5 제외됨: 핵심 개념이 2개 미만 ({len(key_concepts)}개)")
+            else:
+                logging.info(f"   ❌ Layer 5 제외됨: 레이어 수 제한 (현재: {layer_count}, 필요: 5)")
         
+        # ===== 레이어 계획 완료 로깅 =====
+        logging.info(f"🏗️ ===================================== 검색 레이어 계획 완료 ====================================")
+        logging.info(f"   └── 총 생성된 레이어 수: {len(search_layers)}")
+        for i, layer in enumerate(search_layers):
+            logging.info(f"   └── Layer {i+1}: {layer['type']} (가중치: {layer['weight']}) - '{layer['query'][:50]}...'")
+    
+
         # ===== 5단계: 검색 계획 반환 =====
         return {
             'layers': search_layers,

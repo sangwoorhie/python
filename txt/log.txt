@@ -1,0 +1,25 @@
+- 1. 로그 보기
+- *특정 날짜
+grep "2025-09-25" /home/ec2-user/python/logs/bible_app_ai.log
+
+- *특정 시간
+grep "2025-09-25" /home/ec2-user/python/logs/bible_app_ai.log
+
+- *전체
+vi /home/ec2-user/python/logs/bible_app_ai.log
+
+- 2. 참고답변 및 전체 프롬프트 확인
+cat /home/ec2-user/python/debug_context.txt
+
+- 3. 질문 하기
+curl -X POST http://172.31.38.149:8000/generate_answer \
+-H "Content-Type: application/json" \
+-d '{"seq":1,"question":"잠언 전체를 읽는데 며칠이 걸리는지 알 수 있나요?","lang":"ko"}' \  | jq -r '.answer'
+
+- 4. Git Pull후 서버배포
+cd /home/ec2-user/python
+git pull origin main
+
+sudo systemctl daemon-reload
+sudo systemctl restart ai-answer-api
+sudo systemctl status ai-answer-api

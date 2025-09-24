@@ -53,7 +53,7 @@ def create_endpoints(app: Flask, generator, sync_manager, index):
                 result = generator.process(seq, question, lang)
                 
                 # 🔍 결과 로그
-                logging.info(f"=== 처리 결과 ===")
+                logging.info(f"==================================== 처리 결과 ====================================")
                 logging.info(f"성공 여부: {result.get('success', False)}")
                 logging.info(f"답변 길이: {len(result.get('answer', ''))}")
 
