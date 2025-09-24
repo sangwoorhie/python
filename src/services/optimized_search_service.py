@@ -692,6 +692,7 @@ class OptimizedSearchService:
                 break
     
         # ===== 🔍 최종 결과 요약 =====
+        logging.info(f"==================================== 🔍 최종 결과 요약: {len(final_results)}개 ====================================")
         print("\n" + "="*80)
         print(f"🔍 [SEARCH DEBUG] 최종 선택된 결과: {len(final_results)}개")
         print("="*80)

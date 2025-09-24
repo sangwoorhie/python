@@ -38,7 +38,7 @@
 경로 : src/services/optimized_search_service.py → def _execute_optimized_search 매서드
 
 
-10.	검색 결과 후처리 및 의도 관련성 계산
+10.	검색 결과 후처리 및 의도 관련성 / 개념 관련성 계산
 경로 : src/services/optimized_search_service.py → def _postprocess_results 매서드
 
 

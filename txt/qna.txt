@@ -60,10 +60,118 @@ final_score = (벡터 유사도 * 0.6) + (의도 관련성 * 0.25) + (개념 관
 답변 B: "요한복음은 신약성경의 네 번째 책입니다"
 답변 C: "NIV 번역본 설정 방법은 설정 메뉴에서 변경할 수 있습니다"
 
-1. 의도 관련성
+
+[1. 의도 관련성 로직]
+
+- 순서 1. GPT가 사용자 질문 분석
+사용자 질문: "요한복음 3장 16절 NIV하고 KJV 같이 보려면 어떻게 해야 하나요?"
+
+GPT 분석 결과:
+{
+  "core_intent": "multiple_translations_view",      # 핵심 의도
+  "primary_action": "보기",                         # 주요 행동
+  "target_object": "번역본",                        # 대상 객체
+  "semantic_keywords": ["동시에", "번역본", "비교"]  # 의미 키워드
+}
 
 
-2. 개념 관련성
+- 순서 2. 기존 답변들 실시간 분석
+답변 A 분석:
+- 질문: "두 개의 번역본을 동시에 보는 방법은..."
+- GPT 분석:
+  - core_intent: "multiple_translations_view"  ✅ (사용자와 동일!)
+  - primary_action: "보기"                     ✅
+  - target_object: "번역본"                    ✅
+
+답변 B 분석:
+- 질문: "요한복음은 신약성경의..."
+- GPT 분석:
+  - core_intent: "bible_book_info"            ❌ (다른 의도)
+  - primary_action: "설명"                    ❌
+  - target_object: "성경책"                   ⚠️ (유사)
+
+답변 C 분석:
+- 질문: "NIV 번역본 설정 방법은..."
+- GPT 분석:
+  - core_intent: "translation_setting"        ⚠️ (부분 관련)
+  - primary_action: "설정"                    ❌
+  - target_object: "번역본"                   ✅
+
+
+- 순서 3. 의도 점수 계산 (가중치 적용)
+def calculate_intent_similarity():
+    # 답변 A의 경우:
+    intent_match = 1.0      # core_intent 완전 일치 (40%)
+    action_match = 1.0      # "보기" == "보기" (25%)  
+    object_match = 1.0      # "번역본" == "번역본" (20%)
+    keyword_match = 0.67    # 2/3 키워드 일치 (15%)
+    
+    답변_A_점수 = (1.0 * 0.4) + (1.0 * 0.25) + (1.0 * 0.2) + (0.67 * 0.15)
+               = 0.4 + 0.25 + 0.2 + 0.1 = 0.95
+    
+    # 답변 B의 경우:
+    intent_match = 0.0      # 완전 다른 의도
+    action_match = 0.0      # "보기" != "설명"
+    object_match = 0.8      # "번역본" vs "성경책" (유사도 테이블)
+    keyword_match = 0.0     # 키워드 불일치
+    
+    답변_B_점수 = 0 + 0 + (0.8 * 0.2) + 0 = 0.16
+
+
+[2. 개념 관련성 로직]
+
+- 순서 1. 핵심 개념 추출 (규칙 기반)
+python사용자 질문에서 추출:
+- "요한복음" (가중치: 0.4)
+- "NIV" (가중치: 0.3)  
+- "KJV" (가중치: 0.3)
+- "동시에" (가중치: 0.5)
+
+# 추출 규칙:
+- 고유명사 (성경 이름, 번역본명)
+- 핵심 동사/부사
+- 3자 이상 명사
+
+- 순서 2. 답변별 개념 매칭
+
+답변 A의 개념: ["번역본", "동시에", "화면", "분할"]
+매칭 결과:
+- "동시에" ✅ (정확 일치) = 0.5 점
+- "NIV", "KJV" ⚠️ (부분 일치 - "번역본"과 70% 유사) = 0.3 * 0.7 = 0.21
+총점: (0.5 + 0.21) / 1.5 = 0.47
+
+답변 B의 개념: ["요한복음", "신약", "성경"]  
+매칭 결과:
+- "요한복음" ✅ = 0.4 점
+총점: 0.4 / 1.5 = 0.27
+
+답변 C의 개념: ["NIV", "설정", "메뉴"]
+매칭 결과:
+- "NIV" ✅ = 0.3 점
+총점: 0.3 / 1.5 = 0.20
+
+- ☆ 최종점수 계산
+# 벡터 유사도(60%) + 의도 관련성(25%) + 개념 관련성(15%)
+
+답변 A:
+- 벡터 유사도: 0.85 (Pinecone 검색 결과)
+- 의도 관련성: 0.95 (GPT 분석 - 거의 완벽 일치)
+- 개념 관련성: 0.47 (키워드 부분 일치)
+최종 점수 = (0.85 * 0.6) + (0.95 * 0.25) + (0.47 * 0.15) = 0.818
+
+답변 B:
+- 벡터 유사도: 0.65
+- 의도 관련성: 0.16 (의도 불일치)
+- 개념 관련성: 0.27 (요한복음만 일치)
+최종 점수 = (0.65 * 0.6) + (0.16 * 0.25) + (0.27 * 0.15) = 0.471
+
+답변 C:
+- 벡터 유사도: 0.70
+- 의도 관련성: 0.35 (부분적 관련)
+- 개념 관련성: 0.20 (NIV만 일치)
+최종 점수 = (0.70 * 0.6) + (0.35 * 0.25) + (0.20 * 0.15) = 0.538
+
+=> 답변 A가 선택될 확률이 높음.
 
 
 <3.	5개 레이어를 구성한 이유와, 어떻게 사용되는지?>
@@ -88,11 +196,70 @@ Layer 5: 개념 기반 검색 (Concept-based)
 
 
 <4.	의도 분석을 어떻게 하는지? 구성과 예시>
-
+=> 로그에서 확인 가능.
 
 
 <5.	점수를 매긴 다음 어떻게 유사답변을 가져오는지?>
+검색 결과 후처리 및 최종 점수 계산 메서드인 => 
+경로: src/services/optimized_search_service.py → def _postprocess_results 매서드
 
+- 순서 1. 최종 점수 계산: 벡터(60%) + 의도(25%) + 개념(15%)
+초기 검색 결과(search_results)를 입력받아 각 결과에 대해 세 가지 점수를 계산하고, 이를 조합해 최종 점수(final_score)를 매김.
+
+# 최종 점수 = 벡터 유사도(60%) + 의도 관련성(25%) + 개념 관련성(15%)
+            final_score = (adjusted_score * 0.6 + 
+                        intent_relevance * 0.25 + 
+                        concept_relevance * 0.15)
+
+- 순서 2. 임계값 적용: 상위 3개는 0.3, 나머지는 동적 임계값
+# 최소 임계값 또는 상위 순위 확인
+            if final_score >= min_threshold or i < 3:
+                print(f"✅ [SEARCH DEBUG] 결과 #{i+1} 선택됨: 최종점수={final_score:.3f} (임계값={min_threshold:.3f})")
+                final_results.append({
+                    'score': final_score,
+                    'vector_score': vector_score,
+                    'intent_relevance': intent_relevance,
+                    'concept_relevance': concept_relevance,
+                    'question': question,
+                    'answer': answer,
+                    'category': category,
+                    'rank': i + 1,
+                    'search_type': match['search_type'],
+                    'layer_weight': match.get('layer_weight', 1.0),
+                    'lang': 'ko'
+                })
+
+            # top_k 개수에 도달하면 중단
+            if len(final_results) >= top_k:
+                break
+
+- 순서 3. 순차 선택
+상위 3개 결과: 임계값 0.3 (더 관대한 기준)
+4번째 이후: 동적 임계값 적용 (더 엄격한 기준)
+최대 개수: top_k 개수만큼만 선택
+
+- 순서 4. 동적 임계값 계산
+scores = [r['score'] for r in search_results[:top_k*2]]
+if len(scores) >= 4:
+    scores.sort(reverse=True)
+    top_percentile = scores[0] * 0.8
+    bottom_percentile = scores[-1] * 1.2
+    dynamic_threshold = (top_percentile + bottom_percentile) / 2
+else:
+    dynamic_threshold = 0.5
+
+- 순서 5. 최종 결과 반환
+
+(요약)
+1. 점수 계산: 벡터(60%) + 의도(25%) + 개념(15%)
+2. 임계값 적용: 상위 3개는 0.3, 나머지는 동적 임계값
+3. 순차 선택: 점수 순으로 검토하여 임계값 통과시 선택
+4. 개수 제한: top_k 개수에 도달하면 중단
+5. 결과 반환: 선택된 유사답변들 반환
+
+아래에서 로그 확인 가능.
+
+vi /home/ec2-user/python/debug_search_results.txt
 
 
 <6.	실행되는 전체 로그>
