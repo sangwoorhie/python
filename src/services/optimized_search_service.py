@@ -895,4 +895,4 @@ class OptimizedSearchService:
         for key, value in kwargs.items():
             if key in self.search_config:
                 self.search_config[key] = value
-                logging.info(f"검색 설정 업데이트: {key} = {value}")
+                # logging.info(f"검색 설정 업데이트: {key} = {value}")

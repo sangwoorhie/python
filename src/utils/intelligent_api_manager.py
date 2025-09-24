@@ -695,7 +695,7 @@ class IntelligentAPIManager:
         for key, value in kwargs.items():
             if key in self.optimization_config:
                 self.optimization_config[key] = value
-                logging.info(f"최적화 설정 업데이트: {key} = {value}")
+                # logging.info(f"최적화 설정 업데이트: {key} = {value}")
 
     # 최근 요청 캐시 지우기 메서드
     def clear_recent_requests(self):

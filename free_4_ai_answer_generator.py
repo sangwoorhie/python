@@ -174,27 +174,6 @@ setup_logging()
 logging.info("=== 로깅 시스템 테스트 시작 ===")
 logging.info("이 메시지가 보이면 로깅이 정상 작동합니다.")
 
-# 각 모듈별 로깅 테스트
-src_logger = logging.getLogger('src')
-src_logger.info("src 모듈 로깅 테스트")
-
-main_logger = logging.getLogger('src.main_optimized_ai_generator')
-main_logger.info("main_optimized_ai_generator 모듈 로깅 테스트")
-
-models_logger = logging.getLogger('src.models')
-models_logger.info("models 모듈 로깅 테스트")
-
-services_logger = logging.getLogger('src.services')
-services_logger.info("services 모듈 로깅 테스트")
-
-utils_logger = logging.getLogger('src.utils')
-utils_logger.info("utils 모듈 로깅 테스트")
-
-api_logger = logging.getLogger('src.api')
-api_logger.info("api 모듈 로깅 테스트")
-
-logging.info("=== 로깅 시스템 테스트 완료 ===")
-
 # ==================================================
 # 4. 환경변수 로드 및 시스템 상수 정의
 # ==================================================
