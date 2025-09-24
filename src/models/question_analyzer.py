@@ -129,87 +129,52 @@ class QuestionAnalyzer:
                 )
                 
                 # ===== 4단계: GPT 응답 텍스트 추출 =====
-                # 🔍 핵심 개선: 실제 응답 내용 로깅
-            raw_response = response.choices[0].message.content.strip()
-            logging.info(f"🔍 GPT-5-mini 원본 응답 (길이={len(raw_response)}): {raw_response}")
-            
-            try:
-                # 직접 JSON 파싱 시도
-                result = json.loads(raw_response)
-                logging.info(f"✅ JSON 파싱 성공: {result.get('core_intent', 'N/A')}")
+                raw_response = response.choices[0].message.content.strip()
+                logging.info(f"🔍 GPT-5-mini 원본 응답 (길이={len(raw_response)}): {raw_response}")
+                if isinstance(raw_response, list):
+                    # content가 리스트인 경우 (새 SDK 포맷)
+                    result_text = "".join([c.get("text", "") for c in raw_response if c.get("type") == "text"]).strip()
+                else:
+                    result_text = (raw_response or "").strip()
                 
-                # 기존 호환성 필드 추가
-                result['intent_type'] = result.get('intent_category', '일반문의')
-                result['main_topic'] = result.get('target_object', '기타')
-                result['specific_request'] = result.get('standardized_query', query[:100])
-                result['keywords'] = result.get('semantic_keywords', [query[:20]])
-                result['urgency'] = 'medium'
-                result['action_type'] = result.get('primary_action', '기타')
-                
-                return result
-                
-            except json.JSONDecodeError as e:
-                # 🔍 핵심 개선: 파싱 실패 원인 상세 로깅
-                logging.error(f"❌ JSON 파싱 실패 상세:")
-                logging.error(f"   └── 파싱 에러: {e}")
-                logging.error(f"   └── 에러 위치: 라인 {e.lineno}, 컬럼 {e.colno}")
-                logging.error(f"   └── 응답 첫 100자: {raw_response[:100]}")
-                logging.error(f"   └── 응답 마지막 100자: {raw_response[-100:]}")
-                
-                # 📊 응답 특성 분석
-                logging.info(f"📊 응답 특성 분석:")
-                logging.info(f"   └── 중괄호 개수: 여는괄호={raw_response.count('{')}, 닫는괄호={raw_response.count('}')}")
-                logging.info(f"   └── 큰따옴표 개수: {raw_response.count('\"')}")
-                logging.info(f"   └── 마크다운 코드블록: {'```' in raw_response}")
-                logging.info(f"   └── 한글 포함: {any('가' <= c <= '힣' for c in raw_response)}")
-                
-                # 🔧 간단한 정제 시도
+                # ===== 5단계: JSON 파싱 및 결과 구조화 =====
                 try:
-                    # 마크다운 코드블록 제거
-                    cleaned = re.sub(r'```json\s*', '', raw_response)
-                    cleaned = re.sub(r'```\s*$', '', cleaned)
-                    cleaned = cleaned.strip()
+                    # JSON 형태로 응답 파싱
+                    result = json.loads(raw_response)
+                    logging.info(f"✅ JSON 파싱 성공: {result.get('core_intent', 'N/A')}")
                     
-                    # JSON 블록만 추출
-                    json_match = re.search(r'\{.*\}', cleaned, re.DOTALL)
-                    if json_match:
-                        json_text = json_match.group(0)
-                        result = json.loads(json_text)
-                        logging.info(f"✅ 정제 후 JSON 파싱 성공")
-                        
-                        # 호환성 필드 추가
-                        result['intent_type'] = result.get('intent_category', '일반문의')
-                        result['main_topic'] = result.get('target_object', '기타')
-                        result['specific_request'] = result.get('standardized_query', query[:100])
-                        result['keywords'] = result.get('semantic_keywords', [query[:20]])
-                        result['urgency'] = 'medium'
-                        result['action_type'] = result.get('primary_action', '기타')
-                        
-                        return result
-                        
-                except Exception as e2:
-                    logging.error(f"🔧 정제 후 파싱도 실패: {e2}")
-                
-                # 최종 폴백
-                logging.warning(f"🔄 기본값으로 폴백")
-                return {
-                    "core_intent": "general_inquiry",
-                    "intent_category": "일반문의",
-                    "primary_action": "기타",
-                    "target_object": "기타",
-                    "constraint_conditions": [],
-                    "standardized_query": query,
-                    "semantic_keywords": [query[:20]],
-                    "intent_type": "일반문의",
-                    "main_topic": "기타",
-                    "specific_request": query[:100],
-                    "keywords": [query[:20]],
-                    "urgency": "medium",
-                    "action_type": "기타"
-                }
+                    # ===== 6단계: 기존 시스템과의 호환성을 위한 필드 추가 =====
+                    result['intent_type'] = result.get('intent_category', '일반문의')
+                    result['main_topic'] = result.get('target_object', '기타')
+                    result['specific_request'] = result.get('standardized_query', query[:100])
+                    result['keywords'] = result.get('semantic_keywords', [query[:20]])
+                    result['urgency'] = 'medium'
+                    result['action_type'] = result.get('primary_action', '기타')
+                    
+                    return result
+                except json.JSONDecodeError:
+                    # ===== JSON 파싱 실패시 기본값 반환 =====
+                    logging.warning(f"JSON 파싱 실패, 기본값 반환: {result_text}")
+                    return {
+                        "core_intent": "general_inquiry",
+                        "intent_category": "일반문의",
+                        "primary_action": "기타",
+                        "target_object": "기타",
+                        "constraint_conditions": [],
+                        "standardized_query": query,
+                        "semantic_keywords": [query[:20]],
+                        # 기존 호환성 필드
+                        "intent_type": "일반문의",
+                        "main_topic": "기타",
+                        "specific_request": query[:100],
+                        "keywords": [query[:20]],
+                        "urgency": "medium",
+                        "action_type": "기타"
+                    }
                 
         except Exception as e:
-            logging.error(f"❌ 전체 의도 분석 실패: {e}", exc_info=True)
+            # ===== 전체 의도 분석 프로세스 실패시 기본값 반환 =====
+            logging.error(f"강화된 의도 분석 실패: {e}")
             return {
                 "core_intent": "general_inquiry",
                 "intent_category": "일반문의", 
@@ -218,6 +183,7 @@ class QuestionAnalyzer:
                 "constraint_conditions": [],
                 "standardized_query": query,
                 "semantic_keywords": [query[:20]],
+                # 기존 호환성 필드
                 "intent_type": "일반문의",
                 "main_topic": "기타",
                 "specific_request": query[:100],
