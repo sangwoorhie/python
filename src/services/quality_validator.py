@@ -697,7 +697,7 @@ class QualityValidator:
                         {"role": "system", "content": system_prompt},
                         {"role": "user", "content": user_prompt}
                     ],
-                    max_tokens=30,                              # 짧은 답변 (relevant/irrelevant)
+                    max_completion_tokens=30,                              # 짧은 답변 (relevant/irrelevant)
                     temperature=0.1                             # 일관성 중시 (낮은 창의성)
                 )
                 

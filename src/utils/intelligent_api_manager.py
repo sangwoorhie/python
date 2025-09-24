@@ -498,7 +498,7 @@ class IntelligentAPIManager:
                 {"role": "system", "content": system_prompt},
                 {"role": "user", "content": text}
             ],
-            max_tokens=600,              # 충분한 번역 결과 길이
+            max_completion_tokens=600,              # 충분한 번역 결과 길이
             temperature=0.3              # 일관성 있는 번역 (낮은 창의성)
         )
         

@@ -123,7 +123,7 @@ class QuestionAnalyzer:
                         {"role": "system", "content": system_prompt},
                         {"role": "user", "content": user_prompt}
                     ],
-                    max_tokens=400,                               # 충분한 분석 결과 길이
+                    max_completion_tokens=400,                               # 충분한 분석 결과 길이
                     temperature=0.2                               # 일관성 있는 분석을 위해 낮은 값
                 )
                 
