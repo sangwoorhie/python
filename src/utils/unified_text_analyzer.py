@@ -70,18 +70,27 @@ class UnifiedTextAnalyzer:
                         {"role": "system", "content": system_prompt},
                         {"role": "user", "content": user_prompt}
                     ],
-                    max_completion_tokens=600
+                    max_completion_tokens=600,
+                    response_format={"type": "json_object"}
                     # temperature 파라미터 제거 (gpt-5-mini에서 지원하지 않음)
                 )
                 
-                result_text = response.choices[0].message.content.strip()
+                raw_content = response.choices[0].message.content
+                if isinstance(raw_content, list):
+                    # content가 리스트인 경우 (새 SDK 포맷)
+                    result_text = "".join([c.get("text", "") for c in raw_content if c.get("type") == "text"]).strip()
+                else:
+                    result_text = (raw_content or "").strip()
                 
                 # 🔍 GPT 응답 검증 및 로깅 강화
                 logging.info(f"통합 분석 - GPT 원본 응답: {result_text}")
-                
-                # 빈 응답 체크
+                logging.debug(f"GPT 응답 전체 구조: {response.model_dump_json(indent=2)}")
+                # 빈 응답 체크 및 상세 로깅
                 if not result_text or result_text.isspace():
                     logging.error("GPT 응답이 비어있음 - 기본값 반환")
+                    logging.error(f"GPT 응답 상세: result_text='{result_text}', len={len(result_text) if result_text else 0}")
+                    logging.error(f"GPT 응답 객체: {response}")
+                    logging.error(f"GPT 응답 choices: {response.choices if hasattr(response, 'choices') else 'N/A'}")
                     return text, self._get_default_intent_analysis(text)
                 
                 # JSON 파싱 시도
@@ -136,6 +145,8 @@ class UnifiedTextAnalyzer:
                     
         except Exception as e:
             logging.error(f"통합 텍스트 분석 실패: {e}")
+            logging.error(f"통합 분석 실패 상세: exception_type={type(e).__name__}, message={str(e)}")
+            logging.error(f"통합 분석 실패 컨텍스트: text='{text[:50]}...', model='{self.model}'")
             return text, self._get_default_intent_analysis(text)
 
     def _parse_text_response(self, response_text: str, original_text: str) -> Tuple[str, Dict]:

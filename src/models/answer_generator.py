@@ -297,6 +297,13 @@ Important: Do not include greetings or closings. Only write the main content."""
                     # 5단계: 응답 추출 및 정리
                     original_response = response.choices[0].message.content.strip()
                     generated = original_response
+                    
+                    # 응답 검증 및 상세 로깅
+                    if not original_response or original_response.isspace():
+                        logging.error(f"GPT 응답이 비어있음 (시도 #{attempt+1}): response={response}")
+                        logging.error(f"GPT 응답 choices: {response.choices if hasattr(response, 'choices') else 'N/A'}")
+                        continue  # 다음 시도로 진행
+                    
                     del response  # 메모리 해제
                     
                     # ===== 🔍 GPT 응답 디버그 출력 =====
