@@ -134,7 +134,7 @@ class QuestionAnalyzer:
                 # ===== 5단계: JSON 파싱 및 결과 구조화 =====
                 try:
                     # JSON 형태로 응답 파싱
-                    result = json.loads(result_text)
+                    result = response.choices[0].message.parsed
                     logging.info(f"강화된 의도 분석 결과: {result}")
                     
                     # ===== 6단계: 기존 시스템과의 호환성을 위한 필드 추가 =====
