@@ -125,6 +125,7 @@ class QuestionAnalyzer:
                     ],
                     max_completion_tokens=400,                               # 충분한 분석 결과 길이
                     # temperature=0.2                               # 일관성 있는 분석을 위해 낮은 값
+                    response_format={"type": "json_object"}                  # JSON 형식으로 응답
                 )
                 
                 # ===== 4단계: GPT 응답 텍스트 추출 =====
