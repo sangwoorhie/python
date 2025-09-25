@@ -123,7 +123,7 @@ class QuestionAnalyzer:
                         {"role": "system", "content": system_prompt},
                         {"role": "user", "content": user_prompt}
                     ],
-                    max_completion_tokens=1200,                               # 충분한 분석 결과 길이
+                    # max_completion_tokens=1200,                               # 충분한 분석 결과 길이
                     response_format={"type": "json_object"}                  # JSON 형식으로 응답
                     # temperature=0.2                               # 일관성 있는 분석을 위해 낮은 값
                 )

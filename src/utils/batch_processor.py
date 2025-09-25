@@ -424,7 +424,7 @@ class BatchProcessor:
                             {"role": "system", "content": system_prompt},
                             {"role": "user", "content": combined_text}
                         ],
-                        max_completion_tokens=1000,                      # 충분한 번역 길이 허용
+                        # max_completion_tokens=1000,                      # 충분한 번역 길이 허용
                         # temperature=0.3                       # 일관성 있는 번역 (낮은 창의성)
                     )
                     
@@ -514,7 +514,7 @@ Q2: {"core_intent": "...", "intent_category": "...", "primary_action": "...", "t
                         {"role": "system", "content": system_prompt},
                         {"role": "user", "content": combined_queries}
                     ],
-                    max_completion_tokens=800,                       # 충분한 분석 결과 길이
+                    # max_completion_tokens=800,                       # 충분한 분석 결과 길이
                     # temperature=0.2                       # 일관성 있는 분석 (낮은 창의성)
                 )
                 
@@ -643,7 +643,7 @@ T2: [수정된 텍스트2]
                         {"role": "system", "content": system_prompt},
                         {"role": "user", "content": combined_text}
                     ],
-                    max_completion_tokens=800,                       # 충분한 수정 결과 길이
+                    # max_completion_tokens=800,                       # 충분한 수정 결과 길이
                     # temperature=0.1                       # 매우 보수적 (일관성 중시)
                 )
                 

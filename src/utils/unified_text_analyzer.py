@@ -57,7 +57,7 @@ class UnifiedTextAnalyzer:
                         {"role": "system", "content": system_prompt},
                         {"role": "user", "content": user_prompt}
                     ],
-                    max_completion_tokens=1200,
+                    # max_completion_tokens=1200,
                     response_format={"type": "json_object"}
                     # temperature 파라미터 제거 (gpt-5-mini에서 지원하지 않음)
                 )
