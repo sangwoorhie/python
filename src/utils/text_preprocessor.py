@@ -29,7 +29,7 @@ class TextPreprocessor:
     def preprocess_text(self, text: str) -> str:
         # 1단계: 입력 텍스트 유효성 검사 및 로깅
         logging.info(f"전처리 시작: 입력 길이={len(text) if text else 0}")
-        logging.info(f"전처리 입력 미리보기: {text[:100] if text else 'None'}...")
+        # logging.info(f"전처리 입력 미리보기: {text[:100] if text else 'None'}...")
 
         # 2단계: null 체크 - 빈 텍스트 처리
         if not text:
@@ -81,9 +81,9 @@ class TextPreprocessor:
         
         # 3단계: HTML 태그 제거 (메타데이터용 간소화)
         text = re.sub(r'<br\s*/?>', '\n', text, flags=re.IGNORECASE)  # <br> → 줄바꿈
-        text = re.sub(r'</p>', '\n', text, flags=re.IGNORECASE)      # </p> → 줄바꿈
-        text = re.sub(r'<p[^>]*>', '', text, flags=re.IGNORECASE)    # <p> 제거
-        text = re.sub(r'<[^>]+>', '', text)                          # 모든 HTML 태그 제거
+        text = re.sub(r'</p>', '\n', text, flags=re.IGNORECASE)       # </p> → 줄바꿈
+        text = re.sub(r'<p[^>]*>', '', text, flags=re.IGNORECASE)     # <p> 제거
+        text = re.sub(r'<[^>]+>', '', text)                           # 모든 HTML 태그 제거
         
         # 4단계: 유니코드 정규화 (NFC: 정규 결합)
         text = unicodedata.normalize('NFC', text)

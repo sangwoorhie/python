@@ -171,26 +171,16 @@ class OptimizedAIAnswerGenerator:
             "core_intent": "general_inquiry",
             "intent_category": "일반문의",
             "primary_action": "기타",
-            "target_object": "기타",
-            "constraint_conditions": [],
-            "standardized_query": query,
             "semantic_keywords": [query[:20]],
-            # 기존 호환성 필드
-            "intent_type": "일반문의",
-            "main_topic": "기타",
-            "specific_request": query[:100],
-            "keywords": [query[:20]],
-            "urgency": "medium",
-            "action_type": "기타"
         }
 
     def search_similar_answers(self, query: str, top_k: int = 5, similarity_threshold: float = 0.7, lang: str = 'ko') -> list:
         """유사 답변 검색 (최적화 적용)"""
         return self.search_service.search_similar_answers_optimized(query, top_k, lang)
     
-    def search_similar_answers_with_cached_intent(self, query: str, cached_intent: Dict, top_k: int = 5, lang: str = 'ko') -> list:
-        """캐시된 의도 분석을 활용한 유사 답변 검색 (API 호출 절약)"""
-        return self.search_service.search_similar_answers_with_cached_intent(query, cached_intent, top_k, lang)
+    # def search_similar_answers_with_cached_intent(self, query: str, cached_intent: Dict, top_k: int = 5, lang: str = 'ko') -> list:
+    #     """캐시된 의도 분석을 활용한 유사 답변 검색 (API 호출 절약)"""
+    #     return self.search_service.search_similar_answers_with_cached_intent(query, cached_intent, top_k, lang)
 
     def analyze_context_quality(self, similar_answers: list, query: str) -> dict:
         """컨텍스트 품질 분석 (기존 호환)"""
@@ -517,13 +507,12 @@ class OptimizedAIAnswerGenerator:
 
     # ☆ 2. 기본 전처리 메서드
     def process(self, seq: int, question: str, lang: str) -> dict:
-        """최적화된 메인 처리 메서드"""
         start_time = time.time() # 현재 시간을 타임스탬프로 기록하는 코드
         
         try:
             with memory_cleanup():
                 # === 처리 시작 로그 ===
-                logging.info(f"================================= 처리 시작: seq={seq}, question='{question}', lang='{lang}' ====================================")
+                # logging.info(f"================================= 처리 시작 ====================================")
                 
                 # 성능 통계 업데이트
                 self.performance_stats['total_requests'] += 1

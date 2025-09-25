@@ -57,112 +57,114 @@ class OptimizedSearchService:
     #     lang: 언어 코드
     # Returns:
     #     List[Dict]: 검색된 유사 답변 리스트
-    def search_similar_answers_optimized(self, query: str, top_k: int = 8, lang: str = 'ko') -> List[Dict]:
-        try:
-            # ===== 메모리 최적화 컨텍스트 시작 =====
-            with memory_cleanup():
-                search_start = time.time()
-                logging.info(f"=== 최적화된 다층 검색 시작 ===")
-                logging.info(f"원본 질문: {query}")
+
+    # 최적화된 의미론적 다층 검색 - 메인 검색 메서드
+    # def search_similar_answers_optimized(self, query: str, top_k: int = 8, lang: str = 'ko') -> List[Dict]:
+    #     try:
+    #         # ===== 메모리 최적화 컨텍스트 시작 =====
+    #         with memory_cleanup():
+    #             search_start = time.time()
+    #             logging.info(f"=== 최적화된 다층 검색 시작 ===")
+    #             logging.info(f"원본 질문: {query}")
                 
-                # ===== 1단계: 검색 결과 캐시 확인 =====
-                if self.search_config['enable_result_caching']:
-                    cached_results = self._check_search_cache(query, {'top_k': top_k, 'lang': lang})
-                    if cached_results:
-                        logging.info(f"검색 결과 캐시 히트: {len(cached_results)}개 결과")
-                        return cached_results
+    #             # ===== 1단계: 검색 결과 캐시 확인 =====
+    #             if self.search_config['enable_result_caching']:
+    #                 cached_results = self._check_search_cache(query, {'top_k': top_k, 'lang': lang})
+    #                 if cached_results:
+    #                     logging.info(f"검색 결과 캐시 히트: {len(cached_results)}개 결과")
+    #                     return cached_results
                 
-                # ===== 2단계: 기본 전처리 (캐싱 적용) =====
-                processed_query = self._preprocess_with_caching(query, lang)
+    #             # ===== 2단계: 기본 전처리 (캐싱 적용) =====
+    #             processed_query = self._preprocess_with_caching(query, lang)
                 
-                # ===== 3단계: 핵심 의도 분석 (캐싱 적용) =====
-                # 통합 분석기에서 이미 처리된 의도 분석을 사용하므로 개별 호출 불필요
-                intent_analysis = self._get_default_intent_analysis(processed_query)
+    #             # ===== 3단계: 핵심 의도 분석 (캐싱 적용) =====
+    #             # 통합 분석기에서 이미 처리된 의도 분석을 사용하므로 개별 호출 불필요
+    #             intent_analysis = self._get_default_intent_analysis(processed_query)
                 
-                # ===== 4단계: 검색 레이어 계획 수립 =====
-                search_plan = self._create_search_plan(processed_query, intent_analysis)
+    #             # ===== 4단계: 검색 레이어 계획 수립 =====
+    #             search_plan = self._create_search_plan(processed_query, intent_analysis)
                 
-                # ===== 5단계: 최적화된 다층 검색 실행 =====
-                search_results = self._execute_optimized_search(search_plan, top_k)
+    #             # ===== 5단계: 최적화된 다층 검색 실행 =====
+    #             search_results = self._execute_optimized_search(search_plan, top_k)
                 
-                # ===== 6단계: 결과 후처리 및 점수 계산 =====
-                final_results = self._postprocess_results(
-                    search_results, processed_query, intent_analysis, top_k
-                )
+    #             # ===== 6단계: 결과 후처리 및 점수 계산 =====
+    #             final_results = self._postprocess_results(
+    #                 search_results, processed_query, intent_analysis, top_k
+    #             )
                 
-                # ===== 7단계: 검색 결과 캐싱 =====
-                if self.search_config['enable_result_caching']:
-                    self._cache_search_results(query, {'top_k': top_k, 'lang': lang}, final_results)
+    #             # ===== 7단계: 검색 결과 캐싱 =====
+    #             if self.search_config['enable_result_caching']:
+    #                 self._cache_search_results(query, {'top_k': top_k, 'lang': lang}, final_results)
                 
-                # ===== 8단계: 검색 완료 및 성능 로깅 =====
-                search_time = time.time() - search_start
-                logging.info(f"✅ 캐시된 의도 분석 활용 검색 완료: {len(final_results)}개 결과, {search_time:.2f}s")
+    #             # ===== 8단계: 검색 완료 및 성능 로깅 =====
+    #             search_time = time.time() - search_start
+    #             logging.info(f"✅ 캐시된 의도 분석 활용 검색 완료: {len(final_results)}개 결과, {search_time:.2f}s")
                 
-                # 🔍 최종 검색 결과 상세 로깅
-                if final_results:
-                    logging.info(f"🎯 캐시된 의도 분석 검색 결과:")
-                    for i, result in enumerate(final_results[:3]):
-                        score = result.get('adjusted_score', 0.0)
-                        question = result.get('question', 'N/A')[:80]
-                        answer = result.get('answer', 'N/A')[:80]
-                        logging.info(f"   └── 결과 {i+1}: 점수={score:.3f}, 질문='{question}...', 답변='{answer}...'")
+    #             # 🔍 최종 검색 결과 상세 로깅
+    #             if final_results:
+    #                 logging.info(f"🎯 캐시된 의도 분석 검색 결과:")
+    #                 for i, result in enumerate(final_results[:3]):
+    #                     score = result.get('adjusted_score', 0.0)
+    #                     question = result.get('question', 'N/A')[:80]
+    #                     answer = result.get('answer', 'N/A')[:80]
+    #                     logging.info(f"   └── 결과 {i+1}: 점수={score:.3f}, 질문='{question}...', 답변='{answer}...'")
                 
-                return final_results
+    #             return final_results
                 
-        except Exception as e:
-            # ===== 예외 처리: 검색 실패시 빈 리스트 반환 =====
-            logging.error(f"최적화된 검색 실패: {str(e)}")
-            return []
+    #     except Exception as e:
+    #         # ===== 예외 처리: 검색 실패시 빈 리스트 반환 =====
+    #         logging.error(f"최적화된 검색 실패: {str(e)}")
+    #         return []
 
     # 캐시된 의도 분석을 활용한 최적화된 검색 - API 호출 절약
-    def search_similar_answers_with_cached_intent(self, query: str, cached_intent: Dict, top_k: int = 8, lang: str = 'ko') -> List[Dict]:
-        try:
-            # ===== 메모리 최적화 컨텍스트 시작 =====
-            with memory_cleanup():
-                search_start = time.time()
-                logging.info(f"==================================== 캐시된 의도 분석 활용 검색 시작 ====================================")
-                logging.info(f"원본 질문: {query}")
-                logging.info(f"캐시된 의도: {cached_intent.get('core_intent', 'N/A')}")
+    # def search_similar_answers_with_cached_intent(self, query: str, cached_intent: Dict, top_k: int = 8, lang: str = 'ko') -> List[Dict]:
+    #     try:
+    #         # ===== 메모리 최적화 컨텍스트 시작 =====
+    #         with memory_cleanup():
+    #             search_start = time.time()
+    #             logging.info(f"==================================== 캐시된 의도 분석 활용 검색 시작 ====================================")
+    #             logging.info(f"원본 질문: {query}")
+    #             logging.info(f"캐시된 의도: {cached_intent.get('core_intent', 'N/A')}")
                 
-                # ===== 1단계: 검색 결과 캐시 확인 =====
-                if self.search_config['enable_result_caching']:
-                    cached_results = self._check_search_cache(query, {'top_k': top_k, 'lang': lang})
-                    if cached_results:
-                        logging.info(f"검색 결과 캐시 히트: {len(cached_results)}개 결과")
-                        return cached_results
+    #             # ===== 1단계: 검색 결과 캐시 확인 =====
+    #             if self.search_config['enable_result_caching']:
+    #                 cached_results = self._check_search_cache(query, {'top_k': top_k, 'lang': lang})
+    #                 if cached_results:
+    #                     logging.info(f"검색 결과 캐시 히트: {len(cached_results)}개 결과")
+    #                     return cached_results
                 
-                # ===== 2단계: 기본 전처리 (오타는 이미 수정됨) =====
-                processed_query = self.text_processor.preprocess_text(query)
+    #             # ===== 2단계: 기본 전처리 (오타는 이미 수정됨) =====
+    #             processed_query = self.text_processor.preprocess_text(query)
                 
-                # ===== 3단계: 캐시된 의도 분석 활용 (API 호출 생략!) =====
-                intent_analysis = cached_intent  # 이미 수정된 의도 분석 사용
-                logging.info(f"🔍 캐시된 의도 분석 활용: {intent_analysis.get('core_intent', 'N/A')}")
+    #             # ===== 3단계: 캐시된 의도 분석 활용 (API 호출 생략!) =====
+    #             intent_analysis = cached_intent  # 이미 수정된 의도 분석 사용
+    #             logging.info(f"🔍 캐시된 의도 분석 활용: {intent_analysis.get('core_intent', 'N/A')}")
                 
-                # ===== 4단계: 검색 레이어 계획 수립 =====
-                search_plan = self._create_search_plan(processed_query, intent_analysis)
+    #             # ===== 4단계: 검색 레이어 계획 수립 =====
+    #             search_plan = self._create_search_plan(processed_query, intent_analysis)
                 
-                # ===== 5단계: 최적화된 다층 검색 실행 =====
-                search_results = self._execute_optimized_search(search_plan, top_k)
+    #             # ===== 5단계: 최적화된 다층 검색 실행 =====
+    #             search_results = self._execute_optimized_search(search_plan, top_k)
                 
-                # ===== 6단계: 결과 후처리 및 점수 계산 =====
-                final_results = self._postprocess_results(
-                    search_results, processed_query, intent_analysis, top_k
-                )
+    #             # ===== 6단계: 결과 후처리 및 점수 계산 =====
+    #             final_results = self._postprocess_results(
+    #                 search_results, processed_query, intent_analysis, top_k
+    #             )
                 
-                # ===== 7단계: 검색 결과 캐싱 =====
-                if self.search_config['enable_result_caching']:
-                    self._cache_search_results(query, {'top_k': top_k, 'lang': lang}, final_results)
+    #             # ===== 7단계: 검색 결과 캐싱 =====
+    #             if self.search_config['enable_result_caching']:
+    #                 self._cache_search_results(query, {'top_k': top_k, 'lang': lang}, final_results)
                 
-                # ===== 8단계: 검색 완료 및 성능 로깅 =====
-                search_time = time.time() - search_start
-                logging.info(f"🔍 캐시된 의도 활용 검색 완료: {len(final_results)}개 결과, {search_time:.2f}s")
+    #             # ===== 8단계: 검색 완료 및 성능 로깅 =====
+    #             search_time = time.time() - search_start
+    #             logging.info(f"🔍 캐시된 의도 활용 검색 완료: {len(final_results)}개 결과, {search_time:.2f}s")
                 
-                return final_results
+    #             return final_results
                 
-        except Exception as e:
-            # ===== 예외 처리: 검색 실패시 빈 리스트 반환 =====
-            logging.error(f"캐시된 의도 활용 검색 실패: {str(e)}")
-            return []
+    #     except Exception as e:
+    #         # ===== 예외 처리: 검색 실패시 빈 리스트 반환 =====
+    #         logging.error(f"캐시된 의도 활용 검색 실패: {str(e)}")
+    #         return []
 
     # 캐싱 기반 텍스트 전처리 메서드
     # Args:
@@ -187,8 +189,6 @@ class OptimizedSearchService:
             "core_intent": "general_inquiry",
             "intent_category": "일반문의",
             "primary_action": "기타",
-            "target_object": "기타",
-            "standardized_query": query,
             "semantic_keywords": [query[:20]]
         }
 
@@ -198,123 +198,123 @@ class OptimizedSearchService:
     #     intent_analysis: 의도 분석 결과
     # Returns:
     #     Dict: 검색 계획 (레이어 구성, 타겟 결과 수 등)
-    def _create_search_plan(self, query: str, intent_analysis: Dict) -> Dict:
-        # ===== 1단계: 의도 분석 결과에서 핵심 정보 추출 =====
-        core_intent = intent_analysis.get('core_intent', '')
-        standardized_query = intent_analysis.get('standardized_query', query)
-        semantic_keywords = intent_analysis.get('semantic_keywords', [])
+    # def _create_search_plan(self, query: str, intent_analysis: Dict) -> Dict:
+    #     # ===== 1단계: 의도 분석 결과에서 핵심 정보 추출 =====
+    #     core_intent = intent_analysis.get('core_intent', '')
+    #     standardized_query = intent_analysis.get('standardized_query', query)
+    #     semantic_keywords = intent_analysis.get('semantic_keywords', [])
         
-        # ===== 2단계: 기존 개념 추출 (추가 분석) =====
-        key_concepts = self.text_processor.extract_key_concepts(query)
+    #     # ===== 2단계: 기존 개념 추출 (추가 분석) =====
+    #     key_concepts = self.text_processor.extract_key_concepts(query)
         
-        # ===== 레이어 계획 수립 로깅 시작 =====
-        logging.info(f"🏗️ ===================================== 검색 레이어 계획 수립 시작 ====================================")
-        logging.info(f"   └── 원본 질문: {query}")
-        logging.info(f"   └── 핵심 의도: {core_intent}")
-        logging.info(f"   └── 표준화된 질문: {standardized_query}")
-        logging.info(f"   └── 의미론적 키워드 ({len(semantic_keywords)}개): {semantic_keywords}")
-        logging.info(f"   └── 핵심 개념 ({len(key_concepts)}개): {key_concepts}")
+    #     # ===== 레이어 계획 수립 로깅 시작 =====
+    #     logging.info(f"🏗️ ===================================== 검색 레이어 계획 수립 시작 ====================================")
+    #     logging.info(f"   └── 원본 질문: {query}")
+    #     logging.info(f"   └── 핵심 의도: {core_intent}")
+    #     logging.info(f"   └── 표준화된 질문: {standardized_query}")
+    #     logging.info(f"   └── 의미론적 키워드 ({len(semantic_keywords)}개): {semantic_keywords}")
+    #     logging.info(f"   └── 핵심 개념 ({len(key_concepts)}개): {key_concepts}")
 
-        # ===== 3단계: 동적 레이어 개수 결정 =====
-        if self.search_config['adaptive_layer_count']:
-            layer_count = self._determine_optimal_layer_count(intent_analysis, key_concepts)
-        else:
-            layer_count = self.search_config['max_layers']
+    #     # ===== 3단계: 동적 레이어 개수 결정 =====
+    #     if self.search_config['adaptive_layer_count']:
+    #         layer_count = self._determine_optimal_layer_count(intent_analysis, key_concepts)
+    #     else:
+    #         layer_count = self.search_config['max_layers']
         
-        # ===== 4단계: 검색 레이어 구성 (우선순위별) =====
-        search_layers = []
+    #     # ===== 4단계: 검색 레이어 구성 (우선순위별) =====
+    #     search_layers = []
         
-        # Layer 1: 원본 질문 (필수 레이어 - 가장 높은 가중치)
-        logging.info(f"🔍 Layer 1 구성 시도: 원본 질문")
-        search_layers.append({
-            'query': query,
-            'weight': 1.0,  # 최고 가중치
-            'type': 'original',
-            'priority': 1
-        })
-        logging.info(f"   ✅ Layer 1 추가됨: '{query}' (가중치: 1.0)")
+    #     # Layer 1: 원본 질문 (필수 레이어 - 가장 높은 가중치)
+    #     logging.info(f"🔍 Layer 1 구성 시도: 원본 질문")
+    #     search_layers.append({
+    #         'query': query,
+    #         'weight': 1.0,  # 최고 가중치
+    #         'type': 'original',
+    #         'priority': 1
+    #     })
+    #     logging.info(f"   ✅ Layer 1 추가됨: '{query}' (가중치: 1.0)")
         
-        # Layer 2: 표준화된 의도 기반 질문 (GPT 분석 결과)
-        logging.info(f"🔍 Layer 2 구성 시도: 표준화된 의도 기반")
-        logging.info(f"   └── 조건 확인: standardized_query='{standardized_query}', 원본과 동일여부={standardized_query == query}")
-        if standardized_query and standardized_query != query:
-            search_layers.append({
-                'query': standardized_query,
-                'weight': 0.95,                               # 높은 가중치
-                'type': 'intent_based',
-                'priority': 2
-            })
-            logging.info(f"   ✅ Layer 2 추가됨: '{standardized_query}' (가중치: 0.95)")
-        else:
-            logging.info(f"   ❌ Layer 2 제외됨: 표준화된 질문이 원본과 동일하거나 비어있음")
+    #     # Layer 2: 표준화된 의도 기반 질문 (GPT 분석 결과)
+    #     logging.info(f"🔍 Layer 2 구성 시도: 표준화된 의도 기반")
+    #     logging.info(f"   └── 조건 확인: standardized_query='{standardized_query}', 원본과 동일여부={standardized_query == query}")
+    #     if standardized_query and standardized_query != query:
+    #         search_layers.append({
+    #             'query': standardized_query,
+    #             'weight': 0.95,                               # 높은 가중치
+    #             'type': 'intent_based',
+    #             'priority': 2
+    #         })
+    #         logging.info(f"   ✅ Layer 2 추가됨: '{standardized_query}' (가중치: 0.95)")
+    #     else:
+    #         logging.info(f"   ❌ Layer 2 제외됨: 표준화된 질문이 원본과 동일하거나 비어있음")
         
-        # Layer 3: 핵심 의도만 (추상화된 검색)
-        logging.info(f"🔍 Layer 3 구성 시도: 핵심 의도")
-        logging.info(f"   └── 조건 확인: core_intent='{core_intent}', layer_count={layer_count} >= 3")
-        if core_intent and layer_count >= 3:
-            intent_query = core_intent.replace('_', ' ')
-            search_layers.append({
-                'query': intent_query,
-                'weight': 0.9,
-                'type': 'core_intent',
-                'priority': 3
-            })
-            logging.info(f"   ✅ Layer 3 추가됨: '{intent_query}' (가중치: 0.9)")
-        else:
-            if not core_intent:
-                logging.info(f"   ❌ Layer 3 제외됨: 핵심 의도가 비어있음")
-            else:
-                logging.info(f"   ❌ Layer 3 제외됨: 레이어 수 제한 (현재: {layer_count}, 필요: 3)")
+    #     # Layer 3: 핵심 의도만 (추상화된 검색)
+    #     logging.info(f"🔍 Layer 3 구성 시도: 핵심 의도")
+    #     logging.info(f"   └── 조건 확인: core_intent='{core_intent}', layer_count={layer_count} >= 3")
+    #     if core_intent and layer_count >= 3:
+    #         intent_query = core_intent.replace('_', ' ')
+    #         search_layers.append({
+    #             'query': intent_query,
+    #             'weight': 0.9,
+    #             'type': 'core_intent',
+    #             'priority': 3
+    #         })
+    #         logging.info(f"   ✅ Layer 3 추가됨: '{intent_query}' (가중치: 0.9)")
+    #     else:
+    #         if not core_intent:
+    #             logging.info(f"   ❌ Layer 3 제외됨: 핵심 의도가 비어있음")
+    #         else:
+    #             logging.info(f"   ❌ Layer 3 제외됨: 레이어 수 제한 (현재: {layer_count}, 필요: 3)")
         
-        # Layer 4: 의미론적 키워드 조합 (GPT 추출 키워드)
-        logging.info(f"🔍 Layer 4 구성 시도: 의미론적 키워드")
-        logging.info(f"   └── 조건 확인: 키워드 개수={len(semantic_keywords)}, layer_count={layer_count} >= 4")
-        if semantic_keywords and len(semantic_keywords) >= 2 and layer_count >= 4:
-            semantic_query = ' '.join(semantic_keywords[:3]) # 상위 3개 키워드
-            search_layers.append({
-                'query': semantic_query,
-                'weight': 0.8,
-                'type': 'semantic_keywords',
-                'priority': 4
-            })
-            logging.info(f"   ✅ Layer 4 추가됨: '{semantic_query}' (가중치: 0.8)")
-        else:
-            if not semantic_keywords or len(semantic_keywords) < 2:
-                logging.info(f"   ❌ Layer 4 제외됨: 의미론적 키워드가 2개 미만 ({len(semantic_keywords)}개)")
-            else:
-                logging.info(f"   ❌ Layer 4 제외됨: 레이어 수 제한 (현재: {layer_count}, 필요: 4)")
+    #     # Layer 4: 의미론적 키워드 조합 (GPT 추출 키워드)
+    #     logging.info(f"🔍 Layer 4 구성 시도: 의미론적 키워드")
+    #     logging.info(f"   └── 조건 확인: 키워드 개수={len(semantic_keywords)}, layer_count={layer_count} >= 4")
+    #     if semantic_keywords and len(semantic_keywords) >= 2 and layer_count >= 4:
+    #         semantic_query = ' '.join(semantic_keywords[:3]) # 상위 3개 키워드
+    #         search_layers.append({
+    #             'query': semantic_query,
+    #             'weight': 0.8,
+    #             'type': 'semantic_keywords',
+    #             'priority': 4
+    #         })
+    #         logging.info(f"   ✅ Layer 4 추가됨: '{semantic_query}' (가중치: 0.8)")
+    #     else:
+    #         if not semantic_keywords or len(semantic_keywords) < 2:
+    #             logging.info(f"   ❌ Layer 4 제외됨: 의미론적 키워드가 2개 미만 ({len(semantic_keywords)}개)")
+    #         else:
+    #             logging.info(f"   ❌ Layer 4 제외됨: 레이어 수 제한 (현재: {layer_count}, 필요: 4)")
         
-        # Layer 5: 기존 개념 기반 검색 (규칙 기반 키워드)
-        logging.info(f"🔍 Layer 5 구성 시도: 개념 기반")
-        logging.info(f"   └── 조건 확인: 개념 개수={len(key_concepts)}, layer_count={layer_count} >= 5")
-        if key_concepts and len(key_concepts) >= 2 and layer_count >= 5:
-            concept_query = ' '.join(key_concepts[:3])       # 상위 3개 개념
-            search_layers.append({
-                'query': concept_query,
-                'weight': 0.7,                               # 낮은 가중치
-                'type': 'concept_based',
-                'priority': 5
-            })
-            logging.info(f"   ✅ Layer 5 추가됨: '{concept_query}' (가중치: 0.7)")
-        else:
-            if not key_concepts or len(key_concepts) < 2:
-                logging.info(f"   ❌ Layer 5 제외됨: 핵심 개념이 2개 미만 ({len(key_concepts)}개)")
-            else:
-                logging.info(f"   ❌ Layer 5 제외됨: 레이어 수 제한 (현재: {layer_count}, 필요: 5)")
+    #     # Layer 5: 기존 개념 기반 검색 (규칙 기반 키워드)
+    #     logging.info(f"🔍 Layer 5 구성 시도: 개념 기반")
+    #     logging.info(f"   └── 조건 확인: 개념 개수={len(key_concepts)}, layer_count={layer_count} >= 5")
+    #     if key_concepts and len(key_concepts) >= 2 and layer_count >= 5:
+    #         concept_query = ' '.join(key_concepts[:3])       # 상위 3개 개념
+    #         search_layers.append({
+    #             'query': concept_query,
+    #             'weight': 0.7,                               # 낮은 가중치
+    #             'type': 'concept_based',
+    #             'priority': 5
+    #         })
+    #         logging.info(f"   ✅ Layer 5 추가됨: '{concept_query}' (가중치: 0.7)")
+    #     else:
+    #         if not key_concepts or len(key_concepts) < 2:
+    #             logging.info(f"   ❌ Layer 5 제외됨: 핵심 개념이 2개 미만 ({len(key_concepts)}개)")
+    #         else:
+    #             logging.info(f"   ❌ Layer 5 제외됨: 레이어 수 제한 (현재: {layer_count}, 필요: 5)")
         
-        # ===== 레이어 계획 완료 로깅 =====
-        logging.info(f"🏗️ ===================================== 검색 레이어 계획 완료 ====================================")
-        logging.info(f"   └── 총 생성된 레이어 수: {len(search_layers)}")
-        for i, layer in enumerate(search_layers):
-            logging.info(f"   └── Layer {i+1}: {layer['type']} (가중치: {layer['weight']}) - '{layer['query'][:50]}...'")
+    #     # ===== 레이어 계획 완료 로깅 =====
+    #     logging.info(f"🏗️ ===================================== 검색 레이어 계획 완료 ====================================")
+    #     logging.info(f"   └── 총 생성된 레이어 수: {len(search_layers)}")
+    #     for i, layer in enumerate(search_layers):
+    #         logging.info(f"   └── Layer {i+1}: {layer['type']} (가중치: {layer['weight']}) - '{layer['query'][:50]}...'")
     
 
-        # ===== 5단계: 검색 계획 반환 =====
-        return {
-            'layers': search_layers,
-            'target_results': self._calculate_target_results(len(search_layers)),
-            'early_termination_enabled': self.search_config['early_termination']
-        }
+    #     # ===== 5단계: 검색 계획 반환 =====
+    #     return {
+    #         'layers': search_layers,
+    #         'target_results': self._calculate_target_results(len(search_layers)),
+    #         'early_termination_enabled': self.search_config['early_termination']
+    #     }
 
     # 질문 복잡도에 따른 최적 레이어 수 결정 메서드
     # Args:
@@ -808,8 +808,8 @@ class OptimizedSearchService:
         return min(relevance, 1.0)
 
     # 검색 결과 캐시 확인 메서드
-    def _check_search_cache(self, query: str, search_params: Dict) -> Optional[List[Dict]]:
-        return self.api_manager.cache_manager.get_search_results_cache(query, search_params)
+    # def _check_search_cache(self, query: str, search_params: Dict) -> Optional[List[Dict]]:
+    #     return self.api_manager.cache_manager.get_search_results_cache(query, search_params)
 
     # 검색 결과 캐싱 메서드
     def _cache_search_results(self, query: str, search_params: Dict, results: List[Dict]):

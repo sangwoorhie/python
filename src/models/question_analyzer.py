@@ -70,12 +70,9 @@ class QuestionAnalyzer:
 ⚠️ 반드시 유효한 JSON만 반환하세요. 설명 없이 순수 JSON만!:
 
 {
-  "core_intent": "핵심 의도 (표준화된 형태)",
-  "intent_category": "의도 카테고리",
+  "core_intent": "핵심 의도",
+  "intent_category": "카테고리",
   "primary_action": "주요 행동",
-  "target_object": "대상 객체",
-  "constraint_conditions": ["제약 조건들"],
-  "standardized_query": "표준화된 질문 형태",
   "semantic_keywords": ["의미론적 핵심 키워드들"]
 }
 
@@ -94,8 +91,7 @@ class QuestionAnalyzer:
    - "동시에", "함께", "비교하여", "나란히" → "simultaneous_view"
    - "NIV", "KJV", "개역한글", "번역본" → "translation_version"
 
-4. **제약 조건 식별**: 요청의 구체적 조건들
-   - "영어 번역본만", "한글 번역본만", "특정 장절" 등
+
 
 예시 분석:
 질문1: "요한복음 3장 16절 영어 번역본 NIV와 KJV 동시에 보려면?"
@@ -103,7 +99,6 @@ class QuestionAnalyzer:
 질문3: "두 개의 번역본을 어떻게 동시에 볼 수 있죠?"
 
 → 모두 core_intent: "multiple_translations_simultaneous_view"
-→ 모두 standardized_query: "서로 다른 번역본을 동시에 보는 방법"
 """
 
                 # ===== 2단계: 사용자 질문 분석을 위한 프롬프트 생성 =====
@@ -159,17 +154,7 @@ class QuestionAnalyzer:
                         "core_intent": "general_inquiry",
                         "intent_category": "일반문의",
                         "primary_action": "기타",
-                        "target_object": "기타",
-                        "constraint_conditions": [],
-                        "standardized_query": query,
                         "semantic_keywords": [query[:20]],
-                        # 기존 호환성 필드
-                        "intent_type": "일반문의",
-                        "main_topic": "기타",
-                        "specific_request": query[:100],
-                        "keywords": [query[:20]],
-                        "urgency": "medium",
-                        "action_type": "기타"
                     }
                 
         except Exception as e:
@@ -179,17 +164,7 @@ class QuestionAnalyzer:
                 "core_intent": "general_inquiry",
                 "intent_category": "일반문의", 
                 "primary_action": "기타",
-                "target_object": "기타",
-                "constraint_conditions": [],
-                "standardized_query": query,
                 "semantic_keywords": [query[:20]],
-                # 기존 호환성 필드
-                "intent_type": "일반문의",
-                "main_topic": "기타",
-                "specific_request": query[:100],
-                "keywords": [query[:20]],
-                "urgency": "medium",
-                "action_type": "기타"
             }
 
     # 질문의 의도와 참조 답변 간의 의미론적 유사성을 계산하는 메서드
