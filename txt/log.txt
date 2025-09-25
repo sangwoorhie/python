@@ -3,7 +3,7 @@
 grep "2025-09-25" /home/ec2-user/python/logs/bible_app_ai.log
 
 - *특정 시간
-grep "2025-09-25" /home/ec2-user/python/logs/bible_app_ai.log
+grep "2025-09-25 06:" /home/ec2-user/python/logs/bible_app_ai.log
 
 - *전체
 vi /home/ec2-user/python/logs/bible_app_ai.log

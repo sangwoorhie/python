@@ -147,9 +147,7 @@ def setup_logging():
         logging.getLogger('werkzeug').setLevel(logging.WARNING)
         
         # 추가 로깅 테스트 (설정 완료 후)
-        logging.info("=== 로그 시스템 초기화 완료 ===")
-        logging.info("모든 모듈의 로그가 이 파일에 기록됩니다.")
-        
+        logging.info("============================= 로그 시스템 초기화 완료 =================================")        
         print(f"✅ 로그 파일 설정 완료: /home/ec2-user/python/logs/bible_app_ai.log")
         
         return True
@@ -171,7 +169,6 @@ def setup_logging():
 setup_logging()
 
 # 로깅 테스트 (시스템 초기화 후 즉시 실행)
-logging.info("=== 로깅 시스템 테스트 시작 ===")
 logging.info("이 메시지가 보이면 로깅이 정상 작동합니다.")
 
 # ==================================================
@@ -196,7 +193,7 @@ MAX_TEXT_LENGTH = 8000      # 임베딩 생성시 최대 텍스트 길이 (토�
 # GPT 자연어 모델 설정
 # 🧠 GPT 모델 파라미터 설정
 GPT_MODEL = 'gpt-5-mini'         # OpenAI GPT 모델 (답변 생성용)
-MAX_TOKENS = 600             # 생성할 최대 토큰 수 (답변 길이 제한)
+MAX_TOKENS = 6000             # 생성할 최대 토큰 수 (답변 길이 제한)
 TEMPERATURE = 0.5            # 창의성 vs 일관성 조절 (0.5 = 균형)
 
 # Redis 캐싱 설정
@@ -420,54 +417,54 @@ if __name__ == "__main__":
     # 🏥 역할: 서버 시작 전 모든 주요 시스템의 상태를 확인하여 문제 조기 발견
     
     # 로깅 테스트 (시스템 초기화 후)
-    logging.info("=== 시스템 헬스체크 시작 ===")
+    # logging.info("=== 시스템 헬스체크 시작 ===")
     
     # 캐시 시스템 상태 확인
     cache_available = generator.cache_manager.is_cache_available()
     cache_stats = generator.cache_manager.get_cache_stats()
     print(f"💾 캐싱 시스템: {'✅ 연결됨' if cache_available else '❌ 연결 실패'}")
     print(f"   └── 타입: {cache_stats.get('cache_type', 'Unknown')}")
-    logging.info(f"캐싱 시스템 상태: {'연결됨' if cache_available else '연결 실패'}, 타입: {cache_stats.get('cache_type', 'Unknown')}")
+    # logging.info(f"캐싱 시스템 상태: {'연결됨' if cache_available else '연결 실패'}, 타입: {cache_stats.get('cache_type', 'Unknown')}")
     
     # 배치 프로세서 상태 확인
     batch_running = generator.batch_processor.running
     print(f"⚡ 배치 프로세서: {'✅ 실행 중' if batch_running else '❌ 중지됨'}")
-    logging.info(f"배치 프로세서 상태: {'실행 중' if batch_running else '중지됨'}")
+    # logging.info(f"배치 프로세서 상태: {'실행 중' if batch_running else '중지됨'}")
     
     # API 매니저 상태 확인
     api_health = generator.api_manager.health_check()
     print(f"🧠 API 관리자: {'✅ 정상' if api_health['openai_client_available'] else '❌ 오류'}")
-    logging.info(f"API 관리자 상태: {'정상' if api_health['openai_client_available'] else '오류'}")
+    # logging.info(f"API 관리자 상태: {'정상' if api_health['openai_client_available'] else '오류'}")
     
     # 로깅 시스템 최종 테스트
-    logging.info("=== 로깅 시스템 최종 테스트 ===")
-    logging.info("이 메시지가 로그 파일에 기록되면 로깅이 정상 작동합니다.")
+    # logging.info("=== 로깅 시스템 최종 테스트 ===")
+    # logging.info("이 메시지가 로그 파일에 기록되면 로깅이 정상 작동합니다.")
     
     # 각 모듈별 로깅 테스트 (실제 모듈에서 사용하는 로거들)
-    src_logger = logging.getLogger('src')
-    src_logger.info("src 모듈 로깅 테스트 - 실제 모듈에서 사용")
+    # src_logger = logging.getLogger('src')
+    # src_logger.info("src 모듈 로깅 테스트 - 실제 모듈에서 사용")
     
-    main_logger = logging.getLogger('src.main_optimized_ai_generator')
-    main_logger.info("main_optimized_ai_generator 모듈 로깅 테스트 - 실제 모듈에서 사용")
+    # main_logger = logging.getLogger('src.main_optimized_ai_generator')
+    # main_logger.info("main_optimized_ai_generator 모듈 로깅 테스트 - 실제 모듈에서 사용")
     
-    # 추가 로깅 테스트 (각 모듈별)
-    models_logger = logging.getLogger('src.models')
-    models_logger.info("models 모듈 로깅 테스트 - 실제 모듈에서 사용")
+    # # 추가 로깅 테스트 (각 모듈별)
+    # models_logger = logging.getLogger('src.models')
+    # models_logger.info("models 모듈 로깅 테스트 - 실제 모듈에서 사용")
     
-    services_logger = logging.getLogger('src.services')
-    services_logger.info("services 모듈 로깅 테스트 - 실제 모듈에서 사용")
+    # services_logger = logging.getLogger('src.services')
+    # services_logger.info("services 모듈 로깅 테스트 - 실제 모듈에서 사용")
     
-    utils_logger = logging.getLogger('src.utils')
-    utils_logger.info("utils 모듈 로깅 테스트 - 실제 모듈에서 사용")
+    # utils_logger = logging.getLogger('src.utils')
+    # utils_logger.info("utils 모듈 로깅 테스트 - 실제 모듈에서 사용")
     
-    api_logger = logging.getLogger('src.api')
-    api_logger.info("api 모듈 로깅 테스트 - 실제 모듈에서 사용")
+    # api_logger = logging.getLogger('src.api')
+    # api_logger.info("api 모듈 로깅 테스트 - 실제 모듈에서 사용")
     
-    logging.info("=== 시스템 헬스체크 완료 ===")
+    # logging.info("=== 시스템 헬스체크 완료 ===")
     
-    print("="*80)
-    print("🎯 시스템 준비 완료! API 요청을 받을 준비가 되었습니다.")
-    print("="*80)
+    # print("="*80)
+    # print("🎯 시스템 준비 완료! API 요청을 받을 준비가 되었습니다.")
+    # print("="*80)
 
     # Flask 웹 서버 시작 (프로덕션 설정)
     # 🌐 서버 설정 설명:

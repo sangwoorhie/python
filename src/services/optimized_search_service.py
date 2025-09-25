@@ -48,7 +48,7 @@ class OptimizedSearchService:
         self.embedding_cache = {}                            # 임베딩 재사용 캐시
         self.search_history = {}                             # 검색 기록 캐시
         
-        logging.info("최적화된 검색 서비스 초기화 완료")
+        # logging.info("최적화된 검색 서비스 초기화 완료")
 
     # 최적화된 의미론적 다층 검색 - 메인 검색 메서드
     # Args:

@@ -37,7 +37,7 @@ def create_endpoints(app: Flask, generator, sync_manager, index):
                 lang = data.get('lang', 'auto')             # 언어 설정 (자동 감지) 프론트엔드에서 받을 수 있음, 기본값 'auto'
                 
                 # 🔍 추가 로그
-                logging.info(f"=== API 요청 수신 (POST /generate_answer) ===")
+                logging.info(f"================================= API 요청 수신 (POST /generate_answer) ====================================")
                 logging.info(f"SEQ: {seq}")
                 logging.info(f"질문: {question}")
                 logging.info(f"언어: {lang}")

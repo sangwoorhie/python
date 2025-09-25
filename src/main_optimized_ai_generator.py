@@ -71,7 +71,7 @@ class OptimizedAIAnswerGenerator:
             'api_calls_saved': 0 # 절약된 API 호출 수
         }
         
-        logging.info("최적화된 AI 답변 생성기 초기화 완료")
+        # logging.info("최적화된 AI 답변 생성기 초기화 완료")
 
     def _initialize_optimization_system(self, redis_config: Optional[Dict]):
         """최적화 시스템 초기화"""
@@ -104,7 +104,7 @@ class OptimizedAIAnswerGenerator:
         # 배치 프로세서 시작
         self.batch_processor.start()
         
-        logging.info("최적화 시스템 초기화 완료")
+        # logging.info("최적화 시스템 초기화 완료")
 
     # ================================
     # 기존 인터페이스 호환성 메서드들 (최적화 적용)
@@ -523,7 +523,7 @@ class OptimizedAIAnswerGenerator:
         try:
             with memory_cleanup():
                 # === 처리 시작 로그 ===
-                logging.info(f"=== 처리 시작: seq={seq}, question='{question}', lang='{lang}' ===")
+                logging.info(f"================================= 처리 시작: seq={seq}, question='{question}', lang='{lang}' ====================================")
                 
                 # 성능 통계 업데이트
                 self.performance_stats['total_requests'] += 1
@@ -535,62 +535,65 @@ class OptimizedAIAnswerGenerator:
                 preprocess_start = time.time()
                 processed_question = self.preprocess_text(question)
                 preprocess_time = time.time() - preprocess_start
-                logging.info(f"2. 전처리: '{question}' → '{processed_question}', 시간={preprocess_time:.3f}s")
+                logging.info(f"2. HTML 태그 제거, 앱 이름 통일, 공백 정규화 전처리: '{question}' → '{processed_question}', 시간={preprocess_time:.3f}s")
 
                 # 3단계: 통합 분석 (오타 수정 + 의도 분석)
-                analysis_start = time.time()
-                if lang == 'ko' or lang == 'auto':
-                    logging.info(f"통합 분석 시작: 텍스트='{processed_question}', lang='{lang}'")
+                analysis_start = time.time()    
+                corrected_text, intent_analysis = self.unified_analyzer.analyze_and_correct(processed_question)
+                core_intent = intent_analysis.get('core_intent', 'general_inquiry')
+                processed_question = corrected_text # corrected_text를 쿼리로 사용
+
+                analysis_time = time.time() - analysis_start
                     
-                    corrected_text, intent_analysis = self.unified_analyzer.analyze_and_correct(processed_question)
-                    processed_question = corrected_text
-                    analysis_time = time.time() - analysis_start
+                # ===== 통합 분석 결과 상세 로그 (강제 출력) =====
+                # logging.info(f"통합 분석 - 원본: {question}")
+                # logging.info(f"통합 분석 - 수정: {corrected_text}")
+                # logging.info(f"통합 분석 - 의도: {json.dumps(intent_analysis, ensure_ascii=False)}")
                     
-                    # ===== 통합 분석 결과 상세 로그 (강제 출력) =====
-                    logging.info(f"통합 분석 - 원본: {question}")
-                    logging.info(f"통합 분석 - 수정: {corrected_text}")
-                    logging.info(f"통합 분석 - 의도: {json.dumps(intent_analysis, ensure_ascii=False)}")
+                logging.info(f"3. 통합 분석 완료: corrected='{corrected_text}', intent={{'core_intent': '{intent_analysis.get('core_intent', 'N/A')}'}}, 시간={analysis_time:.2f}s")
                     
-                    # 추가로 print도 사용하여 확실히 출력
-                    print(f"[LOG] 통합 분석 - 원본: {question}")
-                    print(f"[LOG] 통합 분석 - 수정: {corrected_text}")
-                    print(f"[LOG] 통합 분석 - 의도: {json.dumps(intent_analysis, ensure_ascii=False)}")
+                # 의도 분석 결과를 임시 저장 (검색 단계에서 재사용)
+                # self._cached_intent_analysis = intent_analysis
                     
-                    logging.info(f"3. 통합 분석 완료: corrected='{corrected_text}', intent={{'core_intent': '{intent_analysis.get('core_intent', 'N/A')}', 'primary_action': '{intent_analysis.get('primary_action', 'N/A')}'}}, 시간={analysis_time:.2f}s")
-                    
-                    # 의도 분석 결과를 임시 저장 (검색 단계에서 재사용)
-                    self._cached_intent_analysis = intent_analysis
-                    
-                    if processed_question != question:
-                        logging.info(f"통합 분석 - 오타 수정 적용됨: {question[:50]} → {processed_question[:50]}")
-                else:
-                    # 영어인 경우 기본 의도 분석 사용 (GPT 호출 생략)
-                    self._cached_intent_analysis = self._get_default_intent_analysis(processed_question)
-                    analysis_time = time.time() - analysis_start
-                    logging.info(f"3. 기본 의도 분석 (영어): 시간={analysis_time:.3f}s")
+                # if processed_question != question:
+                #     logging.info(f"통합 분석 - 오타 수정 적용됨: {question[:50]} → {processed_question[:50]}")
 
                 if not processed_question:
                     return {"success": False, "error": "질문이 비어있습니다."}
 
                 # 4단계: 언어 자동 감지
                 if not lang or lang == 'auto':
-                    lang = self.detect_language(processed_question)
+                    lang = 'ko' # 한국어로 고정
+                    # lang = self.detect_language(processed_question)
                     logging.info(f"4. 언어 감지: '{lang}'")
                 else:
                     logging.info(f"4. 언어 설정: '{lang}' (사용자 지정)")
 
-                logging.info(f"처리 시작 - SEQ: {seq}, 언어: {lang}, 질문: {processed_question[:50]}...")
+                # logging.info(f"처리 시작 - SEQ: {seq}, 언어: {lang}, 질문: {processed_question[:50]}...")
 
 
-                # 5단계. 유사 답변 검색 (캐시된 의도 분석 활용)
+                # 5단계. 유사 답변 검색 (캐싱 X, 벡터임베딩 모델 활용하여 통합 분석 결과 활용)
                 search_start = time.time()
-                logging.info("5. 검색 시작: 최적화된 다층 검색 시작")
+                logging.info("5. 검색 시작: 캐싱 없이 즉시 임베딩 생성 및 Pinecone 검색")
+                # logging.info("5. 검색 시작: 최적화된 다층 검색 시작")
                 
-                similar_answers = self.search_similar_answers_with_cached_intent(
-                    processed_question, self._cached_intent_analysis, lang=lang)
-                
+                # 캐싱 없이 즉시 임베딩 생성 및 Pinecone 검색
+                similar_answers = self._search_by_core_intent(
+                core_intent=core_intent,
+                original_query=corrected_text,
+                lang=lang
+                )
                 search_time = time.time() - search_start
-                logging.info(f"5. 검색 완료: {len(similar_answers)}개 유사답변, 시간={search_time:.2f}s")
+                logging.info(f"Core Intent 기반 검색 완료: {len(similar_answers)}개 결과, 시간={search_time:.2f}s")
+
+                # 캐시이용버전
+                # similar_answers = self.search_similar_answers_with_cached_intent(
+                #     processed_question, self._cached_intent_analysis, lang=lang)
+                
+                # search_time = time.time() - search_start
+                # logging.info(f"5. 검색 완료: {len(similar_answers)}개 유사답변, 시간={search_time:.2f}s")
+
+
 
                 # 6-14단계: AI 답변 생성 (상세 로그 포함)
                 generation_start = time.time()
@@ -629,13 +632,13 @@ class OptimizedAIAnswerGenerator:
         """상세 로그가 포함된 AI 답변 생성"""
         
         # 6단계: 캐시 확인 (검색 서비스에서 이미 처리됨)
-        logging.info("6. 캐시 확인: 검색 결과 활용")
+        # logging.info("6. 캐시 확인: 검색 결과 활용")
         
         # 7단계: 검색 계획 (검색 서비스에서 이미 처리됨)
-        logging.info("7. 검색 계획: 다층 검색 계획 완료")
+        # logging.info("7. 검색 계획: 다층 검색 계획 완료")
         
         # 8단계: 임베딩 배치 (검색 서비스에서 이미 처리됨)
-        logging.info("8. 임베딩 배치: 임베딩 생성 완료")
+        # logging.info("8. 임베딩 배치: 임베딩 생성 완료")
         
         # 9단계: Pinecone 검색 (검색 서비스에서 이미 처리됨)
         logging.info(f"9. Pinecone 검색: {len(similar_answers)}개 결과 반환")
@@ -725,6 +728,46 @@ class OptimizedAIAnswerGenerator:
             logging.error(f"일관성 평가 실패: {e}")
         
         return 0.5  # 기본값
+
+    # ☆ Core Intent를 직접 임베딩하여 검색
+    def _search_by_core_intent(self, core_intent: str, original_query: str, lang: str = 'ko') -> List[Dict]:
+        try:
+            # core_intent를 임베딩 생성
+            logging.info(f"Core Intent 임베딩 생성: '{core_intent}'")
+            
+            # 임베딩 생성 (캐싱 없이 직접 처리)
+            intent_embedding = self.openai_client.embeddings.create(
+                model='text-embedding-3-small',
+                input=core_intent
+            ).data[0].embedding
+            
+            # Pinecone 직접 검색
+            search_results = self.index.query(
+                vector=intent_embedding,
+                top_k=10,  # 충분한 결과 확보
+                include_metadata=True
+            )
+            
+            # 결과 처리
+            processed_results = []
+            for match in search_results.get('matches', []):
+                processed_results.append({
+                    'score': match['score'],
+                    'question': match['metadata'].get('question', ''),
+                    'answer': match['metadata'].get('answer', ''),
+                    'category': match['metadata'].get('category', ''),
+                    'lang': lang
+                })
+            
+            # 점수 기준 정렬
+            processed_results.sort(key=lambda x: x['score'], reverse=True)
+            
+            logging.info(f"Core Intent 검색 결과: {len(processed_results)}개")
+            return processed_results[:8]  # 상위 8개 반환
+            
+        except Exception as e:
+            logging.error(f"Core Intent 검색 실패: {e}")
+            return []
 
     def _filter_by_coherence(self, query: str, similar_answers: list) -> list:
         """일관성 기반 필터링 - 더 관대한 버전"""
@@ -823,7 +866,7 @@ class OptimizedAIAnswerGenerator:
             enable_result_caching=True # 결과 캐싱 활성화
         )
         
-        logging.info("프로덕션 최적화 설정 적용 완료")
+        # logging.info("프로덕션 최적화 설정 적용 완료")
 
     def cleanup(self):
         """리소스 정리"""

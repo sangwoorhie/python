@@ -26,10 +26,13 @@ class UnifiedTextAnalyzer:
     def analyze_and_correct(self, text: str) -> Tuple[str, Dict]:
         try:
             with memory_cleanup():
-                logging.info(f"통합 분석기 시작: 입력 텍스트='{text}'")
+                logging.info(f"====================== 의도 분석 + 오타 수정 시작 ======================")
                 
                 # 통합 시스템 프롬프트
                 system_prompt = """바이블 앱 문의 전문 분석가로서, 사용자의 질문에 대해 다음 두 가지 작업을 동시에 수행하세요:
+
+    1. 오타 수정: 입력 텍스트의 오타, 띄어쓰기, 맞춤법을 교정하여 자연스럽고 올바른 한글 텍스트로 수정하세요. 의미와 어조는 유지하세요.
+    2. 의도 분석: 수정된 텍스트를 기반으로 사용자의 핵심 의도와 관련 요소를 분석하세요.
 
     응답 형식 (JSON):
     {
@@ -37,8 +40,6 @@ class UnifiedTextAnalyzer:
         "intent_analysis": {
             "core_intent": "핵심 의도",
             "intent_category": "카테고리",
-            "primary_action": "주요 행동",
-            "semantic_keywords": ["키워드"]
         }
     }
 
@@ -46,8 +47,8 @@ class UnifiedTextAnalyzer:
     - 앱/어플리케이션 → 앱 통일
     - 띄어쓰기, 맞춤법 교정
     - 의미/어조 유지
-    - 유효한 JSON만 반환
-    - 바이블 애플 앱 기능과 관련없는 키워드는 수집하지 말 것"""
+    - 유효한 JSON만 반환"""
+    # - 바이블 애플 앱 기능과 관련없는 키워드는 수집하지 말 것
 
                 user_prompt = f"다음 텍스트를 분석해주세요:\n\n{text}"
                 
@@ -98,25 +99,25 @@ class UnifiedTextAnalyzer:
                     })
                     
                     # 상세 결과 로그
-                    logging.info(f"통합 분석 완료 - 수정된 텍스트: '{corrected_text}'")
-                    logging.info(f"통합 분석 완료 - 의도 분석: {json.dumps(intent_analysis, ensure_ascii=False)}")
+                    logging.info(f"🔍 오타 수정된 텍스트: '{corrected_text}'")
+                    logging.info(f"🔍 의도 분석 결과: {json.dumps(intent_analysis, ensure_ascii=False)}")
                     
                     # 로깅
-                    if corrected_text != text:
-                        logging.info(f"통합 분석 - 오타 수정: '{text[:50]}...' → '{corrected_text[:50]}...'")
+                    # if corrected_text != text:
+                    #     logging.info(f"통합 분석 - 오타 수정: '{text[:50]}...' → '{corrected_text[:50]}...'")
                     
-                    logging.info(f"통합 분석 - 의도: {intent_analysis.get('core_intent', 'N/A')}")
+                    # logging.info(f"통합 분석 - 의도: {intent_analysis.get('core_intent', 'N/A')}")
                     
                     # 🔍 디버그: 파싱된 결과 출력
-                    logging.info("�� [사용자 질문 의도 분석 결과]")
-                    logging.info(f"입력 텍스트: {text}")
-                    logging.info(f"수정된 텍스트: {corrected_text}")
-                    logging.info(f"핵심 의도: {intent_analysis.get('core_intent', 'N/A')}")
-                    logging.info(f"주요 행동: {intent_analysis.get('primary_action', 'N/A')}")
-                    logging.info(f"대상 객체: {intent_analysis.get('target_object', 'N/A')}")
-                    logging.info(f"의미론적 키워드: {intent_analysis.get('semantic_keywords', [])}")
-                    logging.info(f"전체 의도 분석: {json.dumps(intent_analysis, ensure_ascii=False, indent=2)}")
-                    logging.info("="*60)
+                    # logging.info("�� [사용자 질문 의도 분석 결과]")
+                    # logging.info(f"입력 텍스트: {text}")
+                    # logging.info(f"수정된 텍스트: {corrected_text}")
+                    # logging.info(f"핵심 의도: {intent_analysis.get('core_intent', 'N/A')}")
+                    # logging.info(f"주요 행동: {intent_analysis.get('primary_action', 'N/A')}")
+                    # logging.info(f"대상 객체: {intent_analysis.get('target_object', 'N/A')}")
+                    # logging.info(f"의미론적 키워드: {intent_analysis.get('semantic_keywords', [])}")
+                    # logging.info(f"전체 의도 분석: {json.dumps(intent_analysis, ensure_ascii=False, indent=2)}")
+                    # logging.info("="*60)
 
                     return corrected_text, intent_analysis
                     

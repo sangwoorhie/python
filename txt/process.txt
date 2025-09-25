@@ -1,3 +1,5 @@
+<신규 프로세스>
+
 1.	사용자 질문 입력 (/generate_answer 엔드포인트)
 경로 : src>api>endpoints.py → @app.route('/generate_answer', methods=['POST'])
 
@@ -10,23 +12,76 @@
 경로 : src>utils>unified_text_analyzer.py → def analyze_and_correct 매서드
 
 
-4.	언어감지 (영어 or 한국어)
+4.	임베딩 배치 처리 (텍스트를 벡터 임베딩으로 변환하는 배치 처리 시스템)
+경로 : src>utils>batch_processor.py → def _process_embedding_batch 매서드
+
+- text-embedding-3-small 모델 사용
+- 사용자 질문을 1536차원의 벡터로 변환
+- Pinecone에서 유사한 성경 구절이나 Q&A를 찾기 위한 쿼리 벡터 생성
+- 메모리 캐시에 저장하여 중복 계산 방지
+- 개별 호출: 10개 텍스트 → 10번 API 호출 → 높은 비용
+- 배치 호출: 10개 텍스트 → 1번 API 호출 → 90% 비용 절약
+
+5.	다층 벡터 검색 실행
+경로 : src/services/optimized_search_service.py → def _execute_optimized_search 매서드
+
+
+6.	검색 결과 후처리 및 의도 관련성 / 개념 관련성 계산
+경로 : src/services/optimized_search_service.py → def _postprocess_results 매서드
+
+
+7.	컨텍스트 품질 분석
+경로 : src/services/optimized_search_service.py → def analyze_context_quality 매서드
+
+
+8.	답변 생성 전략 실행
+경로 : src/models/answer_generator.py → def generate_with_enhanced_gpt 매서드
+
+
+9.	품질 검증 (후처리)
+경로 : src/utils/quality_validator.py → def check_answer_completeness 매서드
+
+
+10.	HTML 포맷팅 (후처리)
+경로 : src/main_optimized_ai_generator.py → def _format_answer_with_html_paragraphs 매서드
+
+
+11.	응답 반환
+경로 : src/api/endpoints.py → def generate_answer 매서드
+
+
+
+<기존 프로세스>
+
+1.	사용자 질문 입력 (/generate_answer 엔드포인트)
+경로 : src>api>endpoints.py → @app.route('/generate_answer', methods=['POST'])
+
+
+2.	전처리 시작 (HTML 태그 제거, 앱 이름 통일, 공백 정규화)
+경로 : src>utils>text_preprocessor.py → def preprocess_text 매서드
+
+
+3.	통합분석 ( 오타수정 + 의도분석 )
+경로 : src>utils>unified_text_analyzer.py → def analyze_and_correct 매서드
+
+
+4.	언어감지 (영어 or 한국어) X
 경로 : src>main_optimized_ai_generator.py → def detect_language 매서드
 
 
-5.	의도분석 캐시 조회
+5.	의도분석 캐시 조회 X
 경로 : src>services>optimized_search_service.py → def search_similar_answers_with_cached_intent 매서드
 
 → 현재는 현재는 정확히 동일한 질문만 캐시에서 가져오고, 의미적으로 비슷한 질문은 캐시를 활용 X
 
 
-6.	검색 결과 캐시 확인
+6.	검색 결과 캐시 확인 X
 경로 : src>utils>cache_manager.py → def get_search_results_cache 매서드
 
 → logging.info("검색 결과 캐시 전체 미스 - 새 검색 필요")
 
 
-7.	검색 계획 수립 (5단계 레이어)
+7.	검색 계획 수립 (5단계 레이어) X
 경로 : src>services>optimized_search_service.py → def _create_search_plan 매서드
 
 

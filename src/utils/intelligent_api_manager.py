@@ -101,7 +101,7 @@ class IntelligentAPIManager:
         }
         
         # ===== 6단계: 초기화 완료 로깅 =====
-        logging.info("지능형 API 관리자 초기화 완료")
+        # logging.info("지능형 API 관리자 초기화 완료")
 
     # API 요청 지능형 처리 메인 메서드
     # Args:

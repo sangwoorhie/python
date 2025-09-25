@@ -87,7 +87,7 @@ class BatchProcessor:
         }
         
         # 초기화 완료 로깅
-        logging.info(f"배치 프로세서 초기화: workers={max_workers}, batch_size={batch_size}, timeout={batch_timeout}s")
+        # logging.info(f"배치 프로세서 초기화: workers={max_workers}, batch_size={batch_size}, timeout={batch_timeout}s")
 
     # 배치 처리 시스템 시작 메서드
     # - 각 작업 유형별로 별도 배치 처리 스레드 생성 및 시작
@@ -727,4 +727,4 @@ T2: [수정된 텍스트2]
     def set_openai_client(self, openai_client):
         # OpenAI 클라이언트를 배치 프로세서에 등록
         self.openai_client = openai_client
-        logging.info("OpenAI 클라이언트가 배치 프로세서에 설정됨")
+        # logging.info("OpenAI 클라이언트가 배치 프로세서에 설정됨")

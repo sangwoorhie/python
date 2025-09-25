@@ -15,6 +15,7 @@ import unicodedata
 import logging
 from typing import Optional
 
+
 # ===== 텍스트 전처리를 담당하는 메인 클래스 =====
 class TextPreprocessor:
     
@@ -64,7 +65,7 @@ class TextPreprocessor:
         
         # 7단계: 전처리 완료 로깅
         logging.info(f"전처리 완료: 최종 길이={len(text)}")
-        logging.info(f"전처리 결과 미리보기: {text[:100]}...")
+        # logging.info(f"전처리 결과 미리보기: {text[:100]}...")
         
         return text
 
