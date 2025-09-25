@@ -9,6 +9,13 @@
 "성경통독을하루에 최대 몇 장 할 수 있나요?" ← 공백 1개
 결과: 서로 다른 캐시 키 → 별도 검색 수행
 
+# 모든 캐시 키 목록 조회 (패턴별)
+redis-cli keys "embedding:*"    # 임베딩 캐시
+redis-cli keys "intent:*"       # 의도분석 캐시
+redis-cli keys "typo:*"         # 오타수정 캐시
+redis-cli keys "translation:*"  # 번역 캐시
+redis-cli keys "search:*"       # 검색결과 캐시
+
 다층 캐시 구조
 Level 1: 검색 결과 캐시 (최상위) - 24시간 TTL
 ├── 키: "search:해시값"

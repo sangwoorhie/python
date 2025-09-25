@@ -30,9 +30,15 @@
 경로 : src>services>optimized_search_service.py → def _create_search_plan 매서드
 
 
-8.	임베딩 배치 처리
+8.	임베딩 배치 처리 (텍스트를 벡터 임베딩으로 변환하는 배치 처리 시스템)
 경로 : src>utils>batch_processor.py → def _process_embedding_batch 매서드
 
+- text-embedding-3-small 모델 사용
+- 사용자 질문을 1536차원의 벡터로 변환
+- Pinecone에서 유사한 성경 구절이나 Q&A를 찾기 위한 쿼리 벡터 생성
+- 메모리 캐시에 저장하여 중복 계산 방지
+- 개별 호출: 10개 텍스트 → 10번 API 호출 → 높은 비용
+- 배치 호출: 10개 텍스트 → 1번 API 호출 → 90% 비용 절약
 
 9.	다층 벡터 검색 실행
 경로 : src/services/optimized_search_service.py → def _execute_optimized_search 매서드
