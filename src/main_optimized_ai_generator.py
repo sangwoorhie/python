@@ -839,15 +839,19 @@ class OptimizedAIAnswerGenerator:
             cache_hit_bonus=0.9 # 캐시 히트 보너스
         )
         
-        # 검색 서비스 최적화
-        self.search_service.update_search_config(
-            adaptive_layer_count=True, # 동적 레이어 카운트 활성화
-            early_termination=True, # 조기 종료 활성화
-            similarity_threshold=0.8, # 유사도 임계값
-            enable_result_caching=True # 결과 캐싱 활성화
-        )
+        # 검색 서비스 최적화 (조건부 호출)
+        if hasattr(self.search_service, 'update_search_config'):
+            self.search_service.update_search_config(
+                adaptive_layer_count=True, # 동적 레이어 카운트 활성화
+                early_termination=True, # 조기 종료 활성화
+                similarity_threshold=0.8, # 유사도 임계값
+                enable_result_caching=True # 결과 캐싱 활성화
+            )
+            logging.info("검색 서비스 최적화 설정 완료")
+        else:
+            logging.info("검색 서비스 최적화 건너뛰기 (EnhancedPineconeSearchService에서는 지원되지 않음)")
         
-        # logging.info("프로덕션 최적화 설정 적용 완료")
+        logging.info("프로덕션 최적화 설정 적용 완료")
 
     def cleanup(self):
         """리소스 정리"""
