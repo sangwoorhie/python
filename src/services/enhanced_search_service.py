@@ -100,7 +100,7 @@ class EnhancedPineconeSearchService:
                     semantic_keywords, original_query
                 )
                 
-                logging.info(f"통합 검색 쿼리: '{unified_query}'")
+                # logging.info(f"통합 검색 쿼리: '{unified_query}'")
                 
                 # 단일 검색 수행 (1번 임베딩 + 1번 Pinecone 검색)
                 search_results = self._perform_single_optimized_search(
