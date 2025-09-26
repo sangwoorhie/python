@@ -697,7 +697,7 @@ class OptimizedSearchService:
         print(f"🔍 [SEARCH DEBUG] 최종 선택된 결과: {len(final_results)}개")
         print("="*80)
         for i, result in enumerate(final_results):
-            print(f"최종결과 #{i+1}: 점수={result['score']:.3f}, 질문={result['question'][:80]}...")
+            print(f"최종결과 #{i+1}: 점수={result['score']:.3f}, 질문={result['question'][:80]}")
         print("="*80)
         
         # 디버그 파일에도 저장
