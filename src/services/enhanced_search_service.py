@@ -289,7 +289,7 @@ class EnhancedPineconeSearchService:
             # 상위 결과 로깅
             for i, result in enumerate(enhanced_results[:3], 1):
                 logging.info(f"최종결과 #{i}: score={result['score']:.4f}, "
-                           f"answer='{result['answer'][:50]}...'")
+                           f"answer='{result['answer']}...'")
             
             return enhanced_results
             

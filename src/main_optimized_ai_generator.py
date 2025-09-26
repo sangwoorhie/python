@@ -572,9 +572,9 @@ class OptimizedAIAnswerGenerator:
 
                 # 검색 결과 상세 로깅 (디버깅용)
                 for i, result in enumerate(similar_answers[:3], 1):
-                    logging.info(f"검색결과 #{i}: score={result.get('combined_score', 0):.3f}, "
+                    logging.info(f"검색결과 #{i}: score={result.get('score', 0):.4f}, "
                                f"components={result.get('search_components', [])}, "
-                               f"answer='{result.get('answer', '')[:30]}...'")
+                               f"answer='{result.get('answer', '')}'")
 
                 # 6-14단계: AI 답변 생성 (상세 로그 포함)
                 generation_start = time.time()
