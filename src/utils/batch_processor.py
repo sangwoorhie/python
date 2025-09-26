@@ -501,8 +501,8 @@ class BatchProcessor:
 다음 질문들을 각각 분석하여 의도를 파악하세요.
 
 각 질문에 대해 다음 JSON 형태로 응답하세요:
-Q1: {"core_intent": "...", "intent_category": "...", "primary_action": "...", "target_object": "..."}
-Q2: {"core_intent": "...", "intent_category": "...", "primary_action": "...", "target_object": "..."}
+Q1: {"core_intent": "...", "intent_category": "...", "primary_action": "..."}
+Q2: {"core_intent": "...", "intent_category": "...", "primary_action": "..."}
 ...
 
 ---QUERY--- 로 구분된 각 질문을 순서대로 분석해주세요."""

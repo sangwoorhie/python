@@ -29,13 +29,18 @@ from src.utils.intelligent_api_manager import (
     IntelligentAPIManager, APICallRequest, APICallStrategy
 )
 from src.services.optimized_search_service import OptimizedSearchService
-
+from src.services.enhanced_search_service import EnhancedPineconeSearchService
 
 class OptimizedAIAnswerGenerator:
     """최적화된 AI 답변 생성 클래스 - 기존 인터페이스 완전 호환"""
 
-    def __init__(self, pinecone_index, openai_client, connection_string=None, 
-                 category_mapping=None, redis_config=None):
+    def __init__(self, 
+                 pinecone_index, # Pinecone Index
+                 openai_client, # OpenAI Client
+                 connection_string, # Connection String
+                 category_mapping, # Category Mapping
+                 redis_config # Redis Config
+                 ):
         # 1단계. 기본 컴포넌트 초기화
         self.index = pinecone_index
         self.openai_client = openai_client
@@ -54,6 +59,13 @@ class OptimizedAIAnswerGenerator:
         self.search_service = OptimizedSearchService(pinecone_index, self.api_manager)
         self.quality_validator = QualityValidator(openai_client)
         
+        # Enhanced Search Service 초기화 (기존 코드에 추가)
+        self.search_service = EnhancedPineconeSearchService(
+            openai_client=openai_client,
+            pinecone_index=pinecone_index
+        )
+        logging.info("Enhanced Pinecone Search Service 초기화 완료")
+
         # 6단계: 동기화 서비스 초기화 (조건부)
         if connection_string and category_mapping:
             self.sync_service = SyncService(
@@ -511,9 +523,7 @@ class OptimizedAIAnswerGenerator:
         
         try:
             with memory_cleanup():
-                # === 처리 시작 로그 ===
-                # logging.info(f"================================= 처리 시작 ====================================")
-                
+
                 # 성능 통계 업데이트
                 self.performance_stats['total_requests'] += 1
                 
@@ -532,25 +542,13 @@ class OptimizedAIAnswerGenerator:
                 core_intent = intent_analysis.get('core_intent', 'general_inquiry')
                 processed_question = corrected_text # corrected_text를 쿼리로 사용
 
-                analysis_time = time.time() - analysis_start
-                    
-                # ===== 통합 분석 결과 상세 로그 (강제 출력) =====
-                # logging.info(f"통합 분석 - 원본: {question}")
-                # logging.info(f"통합 분석 - 수정: {corrected_text}")
-                # logging.info(f"통합 분석 - 의도: {json.dumps(intent_analysis, ensure_ascii=False)}")
-                    
+                analysis_time = time.time() - analysis_start 
                 logging.info(f"3. 통합 분석 완료: corrected='{corrected_text}', intent={{'core_intent': '{intent_analysis.get('core_intent', 'N/A')}'}}, 시간={analysis_time:.2f}s")
                     
-                # 의도 분석 결과를 임시 저장 (검색 단계에서 재사용)
-                # self._cached_intent_analysis = intent_analysis
-                    
-                # if processed_question != question:
-                #     logging.info(f"통합 분석 - 오타 수정 적용됨: {question[:50]} → {processed_question[:50]}")
-
                 if not processed_question:
                     return {"success": False, "error": "질문이 비어있습니다."}
 
-                # 4단계: 언어 자동 감지
+                # 4단계: 언어 자동 감지 (한국어로 고정)
                 if not lang or lang == 'auto':
                     lang = 'ko' # 한국어로 고정
                     # lang = self.detect_language(processed_question)
@@ -558,31 +556,25 @@ class OptimizedAIAnswerGenerator:
                 else:
                     logging.info(f"4. 언어 설정: '{lang}' (사용자 지정)")
 
-                # logging.info(f"처리 시작 - SEQ: {seq}, 언어: {lang}, 질문: {processed_question[:50]}...")
-
-
-                # 5단계. 유사 답변 검색 (캐싱 X, 벡터임베딩 모델 활용하여 통합 분석 결과 활용)
+                # 5단계. Enhanced Multi-Layer 검색
                 search_start = time.time()
-                logging.info("5. 검색 시작: 캐싱 없이 즉시 임베딩 생성 및 Pinecone 검색")
-                # logging.info("5. 검색 시작: 최적화된 다층 검색 시작")
+                logging.info("5. Enhanced Multi-Layer 검색 시작: 전체 의도 분석 결과 활용")
                 
-                # 캐싱 없이 즉시 임베딩 생성 및 Pinecone 검색
-                similar_answers = self._search_by_core_intent(
-                core_intent=core_intent,
-                original_query=corrected_text,
-                lang=lang
+                similar_answers = self.search_service.search_by_enhanced_intent(
+                    intent_analysis=intent_analysis,  # 전체 의도 분석 결과 전달
+                    original_query=corrected_text,
+                    lang=lang,
+                    top_k=3  # 상위 3개 결과만 반환
                 )
-                search_time = time.time() - search_start
-                logging.info(f"Core Intent 기반 검색 완료: {len(similar_answers)}개 결과, 시간={search_time:.2f}s")
-
-                # 캐시이용버전
-                # similar_answers = self.search_similar_answers_with_cached_intent(
-                #     processed_question, self._cached_intent_analysis, lang=lang)
                 
-                # search_time = time.time() - search_start
-                # logging.info(f"5. 검색 완료: {len(similar_answers)}개 유사답변, 시간={search_time:.2f}s")
+                search_time = time.time() - search_start
+                logging.info(f"Enhanced Multi-Layer 검색 완료: {len(similar_answers)}개 결과, 시간={search_time:.2f}s")
 
-
+                # 검색 결과 상세 로깅 (디버깅용)
+                for i, result in enumerate(similar_answers[:3], 1):
+                    logging.info(f"검색결과 #{i}: score={result.get('combined_score', 0):.3f}, "
+                               f"components={result.get('search_components', [])}, "
+                               f"answer='{result.get('answer', '')[:30]}...'")
 
                 # 6-14단계: AI 답변 생성 (상세 로그 포함)
                 generation_start = time.time()
@@ -719,44 +711,44 @@ class OptimizedAIAnswerGenerator:
         return 0.5  # 기본값
 
     # ☆ Core Intent를 직접 임베딩하여 검색
-    def _search_by_core_intent(self, core_intent: str, original_query: str, lang: str = 'ko') -> List[Dict]:
-        try:
-            # core_intent를 임베딩 생성
-            logging.info(f"Core Intent 임베딩 생성: '{core_intent}'")
+    # def _search_by_core_intent(self, core_intent: str, original_query: str, lang: str = 'ko') -> List[Dict]:
+    #     try:
+    #         # core_intent를 임베딩 생성
+    #         logging.info(f"Core Intent 임베딩 생성: '{core_intent}'")
             
-            # 임베딩 생성 (캐싱 없이 직접 처리)
-            intent_embedding = self.openai_client.embeddings.create(
-                model='text-embedding-3-small',
-                input=core_intent
-            ).data[0].embedding
+    #         # 임베딩 생성 (캐싱 없이 직접 처리)
+    #         intent_embedding = self.openai_client.embeddings.create(
+    #             model='text-embedding-3-small',
+    #             input=core_intent
+    #         ).data[0].embedding
             
-            # Pinecone 직접 검색
-            search_results = self.index.query(
-                vector=intent_embedding,
-                top_k=10,  # 충분한 결과 확보
-                include_metadata=True
-            )
+    #         # Pinecone 직접 검색
+    #         search_results = self.index.query(
+    #             vector=intent_embedding,
+    #             top_k=10,  # 충분한 결과 확보
+    #             include_metadata=True
+    #         )
             
-            # 결과 처리
-            processed_results = []
-            for match in search_results.get('matches', []):
-                processed_results.append({
-                    'score': match['score'],
-                    'question': match['metadata'].get('question', ''),
-                    'answer': match['metadata'].get('answer', ''),
-                    'category': match['metadata'].get('category', ''),
-                    'lang': lang
-                })
+    #         # 결과 처리
+    #         processed_results = []
+    #         for match in search_results.get('matches', []):
+    #             processed_results.append({
+    #                 'score': match['score'],
+    #                 'question': match['metadata'].get('question', ''),
+    #                 'answer': match['metadata'].get('answer', ''),
+    #                 'category': match['metadata'].get('category', ''),
+    #                 'lang': lang
+    #             })
             
-            # 점수 기준 정렬
-            processed_results.sort(key=lambda x: x['score'], reverse=True)
+    #         # 점수 기준 정렬
+    #         processed_results.sort(key=lambda x: x['score'], reverse=True)
             
-            logging.info(f"Core Intent 검색 결과: {len(processed_results)}개")
-            return processed_results[:8]  # 상위 8개 반환
+    #         logging.info(f"Core Intent 검색 결과: {len(processed_results)}개")
+    #         return processed_results[:8]  # 상위 8개 반환
             
-        except Exception as e:
-            logging.error(f"Core Intent 검색 실패: {e}")
-            return []
+    #     except Exception as e:
+    #         logging.error(f"Core Intent 검색 실패: {e}")
+    #         return []
 
     def _filter_by_coherence(self, query: str, similar_answers: list) -> list:
         """일관성 기반 필터링 - 더 관대한 버전"""

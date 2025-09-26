@@ -29,12 +29,12 @@ class UnifiedTextAnalyzer:
                 logging.info(f"====================== 의도 분석 + 오타 수정 시작 ======================")
                 
                 # 통합 시스템 프롬프트
-                system_prompt = """바이블 앱 문의 전문 분석가로서, 사용자의 질문에 대해 다음 두 가지 작업을 동시에 수행하세요:
+                system_prompt = """As a Bible Apple application inquiry expert analyst, perform the following two tasks simultaneously on the user's question:
 
-    1. 오타 수정: 입력 텍스트의 오타, 띄어쓰기, 맞춤법을 교정하여 자연스럽고 올바른 한글 텍스트로 수정하세요. 의미와 어조는 유지하세요.
-    2. 의도 분석: 수정된 텍스트를 기반으로 사용자의 핵심 의도와 관련 요소를 분석하세요.
+    1. Typo correction: Correct typos, spacing, and spelling in the input text to make it a natural and correct Korean text. Maintain the meaning and tone.
+    2. Intent analysis: Based on the corrected text, analyze the user's core intent and related elements.
 
-    응답 형식 (JSON):
+    Response format (JSON):
     {
         "corrected_text": "수정된 텍스트",
         "intent_analysis": {
@@ -45,12 +45,37 @@ class UnifiedTextAnalyzer:
         }
     }
 
-    규칙:
-    - 앱/어플리케이션 → 앱 통일
-    - 띄어쓰기, 맞춤법 교정
-    - 의미/어조 유지
-    - 유효한 JSON만 반환
-    - 바이블 애플 앱 기능과 관련없는 키워드는 수집하지 말 것"""
+    Rules:
+    - All responses must be written in Korean (모든 응답은 한글로 작성)
+    - Standardize 앱/어플리케이션 → 앱 (app/application → app)
+    - Correct spacing and grammar
+    - Maintain meaning/tone
+    - Return only valid JSON
+    - Do not collect keywords unrelated to Bible app functionality
+    - All field values in JSON must be in Korean"""
+
+    # """바이블 앱 문의 전문 분석가로서, 사용자의 질문에 대해 다음 두 가지 작업을 동시에 수행하세요:
+
+    # 1. 오타 수정: 입력 텍스트의 오타, 띄어쓰기, 맞춤법을 교정하여 자연스럽고 올바른 한글 텍스트로 수정하세요. 의미와 어조는 유지하세요.
+    # 2. 의도 분석: 수정된 텍스트를 기반으로 사용자의 핵심 의도와 관련 요소를 분석하세요.
+
+    # 응답 형식 (JSON):
+    # {
+    #     "corrected_text": "수정된 텍스트",
+    #     "intent_analysis": {
+    #         "core_intent": "핵심 의도",
+    #         "intent_category": "카테고리",
+    #         "primary_action": "주요 행동",
+    #         "semantic_keywords": ["의미론적 핵심 키워드들"]
+    #     }
+    # }
+
+    # 규칙:
+    # - 앱/어플리케이션 → 앱 통일
+    # - 띄어쓰기, 맞춤법 교정
+    # - 의미/어조 유지
+    # - 유효한 JSON만 반환
+    # - 바이블 애플 앱 기능과 관련없는 키워드는 수집하지 말 것"""
 
                 user_prompt = f"다음 텍스트를 분석해주세요:\n\n{text}"
                 
@@ -96,8 +121,6 @@ class UnifiedTextAnalyzer:
                         'main_topic': intent_analysis.get('target_object', '기타'),
                         'specific_request': intent_analysis.get('standardized_query', text[:100]),
                         'keywords': intent_analysis.get('semantic_keywords', [text[:20]]),
-                        'urgency': 'medium',
-                        'action_type': intent_analysis.get('primary_action', '기타')
                     })
                     
                     # 상세 결과 로그
@@ -149,16 +172,7 @@ class UnifiedTextAnalyzer:
                 "core_intent": "general_inquiry",
                 "intent_category": "일반문의",
                 "primary_action": "기타",
-                "target_object": "기타",
-                "constraint_conditions": [],
-                "standardized_query": original_text,
                 "semantic_keywords": [original_text[:20]],
-                "intent_type": "일반문의",
-                "main_topic": "기타",
-                "specific_request": original_text[:100],
-                "keywords": [original_text[:20]],
-                "urgency": "medium",
-                "action_type": "기타"
             }
             
             # 텍스트에서 키워드 추출 시도
@@ -196,15 +210,5 @@ class UnifiedTextAnalyzer:
             "core_intent": "general_inquiry",
             "intent_category": "일반문의",
             "primary_action": "기타",
-            "target_object": "기타",
-            "constraint_conditions": [],
-            "standardized_query": text,
             "semantic_keywords": [text[:20]],
-            # 기존 호환성 필드
-            "intent_type": "일반문의",
-            "main_topic": "기타",
-            "specific_request": text[:100],
-            "keywords": [text[:20]],
-            "urgency": "medium",
-            "action_type": "기타"
         }

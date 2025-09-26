@@ -140,10 +140,7 @@ class QuestionAnalyzer:
                     
                     # ===== 6단계: 기존 시스템과의 호환성을 위한 필드 추가 =====
                     result['intent_type'] = result.get('intent_category', '일반문의')
-                    result['main_topic'] = result.get('target_object', '기타')
-                    result['specific_request'] = result.get('standardized_query', query[:100])
                     result['keywords'] = result.get('semantic_keywords', [query[:20]])
-                    result['urgency'] = 'medium'
                     result['action_type'] = result.get('primary_action', '기타')
                     
                     return result
@@ -180,7 +177,7 @@ class QuestionAnalyzer:
             # ===== 1단계: 사용자 질문의 의도 정보 추출 =====
             query_core_intent = query_intent_analysis.get('core_intent', '')
             query_primary_action = query_intent_analysis.get('primary_action', '')
-            query_target_object = query_intent_analysis.get('target_object', '')
+            # query_target_object = query_intent_analysis.get('target_object', '')
             query_semantic_keywords = query_intent_analysis.get('semantic_keywords', [])
             
             # 의도 정보가 없으면 중간값 반환
@@ -247,27 +244,27 @@ class QuestionAnalyzer:
                     action_match_score = action_similarity_map[reverse_key]
             
             # ===== 5단계: 대상 객체 일치도 계산 =====
-            object_match_score = 0.0
-            if query_target_object == ref_target_object:
-                # 완전 일치: 최고 점수
-                object_match_score = 1.0
-            elif query_target_object and ref_target_object:
-                # 유사한 객체 유형 매핑 테이블
-                object_similarity_map = {
-                    ('번역본', '성경'): 0.8,
-                    ('텍스트', '내용'): 0.7,
-                    ('음성', '오디오'): 0.9,
-                    ('화면', '디스플레이'): 0.7
-                }
+            # object_match_score = 0.0
+            # if query_target_object == ref_target_object:
+            #     # 완전 일치: 최고 점수
+            #     object_match_score = 1.0
+            # elif query_target_object and ref_target_object:
+            #     # 유사한 객체 유형 매핑 테이블
+            #     object_similarity_map = {
+            #         ('번역본', '성경'): 0.8,
+            #         ('텍스트', '내용'): 0.7,
+            #         ('음성', '오디오'): 0.9,
+            #         ('화면', '디스플레이'): 0.7
+            #     }
                 
-                object_key = (query_target_object, ref_target_object)
-                reverse_key = (ref_target_object, query_target_object)
+            #     object_key = (query_target_object, ref_target_object)
+            #     reverse_key = (ref_target_object, query_target_object)
                 
                 # 양방향 매핑 검사
-                if object_key in object_similarity_map:
-                    object_match_score = object_similarity_map[object_key]
-                elif reverse_key in object_similarity_map:
-                    object_match_score = object_similarity_map[reverse_key]
+                # if object_key in object_similarity_map:
+                #     object_match_score = object_similarity_map[object_key]
+                # elif reverse_key in object_similarity_map:
+                #     object_match_score = object_similarity_map[reverse_key]
             
             # ===== 6단계: 의미론적 키워드 일치도 계산 =====
             keyword_match_score = 0.0
@@ -284,15 +281,15 @@ class QuestionAnalyzer:
             
             # ===== 7단계: 전체 유사성 점수 계산 (가중 평균) =====
             total_score = (
-                intent_match_score * 0.4 +      # 핵심 의도 일치 (40% - 가장 중요)
+                intent_match_score * 0.6 +      # 핵심 의도 일치 (60% - 가장 중요)
                 action_match_score * 0.25 +     # 행동 유형 일치 (25%)
-                object_match_score * 0.2 +      # 대상 객체 일치 (20%)
+                # object_match_score * 0.2 +      # 대상 객체 일치 (20%)
                 keyword_match_score * 0.15      # 키워드 일치 (15%)
             )
             
             # ===== 8단계: 디버그 로깅 및 결과 반환 =====
             logging.debug(f"의도 유사성 분석: 의도={intent_match_score:.2f}, "
-                         f"행동={action_match_score:.2f}, 객체={object_match_score:.2f}, "
+                        #  f"행동={action_match_score:.2f}, 객체={object_match_score:.2f}, "
                          f"키워드={keyword_match_score:.2f}, 전체={total_score:.2f}")
             
             # 🔍 의도 유사성 계산 상세 로그
@@ -301,7 +298,7 @@ class QuestionAnalyzer:
             logging.info(f"   └── 기존 답변 의도: {ref_core_intent}")
             logging.info(f"   └── 의도 일치도: {intent_match_score:.3f} (40%)")
             logging.info(f"   └── 행동 일치도: {action_match_score:.3f} (25%)")
-            logging.info(f"   └── 객체 일치도: {object_match_score:.3f} (20%)")
+            # logging.info(f"   └── 객체 일치도: {object_match_score:.3f} (20%)")
             logging.info(f"   └── 키워드 일치도: {keyword_match_score:.3f} (15%)")
             logging.info(f"   └── 최종 의도 관련성: {total_score:.3f}")
             
