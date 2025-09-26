@@ -35,14 +35,12 @@ class EnhancedPineconeSearchService:
         """
         Args:
             openai_client: OpenAI 클라이언트
-            pinecone_api_key: Pinecone API 키
-            pinecone_environment: Pinecone 환경
-            pinecone_index_name: Pinecone 인덱스 명
+            pinecone_index: 이미 초기화된 Pinecone Index 객체
         """
         self.openai_client = openai_client
         self.embedding_model = "text-embedding-3-small"
-        self.index = pinecone_index
-        self.pinecone_index_name = pinecone_index.name
+        self.index = pinecone_index  # 기존 index 재사용
+        self.pinecone_index_name = "bible-app-support-1536-openai"
         
         # 검색 가중치 설정 (퍼센테이지 기반)
         self.text_weights = {
