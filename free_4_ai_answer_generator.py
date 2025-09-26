@@ -285,7 +285,6 @@ generator = OptimizedAIAnswerGenerator(
     connection_string=connection_string, # MSSQL 연결 정보
     category_mapping=CATEGORY_MAPPING,  # 문의 카테고리 매핑
     redis_config=REDIS_CONFIG,          # Redis 캐싱 설정
-    pinecone_index=index               # 동일한 Pinecone 인덱스 사용
 )
 
 # 프로덕션 최적화 설정 적용
