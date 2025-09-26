@@ -858,13 +858,19 @@ class OptimizedAIAnswerGenerator:
         try:
             if hasattr(self, 'batch_processor'):
                 self.batch_processor.stop()
+                logging.info("배치 처리 시스템 중지됨")
             
-            if hasattr(self, 'search_service'):
+            # 검색 서비스 캐시 정리 (조건부 호출)
+            if hasattr(self, 'search_service') and hasattr(self.search_service, 'clear_caches'):
                 self.search_service.clear_caches()
-            
+                logging.info("검색 서비스 캐시 지워짐")
+            else:
+                logging.info("검색 서비스 캐시 정리 건너뛰기 (메서드 없음)")
+                
             logging.info("최적화된 AI 생성기 리소스 정리 완료")
+            
         except Exception as e:
-            logging.error(f"리소스 정리 중 오류: {e}")
+            logging.error(f"리소스 정리 중 오류: {str(e)}")
 
     def __del__(self):
         """소멸자"""
