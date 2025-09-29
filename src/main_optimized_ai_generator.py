@@ -817,18 +817,38 @@ class OptimizedAIAnswerGenerator:
             (current_avg * (total_requests - 1) + processing_time) / total_requests
         )
 
-    def get_optimization_summary(self) -> Dict:
-        """최적화 요약 정보"""
-        api_stats = self.api_manager.get_performance_stats()
-        search_stats = self.search_service.get_optimization_stats()
-        
-        return {
-            'cache_hit_rate': api_stats['cache_hit_rate'],
-            'api_calls_saved': api_stats['api_calls_saved'],
-            'batch_processed': api_stats['batch_processed'],
-            'avg_processing_time': self.performance_stats['avg_processing_time'],
-            'embedding_cache_size': search_stats['embedding_cache_size']
-        }
+    def get_optimization_summary(self) -> dict:
+        """최적화 통계 요약 반환 (안전한 버전)"""
+        try:
+            summary = {
+                'total_requests': self.performance_stats.get('total_requests', 0),
+                'cache_hit_rate': self.performance_stats.get('cache_hit_rate', 0.0),
+                'avg_processing_time': self.performance_stats.get('avg_processing_time', 0.0),
+                'api_calls_saved': self.performance_stats.get('api_calls_saved', 0)
+            }
+            
+            # search_service의 통계 메서드가 있는 경우에만 호출
+            if hasattr(self.search_service, 'get_optimization_stats'):
+                summary['search_stats'] = self.search_service.get_optimization_stats()
+            elif hasattr(self.search_service, 'get_search_statistics'):
+                summary['search_stats'] = self.search_service.get_search_statistics()
+            else:
+                summary['search_stats'] = {
+                    'method': 'enhanced_pinecone_search',
+                    'status': 'active'
+                }
+            
+            return summary
+            
+        except Exception as e:
+            logging.warning(f"최적화 통계 생성 실패: {e}")
+            return {
+                'total_requests': 0,
+                'cache_hit_rate': 0.0,
+                'avg_processing_time': 0.0,
+                'api_calls_saved': 0,
+                'error': str(e)
+            }
 
     def get_detailed_performance_stats(self) -> Dict:
         """상세 성능 통계"""
