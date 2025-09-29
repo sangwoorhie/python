@@ -57,9 +57,9 @@ class AIAnswerGenerator:
                 logging.info(f"  - User 프롬프트 길이: {len(user_prompt)}자")
                 
                 # 4단계: GPT API 호출
-                logging.info(f"\n[4단계] GPT-5-mini API 호출 시작")
-                logging.info(f"  - 모델: {self.model}")
-                logging.info(f"  - Max tokens: 2000")
+                # logging.info(f"\n[4단계] GPT-5-mini API 호출 시작")
+                # logging.info(f"  - 모델: {self.model}")
+                # logging.info(f"  - Max tokens: 2000")
                 
                 response = self.openai_client.chat.completions.create(
                     model=self.model,
@@ -75,9 +75,9 @@ class AIAnswerGenerator:
                 
                 # 5단계: GPT 원본 답변 추출
                 ai_answer_raw = response.choices[0].message.content.strip()
-                logging.info(f"\n[5단계] GPT 원본 답변 추출")
-                logging.info(f"  - 원본 답변 길이: {len(ai_answer_raw)}자")
-                logging.info(f"  - 원본 답변 미리보기:\n{ai_answer_raw[:200]}...")
+                # logging.info(f"\n[5단계] GPT 원본 답변 추출")
+                # logging.info(f"  - 원본 답변 길이: {len(ai_answer_raw)}자")
+                # logging.info(f"  - 원본 답변 미리보기:\n{ai_answer_raw[:200]}...")
                 
                 if not ai_answer_raw:
                     logging.warning("  ⚠️ GPT 응답이 비어있음 - 폴백 답변 사용")
@@ -232,11 +232,11 @@ class AIAnswerGenerator:
         Returns:
             인사말과 끝맺음말이 포함된 최종 HTML 답변
         """
-        logging.info("  [포맷팅] 최종 답변 구성 시작")
+        # logging.info("  [포맷팅] 최종 답변 구성 시작")
         
         # 1. GPT 답변에서 혹시 모를 인사말/끝맺음말 제거 (안전장치)
         ai_content = self._remove_greetings_from_reference(ai_content)
-        logging.info(f"  [포맷팅] 인사말/끝맺음말 제거 후 길이: {len(ai_content)}자")
+        # logging.info(f"  [포맷팅] 인사말/끝맺음말 제거 후 길이: {len(ai_content)}자")
         
         # 2. 간단한 HTML 변환 (줄바꿈만 처리)
         ai_content = ai_content.replace('\n\n', '<br><br>')
@@ -266,9 +266,9 @@ class AIAnswerGenerator:
         # 7. 최종 조합
         final_answer = greeting + body + closing
         
-        logging.info(f"  [포맷팅] 인사말 추가됨: {len(greeting)}자")
-        logging.info(f"  [포맷팅] 본문 길이: {len(body)}자")
-        logging.info(f"  [포맷팅] 끝맺음말 추가됨: {len(closing)}자")
+        # logging.info(f"  [포맷팅] 인사말 추가됨: {len(greeting)}자")
+        # logging.info(f"  [포맷팅] 본문 길이: {len(body)}자")
+        # logging.info(f"  [포맷팅] 끝맺음말 추가됨: {len(closing)}자")
         logging.info(f"  [포맷팅] 최종 답변 총 길이: {len(final_answer)}자")
         
         return final_answer

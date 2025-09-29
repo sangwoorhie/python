@@ -482,129 +482,129 @@ class BatchProcessor:
     #     batch_requests: 의도 분석 요청 배치 목록
     # Returns:
     #     List[BatchResult]: 의도 분석 결과 목록
-    def _process_intent_analysis_batch(self, batch_requests: List[BatchRequest]) -> List[BatchResult]:
-        # ===== 결과 리스트 초기화 =====
-        results = []
+    # def _process_intent_analysis_batch(self, batch_requests: List[BatchRequest]) -> List[BatchResult]:
+    #     # ===== 결과 리스트 초기화 =====
+    #     results = []
         
-        try:
-            # ===== 1단계: 질문 텍스트 추출 =====
-            queries = [req.data.get('query', '') for req in batch_requests]
-            start_time = time.time()
+    #     try:
+    #         # ===== 1단계: 질문 텍스트 추출 =====
+    #         queries = [req.data.get('query', '') for req in batch_requests]
+    #         start_time = time.time()
             
-            # ===== 2단계: GPT 기반 배치 의도 분석 =====
-            if hasattr(self, 'openai_client'):
-                # 2-1: 여러 질문을 구분자로 연결 (한 번의 API 호출)
-                combined_queries = '\n---QUERY---\n'.join([f"Q{i+1}: {q}" for i, q in enumerate(queries)])
+    #         # ===== 2단계: GPT 기반 배치 의도 분석 =====
+    #         if hasattr(self, 'openai_client'):
+    #             # 2-1: 여러 질문을 구분자로 연결 (한 번의 API 호출)
+    #             combined_queries = '\n---QUERY---\n'.join([f"Q{i+1}: {q}" for i, q in enumerate(queries)])
                 
-                # 2-2: 바이블 앱 전용 의도 분석 시스템 프롬프트
-                system_prompt = """당신은 바이블 앱 문의 분석 전문가입니다. 
-다음 질문들을 각각 분석하여 의도를 파악하세요.
+    #             # 2-2: 바이블 앱 전용 의도 분석 시스템 프롬프트
+    #             system_prompt = """당신은 바이블 앱 문의 분석 전문가입니다. 
+    #     다음 질문들을 각각 분석하여 의도를 파악하세요.
 
-각 질문에 대해 다음 JSON 형태로 응답하세요:
-Q1: {"core_intent": "...", "intent_category": "...", "primary_action": "..."}
-Q2: {"core_intent": "...", "intent_category": "...", "primary_action": "..."}
-...
+    #     각 질문에 대해 다음 JSON 형태로 응답하세요:
+    #     Q1: {"core_intent": "...", "intent_category": "...", "primary_action": "..."}
+    #     Q2: {"core_intent": "...", "intent_category": "...", "primary_action": "..."}
+    #     ...
 
----QUERY--- 로 구분된 각 질문을 순서대로 분석해주세요."""
+    #     ---QUERY--- 로 구분된 각 질문을 순서대로 분석해주세요."""
 
-                # 2-3: GPT API 호출 (배치 의도 분석)
-                response = self.openai_client.chat.completions.create(
-                    model='gpt-5-mini',
-                    messages=[
-                        {"role": "system", "content": system_prompt},
-                        {"role": "user", "content": combined_queries}
-                    ],
-                    max_completion_tokens=80000,                       # 충분한 분석 결과 길이
-                    # temperature=0.2                       # 일관성 있는 분석 (낮은 창의성)
-                )
+    #             # 2-3: GPT API 호출 (배치 의도 분석)
+    #             response = self.openai_client.chat.completions.create(
+    #                 model='gpt-5-mini',
+    #                 messages=[
+    #                     {"role": "system", "content": system_prompt},
+    #                     {"role": "user", "content": combined_queries}
+    #                 ],
+    #                 max_completion_tokens=80000,                       # 충분한 분석 결과 길이
+    #                 # temperature=0.2                       # 일관성 있는 분석 (낮은 창의성)
+    #             )
                 
-                # 2-4: 분석 결과 추출 및 처리 시간 계산
-                result_text = response.choices[0].message.content
-                processing_time = time.time() - start_time
+    #             # 2-4: 분석 결과 추출 및 처리 시간 계산
+    #             result_text = response.choices[0].message.content
+    #             processing_time = time.time() - start_time
                 
-                # ===== 3단계: 결과 파싱 및 구조화 =====
-                # 3-1: 정규식으로 각 질문의 JSON 결과 추출
-                pattern = r'Q(\d+):\s*(\{[^}]+\})'
-                matches = re.findall(pattern, result_text)
+    #             # ===== 3단계: 결과 파싱 및 구조화 =====
+    #             # 3-1: 정규식으로 각 질문의 JSON 결과 추출
+    #             pattern = r'Q(\d+):\s*(\{[^}]+\})'
+    #             matches = re.findall(pattern, result_text)
                 
-                # 3-2: 각 요청에 대한 결과 매핑
-                for i, request in enumerate(batch_requests):
-                    try:
-                        if i < len(matches):
-                            # 3-2-1: JSON 파싱 및 의도 데이터 구성
-                            intent_data = json.loads(matches[i][1])
+    #             # 3-2: 각 요청에 대한 결과 매핑
+    #             for i, request in enumerate(batch_requests):
+    #                 try:
+    #                     if i < len(matches):
+    #                         # 3-2-1: JSON 파싱 및 의도 데이터 구성
+    #                         intent_data = json.loads(matches[i][1])
                             
-                            # 3-2-2: 기존 시스템 호환성을 위한 필드 추가
-                            intent_data.update({
-                                'intent_type': intent_data.get('intent_category', '일반문의'),
-                                'main_topic': intent_data.get('target_object', '기타'),
-                                'specific_request': request.data.get('query', '')[:100],  # 요약
-                                'keywords': [request.data.get('query', '')[:20]],         # 키워드 추출
-                                'urgency': 'medium',                                      # 기본 우선순위
-                                'action_type': intent_data.get('primary_action', '기타')  # 액션 타입
-                            })
+    #                         # 3-2-2: 기존 시스템 호환성을 위한 필드 추가
+    #                         intent_data.update({
+    #                             'intent_type': intent_data.get('intent_category', '일반문의'),
+    #                             'main_topic': intent_data.get('target_object', '기타'),
+    #                             'specific_request': request.data.get('query', '')[:100],  # 요약
+    #                             'keywords': [request.data.get('query', '')[:20]],         # 키워드 추출
+    #                             'urgency': 'medium',                                      # 기본 우선순위
+    #                             'action_type': intent_data.get('primary_action', '기타')  # 액션 타입
+    #                         })
                             
-                            # 3-2-3: 성공 결과 저장
-                            results.append(BatchResult(
-                                request_id=request.id,
-                                success=True,
-                                result=intent_data,
-                                processing_time=processing_time / len(batch_requests)
-                            ))
-                        else:
-                            # 3-2-4: 매칭되지 않은 경우 기본 의도 데이터 생성
-                            default_intent = {
-                                "core_intent": "general_inquiry",
-                                "intent_category": "일반문의",
-                                "primary_action": "기타",
-                                "target_object": "기타",
-                                "intent_type": "일반문의",
-                                "main_topic": "기타",
-                                "specific_request": request.data.get('query', '')[:100],
-                                "keywords": [request.data.get('query', '')[:20]],
-                                "urgency": "medium",
-                                "action_type": "기타"
-                            }
-                            results.append(BatchResult(
-                                request_id=request.id,
-                                success=True,
-                                result=default_intent,
-                                processing_time=processing_time / len(batch_requests)
-                            ))
+    #                         # 3-2-3: 성공 결과 저장
+    #                         results.append(BatchResult(
+    #                             request_id=request.id,
+    #                             success=True,
+    #                             result=intent_data,
+    #                             processing_time=processing_time / len(batch_requests)
+    #                         ))
+    #                     else:
+    #                         # 3-2-4: 매칭되지 않은 경우 기본 의도 데이터 생성
+    #                         default_intent = {
+    #                             "core_intent": "general_inquiry",
+    #                             "intent_category": "일반문의",
+    #                             "primary_action": "기타",
+    #                             "target_object": "기타",
+    #                             "intent_type": "일반문의",
+    #                             "main_topic": "기타",
+    #                             "specific_request": request.data.get('query', '')[:100],
+    #                             "keywords": [request.data.get('query', '')[:20]],
+    #                             "urgency": "medium",
+    #                             "action_type": "기타"
+    #                         }
+    #                         results.append(BatchResult(
+    #                             request_id=request.id,
+    #                             success=True,
+    #                             result=default_intent,
+    #                             processing_time=processing_time / len(batch_requests)
+    #                         ))
                             
-                    except json.JSONDecodeError as e:
-                        # 3-2-5: JSON 파싱 실패 처리
-                        logging.error(f"의도 분석 결과 파싱 실패: {e}")
-                        results.append(BatchResult(
-                            request_id=request.id,
-                            success=False,
-                            error=f"결과 파싱 실패: {e}"
-                        ))
+    #                 except json.JSONDecodeError as e:
+    #                     # 3-2-5: JSON 파싱 실패 처리
+    #                     logging.error(f"의도 분석 결과 파싱 실패: {e}")
+    #                     results.append(BatchResult(
+    #                         request_id=request.id,
+    #                         success=False,
+    #                         error=f"결과 파싱 실패: {e}"
+    #                     ))
                         
-                # ===== 4단계: 성공 로깅 =====
-                logging.info(f"의도 분석 배치 처리 완료: {len(queries)}개, {processing_time:.2f}s")
+    #             # ===== 4단계: 성공 로깅 =====
+    #             logging.info(f"의도 분석 배치 처리 완료: {len(queries)}개, {processing_time:.2f}s")
                 
-            else:
-                # ===== OpenAI 클라이언트 미설정 오류 처리 =====
-                for request in batch_requests:
-                    results.append(BatchResult(
-                        request_id=request.id,
-                        success=False,
-                        error="OpenAI 클라이언트가 설정되지 않음"
-                    ))
+    #         else:
+    #             # ===== OpenAI 클라이언트 미설정 오류 처리 =====
+    #             for request in batch_requests:
+    #                 results.append(BatchResult(
+    #                     request_id=request.id,
+    #                     success=False,
+    #                     error="OpenAI 클라이언트가 설정되지 않음"
+    #                 ))
                     
-        except Exception as e:
-            # ===== 예외 처리: 의도 분석 실패 =====
-            logging.error(f"의도 분석 배치 처리 실패: {e}")
-            for request in batch_requests:
-                results.append(BatchResult(
-                    request_id=request.id,
-                    success=False,
-                    error=str(e)
-                ))
+    #     except Exception as e:
+    #         # ===== 예외 처리: 의도 분석 실패 =====
+    #         logging.error(f"의도 분석 배치 처리 실패: {e}")
+    #         for request in batch_requests:
+    #             results.append(BatchResult(
+    #                 request_id=request.id,
+    #                 success=False,
+    #                 error=str(e)
+    #             ))
                 
-        # ===== 5단계: 의도 분석 결과 반환 =====
-        return results
+    #     # ===== 5단계: 의도 분석 결과 반환 =====
+    #     return results
 
     # 텍스트 오타 수정 배치 처리 메서드 (GPT 기반 맞춤법 교정)
     # Args:

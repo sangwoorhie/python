@@ -398,8 +398,9 @@ Important: Do not include greetings or closings. Only write the main content."""
             clean_answer = self.remove_greeting_and_closing(clean_answer, 'ko')
             
             # 다국어 지원: 영어 질문인 경우 답변을 번역
-            if target_lang == 'en' and ans.get('lang', 'ko') == 'ko':
-                clean_answer = self.translate_text(clean_answer, 'ko', 'en')
+            target_lang = 'ko'
+            # if target_lang == 'en' and ans.get('lang', 'ko') == 'ko':
+            #     clean_answer = self.translate_text(clean_answer, 'ko', 'en')
             
             # 품질 검증 및 컨텍스트 추가
             if len(clean_answer.strip()) > 20:
@@ -417,8 +418,9 @@ Important: Do not include greetings or closings. Only write the main content."""
             clean_answer = self.text_processor.preprocess_text(ans['answer'])
             clean_answer = self.remove_greeting_and_closing(clean_answer, 'ko')
             
-            if target_lang == 'en' and ans.get('lang', 'ko') == 'ko':
-                clean_answer = self.translate_text(clean_answer, 'ko', 'en')
+            target_lang = 'ko'
+            # if target_lang == 'en' and ans.get('lang', 'ko') == 'ko':
+            #     clean_answer = self.translate_text(clean_answer, 'ko', 'en')
             
             if len(clean_answer.strip()) > 20:
                 context_parts.append(f"[참고답변 {used_answers+1} - 점수: {ans['score']:.2f}]\n{clean_answer[:300]}")
@@ -432,8 +434,9 @@ Important: Do not include greetings or closings. Only write the main content."""
             clean_answer = self.text_processor.preprocess_text(ans['answer'])
             clean_answer = self.remove_greeting_and_closing(clean_answer, 'ko')
             
-            if target_lang == 'en' and ans.get('lang', 'ko') == 'ko':
-                clean_answer = self.translate_text(clean_answer, 'ko', 'en')
+            target_lang = 'ko'
+            # if target_lang == 'en' and ans.get('lang', 'ko') == 'ko':
+            #     clean_answer = self.translate_text(clean_answer, 'ko', 'en')
             
             if len(clean_answer.strip()) > 20:
                 print(f"✅ [CONTEXT DEBUG] 중하품질 답변 #{used_answers+1} 추가: 점수={ans['score']:.3f}")
@@ -451,8 +454,9 @@ Important: Do not include greetings or closings. Only write the main content."""
                 clean_answer = self.text_processor.preprocess_text(ans['answer'])
                 clean_answer = self.remove_greeting_and_closing(clean_answer, 'ko')
                 
-                if target_lang == 'en' and ans.get('lang', 'ko') == 'ko':
-                    clean_answer = self.translate_text(clean_answer, 'ko', 'en')
+                target_lang = 'ko'
+                # if target_lang == 'en' and ans.get('lang', 'ko') == 'ko':
+                #     clean_answer = self.translate_text(clean_answer, 'ko', 'en')
                 
                 if len(clean_answer.strip()) > 20:
                     print(f"✅ [CONTEXT DEBUG] 저품질 답변 #{used_answers+1} 추가: 점수={ans['score']:.3f}")
@@ -553,32 +557,32 @@ Important: Do not include greetings or closings. Only write the main content."""
     #     target_lang: 목적 언어 코드
     # Returns:
     #     str: 번역된 텍스트 (실패시 원문 반환)
-    def translate_text(self, text: str, source_lang: str, target_lang: str) -> str:
-        try:
-            # ===== 1단계: 언어 매핑 =====
-            lang_map = {
-                'ko': 'Korean',
-                'en': 'English'
-            }
+    # def translate_text(self, text: str, source_lang: str, target_lang: str) -> str:
+    #     try:
+    #         # ===== 1단계: 언어 매핑 =====
+    #         lang_map = {
+    #             'ko': 'Korean',
+    #             'en': 'English'
+    #         }
             
-            # ===== 2단계: 번역 프롬프트 생성 =====
-            system_prompt = f"You are a professional translator. Translate the following text from {lang_map[source_lang]} to {lang_map[target_lang]}. Keep the same tone and style. Only provide the translation without any explanation."
+    #         # ===== 2단계: 번역 프롬프트 생성 =====
+    #         system_prompt = f"You are a professional translator. Translate the following text from {lang_map[source_lang]} to {lang_map[target_lang]}. Keep the same tone and style. Only provide the translation without any explanation."
             
-            # ===== 3단계: GPT API 호출로 번역 실행 =====
-            response = self.openai_client.chat.completions.create(
-                model='gpt-5-mini',
-                messages=[
-                    {"role": "system", "content": system_prompt},
-                    {"role": "user", "content": text}
-                ],
-                max_completion_tokens=60000,              # 충분한 번역 길이 허용
-                # temperature=0.5              # 일관성과 창의성 균형
-            )
+    #         # ===== 3단계: GPT API 호출로 번역 실행 =====
+    #         response = self.openai_client.chat.completions.create(
+    #             model='gpt-5-mini',
+    #             messages=[
+    #                 {"role": "system", "content": system_prompt},
+    #                 {"role": "user", "content": text}
+    #             ],
+    #             max_completion_tokens=60000,              # 충분한 번역 길이 허용
+    #             # temperature=0.5              # 일관성과 창의성 균형
+    #         )
             
-            # ===== 4단계: 번역 결과 반환 =====
-            return response.choices[0].message.content.strip()
+    #         # ===== 4단계: 번역 결과 반환 =====
+    #         return response.choices[0].message.content.strip()
             
-        except Exception as e:
-            # 번역 실패시 원문 반환
-            logging.error(f"번역 실패: {e}")
-            return text
+    #     except Exception as e:
+    #         # 번역 실패시 원문 반환
+    #         logging.error(f"번역 실패: {e}")
+    #         return text

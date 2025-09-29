@@ -317,11 +317,11 @@ class SearchService:
     #     target_lang: 목적 언어 코드
     # Returns:
     #     str: 번역된 텍스트 (현재는 원본 반환)
-    def translate_text(self, text: str, source_lang: str, target_lang: str) -> str:
-        # ===== 향후 개선 사항 =====
-        # 실제로는 별도 번역 서비스로 분리하는 것이 좋음
-        # TODO: GPT 기반 번역 로직 구현 또는 전용 번역 서비스 연동
-        return text
+    # def translate_text(self, text: str, source_lang: str, target_lang: str) -> str:
+    #     # ===== 향후 개선 사항 =====
+    #     # 실제로는 별도 번역 서비스로 분리하는 것이 좋음
+    #     # TODO: GPT 기반 번역 로직 구현 또는 전용 번역 서비스 연동
+    #     return text
 
     # 향상된 컨텍스트 품질 분석 메서드 - 개념 일치도 고려
     # Args:
@@ -392,73 +392,73 @@ class SearchService:
     #     lang: 언어 코드 ('ko' 또는 'en')
     # Returns:
     #     str: 선택된 최적 폴백 답변
-    def get_best_fallback_answer(self, similar_answers: list, lang: str = 'ko') -> str:
-        logging.info(f"=== get_best_fallback_answer 시작 ===")
-        logging.info(f"입력된 similar_answers 개수: {len(similar_answers)}")
+    # def get_best_fallback_answer(self, similar_answers: list, lang: str = 'ko') -> str:
+    #     logging.info(f"=== get_best_fallback_answer 시작 ===")
+    #     logging.info(f"입력된 similar_answers 개수: {len(similar_answers)}")
         
-        # ===== 1단계: 기본 유효성 검사 =====
-        if not similar_answers:
-            logging.warning("similar_answers가 비어있음")
-            return ""
+    #     # ===== 1단계: 기본 유효성 검사 =====
+    #     if not similar_answers:
+    #         logging.warning("similar_answers가 비어있음")
+    #         return ""
         
-        # ===== 2단계: 입력된 답변들 미리보기 =====
-        for i, ans in enumerate(similar_answers[:3]):
-            logging.info(f"답변 #{i+1}: 점수={ans['score']:.3f}, 길이={len(ans.get('answer', ''))}")
+    #     # ===== 2단계: 입력된 답변들 미리보기 =====
+    #     for i, ans in enumerate(similar_answers[:3]):
+    #         logging.info(f"답변 #{i+1}: 점수={ans['score']:.3f}, 길이={len(ans.get('answer', ''))}")
         
-        # ===== 3단계: 점수와 텍스트 품질을 종합 평가 =====
-        best_answer = ""
-        best_score = 0
+    #     # ===== 3단계: 점수와 텍스트 품질을 종합 평가 =====
+    #     best_answer = ""
+    #     best_score = 0
         
-        # ===== 4단계: 상위 3개 답변만 검토 (효율성) =====
-        for i, ans in enumerate(similar_answers[:3]):
-            logging.info(f"--- 답변 #{i+1} 처리 시작 ---")
-            score = ans['score']
-            answer_text = ans['answer']
+    #     # ===== 4단계: 상위 3개 답변만 검토 (효율성) =====
+    #     for i, ans in enumerate(similar_answers[:3]):
+    #         logging.info(f"--- 답변 #{i+1} 처리 시작 ---")
+    #         score = ans['score']
+    #         answer_text = ans['answer']
             
-            # ===== 4-1: 매우 높은 유사도 확인 (즉시 반환) =====
-            if score >= 0.9:
-                logging.info(f"매우 높은 유사도({score:.3f}) - 원본 답변 바로 반환")
-                clean_answer = answer_text.strip()
-                if clean_answer:
-                    return clean_answer
+    #         # ===== 4-1: 매우 높은 유사도 확인 (즉시 반환) =====
+    #         if score >= 0.9:
+    #             logging.info(f"매우 높은 유사도({score:.3f}) - 원본 답변 바로 반환")
+    #             clean_answer = answer_text.strip()
+    #             if clean_answer:
+    #                 return clean_answer
             
-            # ===== 4-2: 기본 텍스트 전처리 =====
-            answer_text = self.text_processor.preprocess_text(answer_text)
+    #         # ===== 4-2: 기본 텍스트 전처리 =====
+    #         answer_text = self.text_processor.preprocess_text(answer_text)
             
-            # ===== 4-3: 다국어 지원 (필요시 번역) =====
-            if lang == 'en' and ans.get('lang', 'ko') == 'ko':
-                answer_text = self.translate_text(answer_text, 'ko', 'en')
+    #         # ===== 4-3: 다국어 지원 (필요시 번역) =====
+    #         if lang == 'en' and ans.get('lang', 'ko') == 'ko':
+    #             answer_text = self.translate_text(answer_text, 'ko', 'en')
             
-            # ===== 4-4: 높은 유사도 확인 (간단 선택) =====
-            if score >= 0.8:
-                logging.info(f"높은 유사도({score:.3f})로 답변 #{i+1} 직접 선택")
-                if answer_text and len(answer_text.strip()) > 0:
-                    return answer_text
-                else:
-                    logging.error(f"전처리 후 답변이 비어있음! 원본으로 폴백")
-                    return ans['answer'].strip()
+    #         # ===== 4-4: 높은 유사도 확인 (간단 선택) =====
+    #         if score >= 0.8:
+    #             logging.info(f"높은 유사도({score:.3f})로 답변 #{i+1} 직접 선택")
+    #             if answer_text and len(answer_text.strip()) > 0:
+    #                 return answer_text
+    #             else:
+    #                 logging.error(f"전처리 후 답변이 비어있음! 원본으로 폴백")
+    #                 return ans['answer'].strip()
             
-            # ===== 4-5: 종합 점수 계산 =====
-            # 유사도(80%) + 텍스트 길이(10%) + 완성도(10%)
-            length_score = min(len(answer_text) / 200, 1.0)         # 200자 기준 정규화
-            completeness_score = 1.0 if answer_text.endswith(('.', '!', '?')) else 0.8  # 문장 완성도
+    #         # ===== 4-5: 종합 점수 계산 =====
+    #         # 유사도(80%) + 텍스트 길이(10%) + 완성도(10%)
+    #         length_score = min(len(answer_text) / 200, 1.0)         # 200자 기준 정규화
+    #         completeness_score = 1.0 if answer_text.endswith(('.', '!', '?')) else 0.8  # 문장 완성도
             
-            total_score = score * 0.8 + length_score * 0.1 + completeness_score * 0.1
+    #         total_score = score * 0.8 + length_score * 0.1 + completeness_score * 0.1
             
-            logging.info(f"답변 #{i+1} 종합 점수: {total_score:.3f}")
+    #         logging.info(f"답변 #{i+1} 종합 점수: {total_score:.3f}")
             
-            # ===== 4-6: 최고 점수 답변 업데이트 =====
-            if total_score > best_score:
-                best_score = total_score
-                best_answer = answer_text
-                logging.info(f"새로운 최고 점수 답변으로 선택됨")
+    #         # ===== 4-6: 최고 점수 답변 업데이트 =====
+    #         if total_score > best_score:
+    #             best_score = total_score
+    #             best_answer = answer_text
+    #             logging.info(f"새로운 최고 점수 답변으로 선택됨")
         
-        # ===== 5단계: 긴급 안전장치 =====
-        # 답변이 비어있으면 첫 번째 원본 답변 강제 반환
-        if not best_answer and similar_answers:
-            logging.error("최종 답변이 비어있음! 첫 번째 원본 답변 강제 반환")
-            emergency_answer = similar_answers[0]['answer'].strip()
-            return emergency_answer
+    #     # ===== 5단계: 긴급 안전장치 =====
+    #     # 답변이 비어있으면 첫 번째 원본 답변 강제 반환
+    #     if not best_answer and similar_answers:
+    #         logging.error("최종 답변이 비어있음! 첫 번째 원본 답변 강제 반환")
+    #         emergency_answer = similar_answers[0]['answer'].strip()
+    #         return emergency_answer
         
-        # ===== 6단계: 최종 답변 반환 =====
-        return best_answer
+    #     # ===== 6단계: 최종 답변 반환 =====
+    #     return best_answer
