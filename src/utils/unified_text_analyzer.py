@@ -114,15 +114,21 @@ class UnifiedTextAnalyzer:
                 try:
                     result = json.loads(result_text)
                     corrected_text = result.get('corrected_text', text)
-                    intent_analysis = result.get('intent_analysis', {})
+                    intent_analysis_raw = result.get('intent_analysis', {})
                     
                     # 기존 호환성을 위한 필드 추가
-                    intent_analysis.update({
-                        'intent_type': intent_analysis.get('intent_category', '일반문의'),
-                        'main_topic': intent_analysis.get('target_object', '기타'),
-                        'specific_request': intent_analysis.get('standardized_query', text[:100]),
-                        'keywords': intent_analysis.get('semantic_keywords', [text[:20]]),
-                    })
+                    intent_analysis = {
+                        'core_intent': intent_analysis_raw.get('core_intent', '일반 문의'),
+                        'intent_category': intent_analysis_raw.get('intent_category', '일반'),
+                        'primary_action': intent_analysis_raw.get('primary_action', '정보 제공'),
+                        'semantic_keywords': intent_analysis_raw.get('semantic_keywords', [])
+                    }
+                    # intent_analysis.update({
+                    #     'intent_type': intent_analysis.get('intent_category', '일반문의'),
+                    #     'main_topic': intent_analysis.get('target_object', '기타'),
+                    #     'specific_request': intent_analysis.get('standardized_query', text[:100]),
+                    #     'keywords': intent_analysis.get('semantic_keywords', [text[:20]]),
+                    # })
                     
                     # 상세 결과 로그
                     logging.info(f"🔍 오타 수정된 텍스트: '{corrected_text}'")
