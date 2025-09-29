@@ -21,6 +21,7 @@ from src.models.answer_generator import AnswerGenerator
 from src.services.quality_validator import QualityValidator
 from src.services.sync_service import SyncService
 from src.utils.unified_text_analyzer import UnifiedTextAnalyzer
+from src.services.ai_answer_generator import AIAnswerGenerator
 
 # 최적화 모듈들
 from src.utils.cache_manager import CacheManager
@@ -54,6 +55,7 @@ class OptimizedAIAnswerGenerator:
         # 4단계: AI 모델 컴포넌트 초기화
         self.unified_analyzer = UnifiedTextAnalyzer(openai_client)
         self.answer_generator = AnswerGenerator(openai_client)
+        self.ai_answer_generator = AIAnswerGenerator(openai_client)
         
         # 5단계: 서비스 컴포넌트 초기화 (최적화 적용)
         self.search_service = OptimizedSearchService(pinecone_index, self.api_manager)
@@ -549,16 +551,16 @@ class OptimizedAIAnswerGenerator:
                     return {"success": False, "error": "질문이 비어있습니다."}
 
                 # 4단계: 언어 자동 감지 (한국어로 고정)
-                if not lang or lang == 'auto':
-                    lang = 'ko' # 한국어로 고정
-                    # lang = self.detect_language(processed_question)
-                    logging.info(f"4. 언어 감지: '{lang}'")
-                else:
-                    logging.info(f"4. 언어 설정: '{lang}' (사용자 지정)")
+                lang = 'ko'
+                # if not lang or lang == 'auto':
+                #     lang = 'ko' # 한국어로 고정
+                #     # lang = self.detect_language(processed_question)
+                #     logging.info(f"4. 언어 감지: '{lang}'")
+                # else:
+                #     logging.info(f"4. 언어 설정: '{lang}' (사용자 지정)")
 
                 # 5단계. Enhanced Multi-Layer 검색
                 search_start = time.time()
-                logging.info("5. Enhanced Multi-Layer 검색 시작: 전체 의도 분석 결과 활용")
                 
                 similar_answers = self.search_service.search_by_enhanced_intent(
                     intent_analysis=intent_analysis,  # 전체 의도 분석 결과 전달
@@ -568,21 +570,25 @@ class OptimizedAIAnswerGenerator:
                 )
                 
                 search_time = time.time() - search_start
-                logging.info(f"Enhanced Multi-Layer 검색 완료: {len(similar_answers)}개 결과, 시간={search_time:.2f}s")
+                logging.info(f"검색 완료: {len(similar_answers)}개 결과, 시간={search_time:.2f}s")
 
                 # 검색 결과 상세 로깅 (디버깅용)
                 for i, result in enumerate(similar_answers[:3], 1):
                     logging.info()
-                    # logging.info(f"검색결과 #{i}: score={result.get('score', 0):.4f}, "
-                    #            f"components={result.get('search_components', [])}, "
-                    #            f"answer='{result.get('answer', '')}'")
 
-                # 6-14단계: AI 답변 생성 (상세 로그 포함)
+                # 6단계: 간소화된 AI 답변 생성 (SimpleAnswerGenerator 사용)
                 generation_start = time.time()
-                ai_answer = self.generate_ai_answer_with_detailed_logs(processed_question, similar_answers, lang)
-                generation_time = time.time() - generation_start
+                logging.info("6. 간소화된 AI 답변 생성 시작")
                 
-                logging.info(f"AI 답변 생성 완료: 길이={len(ai_answer)}자, 생성 시간={generation_time:.2f}s")
+                ai_answer = self.ai_answer_generator.generate_answer(
+                    corrected_text=corrected_text,
+                    intent_analysis=intent_analysis,
+                    similar_answers=similar_answers,
+                    lang=lang
+                )
+                
+                generation_time = time.time() - generation_start
+                logging.info(f"AI 답변 생성 완료: 길이={len(ai_answer)}자, 시간={generation_time:.2f}s")
 
                 # 특수문자 정리
                 ai_answer = ai_answer.replace('"', '"').replace('"', '"')
@@ -603,7 +609,7 @@ class OptimizedAIAnswerGenerator:
                     "optimization_stats": self.get_optimization_summary()
                 }
 
-                logging.info(f"처리 완료 - SEQ: {seq}, 언어: {lang}, 총 시간: {total_time:.2f}s")
+                logging.info(f"처리 완료 - SEQ: {seq}, 총 시간: {total_time:.2f}s")
                 return result
 
         except Exception as e:
