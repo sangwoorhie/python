@@ -24,7 +24,7 @@ from src.utils.unified_text_analyzer import UnifiedTextAnalyzer
 from src.services.ai_answer_generator import AIAnswerGenerator
 
 # 최적화 모듈들
-# from src.utils.cache_manager import CacheManager
+from src.utils.cache_manager import CacheManager
 from src.utils.batch_processor import BatchProcessor
 from src.utils.intelligent_api_manager import (
     IntelligentAPIManager, APICallRequest, APICallStrategy
@@ -87,38 +87,38 @@ class OptimizedAIAnswerGenerator:
         
         # logging.info("최적화된 AI 답변 생성기 초기화 완료")
 
-    # def _initialize_optimization_system(self, redis_config: Optional[Dict]):
-    #     """최적화 시스템 초기화"""
-    #     # Redis 설정
-    #     if redis_config:
-    #         self.cache_manager = CacheManager(
-    #             redis_host=redis_config.get('host', 'localhost'),
-    #             redis_port=redis_config.get('port', 6379),
-    #             redis_db=redis_config.get('db', 0),
-    #             redis_password=redis_config.get('password')
-    #         )
-    #     else:
-    #         # 기본 설정 (로컬 Redis 또는 메모리 캐시)
-    #         self.cache_manager = CacheManager()
+    def _initialize_optimization_system(self, redis_config: Optional[Dict]):
+        """최적화 시스템 초기화"""
+        # Redis 설정
+        if redis_config:
+            self.cache_manager = CacheManager(
+                redis_host=redis_config.get('host', 'localhost'),
+                redis_port=redis_config.get('port', 6379),
+                redis_db=redis_config.get('db', 0),
+                redis_password=redis_config.get('password')
+            )
+        else:
+            # 기본 설정 (로컬 Redis 또는 메모리 캐시)
+            self.cache_manager = CacheManager()
         
-    #     # 배치 프로세서 초기화
-    #     self.batch_processor = BatchProcessor(
-    #         max_workers=5,
-    #         batch_size=10,
-    #         batch_timeout=2.0
-    #     )
+        # 배치 프로세서 초기화
+        self.batch_processor = BatchProcessor(
+            max_workers=5,
+            batch_size=10,
+            batch_timeout=2.0
+        )
         
-    #     # 지능형 API 관리자 초기화
-    #     self.api_manager = IntelligentAPIManager(
-    #         cache_manager=self.cache_manager,
-    #         batch_processor=self.batch_processor,
-    #         openai_client=self.openai_client
-    #     )
+        # 지능형 API 관리자 초기화
+        self.api_manager = IntelligentAPIManager(
+            cache_manager=self.cache_manager,
+            batch_processor=self.batch_processor,
+            openai_client=self.openai_client
+        )
         
-    #     # 배치 프로세서 시작
-    #     self.batch_processor.start()
+        # 배치 프로세서 시작
+        self.batch_processor.start()
         
-        # logging.info("최적화 시스템 초기화 완료")
+        logging.info("최적화 시스템 초기화 완료")
 
     # ================================
     # 기존 인터페이스 호환성 메서드들 (최적화 적용)
@@ -230,17 +230,17 @@ class OptimizedAIAnswerGenerator:
 
     # fix_korean_typos_with_ai 메서드 제거됨 - unified_analyzer.analyze_and_correct()로 통합
 
-    def translate_text(self, text: str, source_lang: str, target_lang: str) -> str:
-        """번역 (캐싱 적용)"""
-        request = APICallRequest(
-            operation='translation',
-            data={'text': text, 'source_lang': source_lang, 'target_lang': target_lang},
-            priority=4,
-            strategy=APICallStrategy.CACHE_FIRST
-        )
+    # def translate_text(self, text: str, source_lang: str, target_lang: str) -> str:
+    #     """번역 (캐싱 적용)"""
+    #     request = APICallRequest(
+    #         operation='translation',
+    #         data={'text': text, 'source_lang': source_lang, 'target_lang': target_lang},
+    #         priority=4,
+    #         strategy=APICallStrategy.CACHE_FIRST
+    #     )
         
-        response = self.api_manager.process_request(request)
-        return response.data if response.success else text
+    #     response = self.api_manager.process_request(request)
+    #     return response.data if response.success else text
 
     def remove_greeting_and_closing(self, text: str, lang: str = 'ko') -> str:
         """인사말/끝맺음말 제거 (기존 호환)"""
