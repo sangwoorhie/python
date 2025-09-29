@@ -58,7 +58,7 @@ class OptimizedAIAnswerGenerator:
         self.ai_answer_generator = AIAnswerGenerator(openai_client)
         
         # 5단계: 서비스 컴포넌트 초기화 (최적화 적용)
-        self.search_service = OptimizedSearchService(pinecone_index, self.api_manager)
+        # self.search_service = OptimizedSearchService(pinecone_index, self.api_manager)
         self.quality_validator = QualityValidator(openai_client)
         
         # Enhanced Search Service 초기화 (기존 코드에 추가)
@@ -574,7 +574,13 @@ class OptimizedAIAnswerGenerator:
 
                 # 검색 결과 상세 로깅 (디버깅용)
                 for i, result in enumerate(similar_answers[:3], 1):
-                    logging.info()
+                    logging.info(
+                        f"검색결과 상세 #{i}: "
+                        f"score={result.get('score', 0):.4f}, "
+                        f"category='{result.get('category', '')}', "
+                        f"question='{result.get('question', '')}...', "
+                        f"answer_length={len(result.get('answer', ''))}자"
+                    )
 
                 # 6단계: 간소화된 AI 답변 생성 (SimpleAnswerGenerator 사용)
                 generation_start = time.time()

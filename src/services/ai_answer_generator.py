@@ -13,7 +13,7 @@ from src.utils.memory_manager import memory_cleanup
 
 
 class AIAnswerGenerator:
-    """간소화된 AI 답변 생성 클래스"""
+    """ AI 답변 생성 클래스"""
     
     def __init__(self, openai_client):
         self.openai_client = openai_client
@@ -24,9 +24,6 @@ class AIAnswerGenerator:
                        intent_analysis: Dict, 
                        similar_answers: List[Dict], 
                        lang: str = 'ko') -> str:
-        """
-        간단한 AI 답변 생성
-        """
         try:
             with memory_cleanup():
                 logging.info("간소화된 AI 답변 생성 시작")

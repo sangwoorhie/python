@@ -594,7 +594,7 @@ class OptimizedSearchService:
         print("="*80)
         for i, result in enumerate(search_results[:5]):  # 상위 5개만 출력
             question = result.get('metadata', {}).get('question', 'N/A')[:100]
-            print(f"검색결과 #{i+1}: 점수={result['score']:.3f}, 질문={question}...")
+            print(f"검색결과 #{i+1}: 점수={result['score']:.3f}, 질문={question}")
         print("="*80)
         
         if not search_results:
