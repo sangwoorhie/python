@@ -222,56 +222,62 @@ class AIAnswerGenerator:
         return text.strip()
     
     def _format_final_answer(self, ai_content: str, lang: str) -> str:
-        """
-        최종 답변 포맷팅 - 인사말 + 본문 + 끝맺음말
+        """Quill 에디터에 최적화된 HTML 포맷팅"""
         
-        Args:
-            ai_content: GPT가 생성한 본문 내용
-            lang: 언어 코드
-            
-        Returns:
-            인사말과 끝맺음말이 포함된 최종 HTML 답변
-        """
-        # logging.info("  [포맷팅] 최종 답변 구성 시작")
+        logging.info("  [포맷팅] Quill 최적화 HTML 생성 시작")
         
-        # 1. GPT 답변에서 혹시 모를 인사말/끝맺음말 제거 (안전장치)
+        # 1. 참고답변에서 혹시 모를 인사말/끝맺음말 제거
         ai_content = self._remove_greetings_from_reference(ai_content)
-        # logging.info(f"  [포맷팅] 인사말/끝맺음말 제거 후 길이: {len(ai_content)}자")
         
-        # 2. 간단한 HTML 변환 (줄바꿈만 처리)
-        ai_content = ai_content.replace('\n\n', '<br><br>')
-        ai_content = ai_content.replace('\n', '<br>')
+        # 2. 줄바꿈을 단락으로 변환 (Quill 최적화)
+        paragraphs = []
         
-        # 3. 번호 목록 강조
-        ai_content = re.sub(r'(\d+)\.\s+', r'<strong>\1.</strong> ', ai_content)
+        # 2-1. 이중 줄바꿈을 단락 구분자로 사용
+        sections = ai_content.split('\n\n')
         
-        # 4. 고정된 인사말
+        for section in sections:
+            section = section.strip()
+            if not section:
+                continue
+                
+            # 단일 줄바꿈은 같은 단락 내 줄바꿈으로 처리
+            lines = section.split('\n')
+            
+            for line in lines:
+                line = line.strip()
+                if not line:
+                    continue
+                
+                # 번호 목록 강조
+                line = re.sub(r'^(\d+)\.\s+', r'<strong>\1.</strong> ', line)
+                
+                paragraphs.append(f"<p>{line}</p>")
+        
+        # 3. 단락들을 빈 줄로 구분
+        body = ""
+        for i, para in enumerate(paragraphs):
+            body += para
+            # 단락 사이에 빈 줄 추가 (마지막 제외)
+            if i < len(paragraphs) - 1:
+                body += "<p><br></p>"
+        
+        # 4. 인사말
         greeting = (
             "<p>안녕하세요, 바이블 애플입니다. "
             "바이블 애플을 이용해 주셔서 감사합니다.</p>"
             "<p><br></p>"
         )
         
-        # 5. 본문
-        body = f"<p>{ai_content}</p>"
-        
-        # 6. 고정된 끝맺음말
+        # 5. 끝맺음말
         closing = (
             "<p><br></p>"
-            "<p>항상 성도님께 좋은 성경앱을 제공하기 위해 노력하는 바이블 애플이 되겠습니다.</p>"
+            "<p>항상 성도님께 좋은 성경앱을 제공하기 위해 노력하는 "
+            "바이블 애플이 되겠습니다.</p>"
             "<p><br></p>"
             "<p>감사합니다. 주님 안에서 평안하세요.</p>"
         )
         
-        # 7. 최종 조합
-        final_answer = greeting + body + closing
-        
-        # logging.info(f"  [포맷팅] 인사말 추가됨: {len(greeting)}자")
-        # logging.info(f"  [포맷팅] 본문 길이: {len(body)}자")
-        # logging.info(f"  [포맷팅] 끝맺음말 추가됨: {len(closing)}자")
-        logging.info(f"  [포맷팅] 최종 답변 총 길이: {len(final_answer)}자")
-        
-        return final_answer
+        return greeting + body + closing
     
     def _get_fallback_answer(self) -> str:
         """오류 시 기본 답변 (인사말/끝맺음말 포함)"""
