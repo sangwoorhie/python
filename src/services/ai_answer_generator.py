@@ -26,15 +26,6 @@ class AIAnswerGenerator:
                        lang: str = 'ko') -> str:
         """
         간단한 AI 답변 생성
-        
-        Args:
-            corrected_text: 오타 수정된 텍스트
-            intent_analysis: 의도 분석 결과
-            similar_answers: 검색된 유사 답변들
-            lang: 언어 코드 (한국어 고정)
-            
-        Returns:
-            str: 생성된 답변 (HTML 포맷 적용)
         """
         try:
             with memory_cleanup():
@@ -80,36 +71,29 @@ class AIAnswerGenerator:
     def _create_prompts(self, corrected_text: str, intent_analysis: Dict, context: str) -> tuple:
         """프롬프트 생성 (한국어 전용)"""
         
-        system_prompt = """You are a customer service representative for the GOODTV Bible Apple App support center.
+        system_prompt = """당신은 GOODTV 바이블 앱 고객센터 상담원입니다.
 
-Key Roles:
-1. Provide accurate and friendly responses to customer inquiries.
-2. Utilize the provided reference answers to create consistent replies.
-3. For typo reports, inform that they will be reviewed by the development team and addressed in updates.
+주요 역할:
+1. 고객의 문의에 대해 정확하고 친절한 답변 제공
+2. 제공된 참고답변을 활용하여 일관성 있는 답변 작성
+3. 오탈자 신고는 개발팀 확인 후 업데이트로 처리됨을 안내
 
-Response Principles:
-- Prioritize solutions from the reference answers.
-- Limit responses to the actual features and scope of the Bible app.
-- Offer specific and actionable solutions.
-- Write only the main content, without greetings or closing remarks.
+답변 원칙:
+- 참고답변의 해결 방법을 우선적으로 활용
+- 바이블 앱의 실제 기능 범위 내에서만 답변
+- 구체적이고 실행 가능한 해결책 제시
+- 인사말/끝맺음말 없이 본문만 작성"""
 
-Prohibitions:
-- Do not recommend any apps other than the GOODTV Bible Apple App.
-- Avoid providing uncertain information or speculative answers.
-- Do not invent new features not present in the reference answers."""
+        user_prompt = f"""고객 문의 분석 결과:
+- 수정된 질문: {corrected_text}
+- 핵심 의도: {intent_analysis.get('core_intent', '일반 문의')}
+- 의도 카테고리: {intent_analysis.get('intent_category', '일반')}
+- 키워드: {', '.join(intent_analysis.get('semantic_keywords', [])[:5])}
 
-        user_prompt = f"""Customer Inquiry Analysis Results:
-- Corrected Question: {corrected_text}
-- Core Intent: {intent_analysis.get('core_intent', 'General Inquiry')}
-- Intent Category: {intent_analysis.get('intent_category', 'General')}
-- Primary Action: {intent_analysis.get('primary_action', 'Needs Confirmation')}
-- Keywords: {', '.join(intent_analysis.get('semantic_keywords', [])[:5])}
-
-Reference Answers (Sorted by Similarity):
+참고답변:
 {context}
 
-Based on the above analysis results and reference answers, please create a clear and helpful response to the customer's inquiry.
-For typo reports, include guidance on development team review and updates. For usage inquiries, provide detailed step-by-step guides."""
+위 분석 결과와 참고답변을 바탕으로 고객의 문의에 대한 답변을 작성해주세요."""
 
         return system_prompt, user_prompt
     
@@ -119,8 +103,7 @@ For typo reports, include guidance on development team review and updates. For u
             return "참고할 유사 답변이 없습니다."
         
         context_parts = []
-        for i, ans in enumerate(similar_answers[:3], 1):  # 상위 3개만 사용
-            # 답변 텍스트 전처리
+        for i, ans in enumerate(similar_answers[:3], 1):
             answer_text = ans.get('answer', '')
             answer_text = self._remove_greetings(answer_text)
             
@@ -130,10 +113,6 @@ For typo reports, include guidance on development team review and updates. For u
                     f"카테고리: {ans.get('category', '기타')}\n"
                     f"답변: {answer_text[:400]}..."
                 )
-                
-                # 디버깅용 로그
-                logging.debug(f"참고답변 {i} 추가: 유사도={ans.get('score', 0):.3f}, "
-                            f"카테고리={ans.get('category', '기타')}")
         
         if not context_parts:
             return "참고할 유사 답변이 없습니다."
@@ -142,27 +121,19 @@ For typo reports, include guidance on development team review and updates. For u
     
     def _remove_greetings(self, text: str) -> str:
         """인사말과 끝맺음말 제거"""
-        # 인사말 패턴
         greeting_patterns = [
             r'^안녕하세요[^.]*\.\s*',
             r'^GOODTV\s+바이블\s*애플[^.]*\.\s*',
             r'^바이블\s*애플[^.]*\.\s*',
-            r'^성도님[^.]*\.\s*',
-            r'^고객님[^.]*\.\s*',
             r'^감사합니다[^.]*\.\s*',
-            r'^감사드립니다[^.]*\.\s*',
         ]
         
-        # 끝맺음말 패턴
         closing_patterns = [
             r'\s*감사합니다[^.]*\.?\s*$',
-            r'\s*감사드립니다[^.]*\.?\s*$',
             r'\s*평안하세요[^.]*\.?\s*$',
             r'\s*주님\s*안에서[^.]*\.?\s*$',
-            r'\s*항상[^.]*바이블\s*애플[^.]*\.?\s*$',
         ]
         
-        # 패턴 적용
         for pattern in greeting_patterns + closing_patterns:
             text = re.sub(pattern, '', text, flags=re.IGNORECASE)
         
@@ -170,14 +141,11 @@ For typo reports, include guidance on development team review and updates. For u
     
     def _apply_html_formatting(self, text: str, lang: str) -> str:
         """HTML 포맷팅 적용"""
-        # 기본 줄바꿈 처리
+        # 줄바꿈 처리
         text = text.replace('\n', '<br>')
         
-        # 번호 목록 처리 (1. 2. 3. 형식)
+        # 번호 목록 처리
         text = re.sub(r'^(\d+)\.\s+', r'<strong>\1.</strong> ', text, flags=re.MULTILINE)
-        
-        # 강조 표시 처리
-        text = re.sub(r'\*\*(.*?)\*\*', r'<strong>\1</strong>', text)
         
         # 기본 HTML 래퍼
         formatted_text = f'<div class="ai-answer">{text}</div>'
@@ -186,12 +154,10 @@ For typo reports, include guidance on development team review and updates. For u
     
     def _get_fallback_answer(self) -> str:
         """오류 시 기본 답변"""
-        # 인사말과 끝맺음말은 자동 제거되므로 본문만 작성
         fallback_text = """남겨주신 문의는 현재 담당자가 직접 확인하고 있습니다.
-    성도님께 도움이 될 수 있도록 내용을 꼼꼼히 살펴
-    정확하고 구체적인 답변을 준비하겠습니다.
-    답변은 최대 하루 이내에 드릴 예정이오니
-    조금만 기다려 주시면 감사하겠습니다."""
+성도님께 도움이 될 수 있도록 내용을 꼼꼼히 살펴
+정확하고 구체적인 답변을 준비하겠습니다.
+답변은 최대 하루 이내에 드릴 예정이오니
+조금만 기다려 주시면 감사하겠습니다."""
         
-        # HTML 포맷팅 적용
         return self._apply_html_formatting(fallback_text, 'ko')

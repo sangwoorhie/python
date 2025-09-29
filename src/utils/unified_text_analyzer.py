@@ -52,7 +52,8 @@ class UnifiedTextAnalyzer:
     - Maintain meaning/tone
     - Return only valid JSON
     - Do not collect keywords unrelated to Bible app functionality
-    - All field values in JSON must be in Korean"""
+    - All field values in JSON must be in Korean
+    - Analyze the user's question directly without including any prompt text in corrected_text."""
 
     # """바이블 앱 문의 전문 분석가로서, 사용자의 질문에 대해 다음 두 가지 작업을 동시에 수행하세요:
 
@@ -77,7 +78,7 @@ class UnifiedTextAnalyzer:
     # - 유효한 JSON만 반환
     # - 바이블 애플 앱 기능과 관련없는 키워드는 수집하지 말 것"""
 
-                user_prompt = f"다음 텍스트를 분석해주세요:\n\n{text}"
+                user_prompt = text
                 
                 # GPT API 호출 (gpt-5-mini 모델에 맞는 파라미터 사용)
                 response = self.openai_client.chat.completions.create(

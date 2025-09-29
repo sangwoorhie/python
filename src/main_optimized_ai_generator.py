@@ -616,84 +616,84 @@ class OptimizedAIAnswerGenerator:
             logging.error(f"처리 중 오류 - SEQ: {seq}, 오류: {str(e)}")
             return {"success": False, "error": str(e)}
 
-    def generate_ai_answer_with_detailed_logs(self, query: str, similar_answers: list, lang: str) -> str:
-        """상세 로그가 포함된 AI 답변 생성"""
+    # def generate_ai_answer_with_detailed_logs(self, query: str, similar_answers: list, lang: str) -> str:
+    #     """상세 로그가 포함된 AI 답변 생성"""
         
-        # 6단계: 캐시 확인 (검색 서비스에서 이미 처리됨)
-        # logging.info("6. 캐시 확인: 검색 결과 활용")
+    #     # 6단계: 캐시 확인 (검색 서비스에서 이미 처리됨)
+    #     # logging.info("6. 캐시 확인: 검색 결과 활용")
         
-        # 7단계: 검색 계획 (검색 서비스에서 이미 처리됨)
-        # logging.info("7. 검색 계획: 다층 검색 계획 완료")
+    #     # 7단계: 검색 계획 (검색 서비스에서 이미 처리됨)
+    #     # logging.info("7. 검색 계획: 다층 검색 계획 완료")
         
-        # 8단계: 임베딩 배치 (검색 서비스에서 이미 처리됨)
-        # logging.info("8. 임베딩 배치: 임베딩 생성 완료")
+    #     # 8단계: 임베딩 배치 (검색 서비스에서 이미 처리됨)
+    #     # logging.info("8. 임베딩 배치: 임베딩 생성 완료")
         
-        # 9단계: Pinecone 검색 (검색 서비스에서 이미 처리됨)
-        logging.info(f"9. Pinecone 검색: {len(similar_answers)}개 결과 반환")
+    #     # 9단계: Pinecone 검색 (검색 서비스에서 이미 처리됨)
+    #     logging.info(f"9. Pinecone 검색: {len(similar_answers)}개 결과 반환")
         
-        # 10단계: 결과 후처리 (검색 서비스에서 이미 처리됨)
-        best_score = similar_answers[0]['score'] if similar_answers else 0.0
-        logging.info(f"10. 결과 후처리: {len(similar_answers)}개 결과, final_score 상위={best_score:.3f}")
+    #     # 10단계: 결과 후처리 (검색 서비스에서 이미 처리됨)
+    #     best_score = similar_answers[0]['score'] if similar_answers else 0.0
+    #     logging.info(f"10. 결과 후처리: {len(similar_answers)}개 결과, final_score 상위={best_score:.3f}")
         
-        # 11단계: 컨텍스트 분석
-        context_analysis = self.analyze_context_quality(similar_answers, query)
-        approach = context_analysis['recommended_approach']
-        logging.info(f"11. 컨텍스트 분석: recommended_approach='{approach}'")
+    #     # 11단계: 컨텍스트 분석
+    #     context_analysis = self.analyze_context_quality(similar_answers, query)
+    #     approach = context_analysis['recommended_approach']
+    #     logging.info(f"11. 컨텍스트 분석: recommended_approach='{approach}'")
         
-        # 12단계: GPT 생성
-        if approach in ['gpt_with_strong_context', 'gpt_with_weak_context']:
-            gpt_start = time.time()
-            base_answer = self.generate_with_enhanced_gpt(query, similar_answers, context_analysis, lang)
-            gpt_time = time.time() - gpt_start
-            logging.info(f"12. GPT 생성: 프롬프트 구성, API 호출 시간={gpt_time:.2f}s")
-        else:
-            base_answer = self.get_best_fallback_answer(similar_answers, lang)
-            logging.info(f"12. 폴백 답변 사용: approach='{approach}'")
+    #     # 12단계: GPT 생성
+    #     if approach in ['gpt_with_strong_context', 'gpt_with_weak_context']:
+    #         gpt_start = time.time()
+    #         base_answer = self.generate_with_enhanced_gpt(query, similar_answers, context_analysis, lang)
+    #         gpt_time = time.time() - gpt_start
+    #         logging.info(f"12. GPT 생성: 프롬프트 구성, API 호출 시간={gpt_time:.2f}s")
+    #     else:
+    #         base_answer = self.get_best_fallback_answer(similar_answers, lang)
+    #         logging.info(f"12. 폴백 답변 사용: approach='{approach}'")
         
-        if not base_answer:
-            base_answer = self.get_best_fallback_answer(similar_answers, lang)
+    #     if not base_answer:
+    #         base_answer = self.get_best_fallback_answer(similar_answers, lang)
         
-        # 13단계: 품질 검증
-        base_completeness = self.check_answer_completeness(base_answer, query, lang)
-        empty_promise_score = self.detect_empty_promises(base_answer, lang)
-        hallucination_check = self.detect_hallucination_and_inconsistency(base_answer, query, lang)
-        hallucination_score = hallucination_check['overall_score']
+    #     # 13단계: 품질 검증
+    #     base_completeness = self.check_answer_completeness(base_answer, query, lang)
+    #     empty_promise_score = self.detect_empty_promises(base_answer, lang)
+    #     hallucination_check = self.detect_hallucination_and_inconsistency(base_answer, query, lang)
+    #     hallucination_score = hallucination_check['overall_score']
         
-        needs_regeneration = (base_completeness < 0.6 or empty_promise_score < 0.3 or hallucination_score < 0.5)
+    #     needs_regeneration = (base_completeness < 0.6 or empty_promise_score < 0.3 or hallucination_score < 0.5)
         
-        logging.info(f"13. 품질 검증: completeness={base_completeness:.2f}, hallucination_score={hallucination_score:.2f}, 재생성={needs_regeneration}")
+    #     logging.info(f"13. 품질 검증: completeness={base_completeness:.2f}, hallucination_score={hallucination_score:.2f}, 재생성={needs_regeneration}")
         
-        if needs_regeneration and approach in ['gpt_with_strong_context', 'gpt_with_weak_context']:
-            logging.info("13. 품질 검증: 재생성 수행")
-            # 재생성 로직 (기존 코드 유지)
+    #     if needs_regeneration and approach in ['gpt_with_strong_context', 'gpt_with_weak_context']:
+    #         logging.info("13. 품질 검증: 재생성 수행")
+    #         # 재생성 로직 (기존 코드 유지)
         
-        # 14단계: HTML 포맷팅
-        format_start = time.time()
+    #     # 14단계: HTML 포맷팅
+    #     format_start = time.time()
         
-        # 언어별 포맷팅 (기존 코드 유지)
-        if lang == 'en':
-            # 영어 포맷팅
-            base_answer = self.text_processor.remove_old_app_name(base_answer)
-            base_answer = re.sub(r'^Hello[^.]*\.\s*', '', base_answer, flags=re.IGNORECASE)
-            # ... 기존 영어 포맷팅 코드
-            formatted_body = self.format_answer_with_html_paragraphs(base_answer.strip(), 'en')
-            final_answer = "<p>Hello, this is GOODTV Bible Apple App customer service team.</p><p><br></p><p>Thank you very much for using our app and for taking the time to contact us.</p><p><br></p>"
-            final_answer += formatted_body
-            final_answer += "<p><br></p><p>Thank you once again for sharing your thoughts with us!</p><p><br></p><p>May God's peace and grace always be with you.</p>"
-        else:
-            # 한국어 포맷팅
-            base_answer = self.text_processor.remove_old_app_name(base_answer)
-            base_answer = re.sub(r'고객님', '성도님', base_answer)
-            # ... 기존 한국어 포맷팅 코드
-            formatted_body = self.format_answer_with_html_paragraphs(base_answer.strip(), 'ko')
-            final_answer = "<p>안녕하세요. GOODTV 바이블 애플입니다.</p><p><br></p><p>바이블 애플을 이용해주셔서 감사드립니다.</p><p><br></p>"
-            final_answer += formatted_body
-            final_answer += "<p><br></p><p>항상 성도님께 좋은 성경앱을 제공하기 위해 노력하는 바이블 애플이 되겠습니다.</p><p><br></p><p>감사합니다. 주님 안에서 평안하세요.</p>"
+    #     # 언어별 포맷팅 (기존 코드 유지)
+    #     if lang == 'en':
+    #         # 영어 포맷팅
+    #         base_answer = self.text_processor.remove_old_app_name(base_answer)
+    #         base_answer = re.sub(r'^Hello[^.]*\.\s*', '', base_answer, flags=re.IGNORECASE)
+    #         # ... 기존 영어 포맷팅 코드
+    #         formatted_body = self.format_answer_with_html_paragraphs(base_answer.strip(), 'en')
+    #         final_answer = "<p>Hello, this is GOODTV Bible Apple App customer service team.</p><p><br></p><p>Thank you very much for using our app and for taking the time to contact us.</p><p><br></p>"
+    #         final_answer += formatted_body
+    #         final_answer += "<p><br></p><p>Thank you once again for sharing your thoughts with us!</p><p><br></p><p>May God's peace and grace always be with you.</p>"
+    #     else:
+    #         # 한국어 포맷팅
+    #         base_answer = self.text_processor.remove_old_app_name(base_answer)
+    #         base_answer = re.sub(r'고객님', '성도님', base_answer)
+    #         # ... 기존 한국어 포맷팅 코드
+    #         formatted_body = self.format_answer_with_html_paragraphs(base_answer.strip(), 'ko')
+    #         final_answer = "<p>안녕하세요. GOODTV 바이블 애플입니다.</p><p><br></p><p>바이블 애플을 이용해주셔서 감사드립니다.</p><p><br></p>"
+    #         final_answer += formatted_body
+    #         final_answer += "<p><br></p><p>항상 성도님께 좋은 성경앱을 제공하기 위해 노력하는 바이블 애플이 되겠습니다.</p><p><br></p><p>감사합니다. 주님 안에서 평안하세요.</p>"
         
-        format_time = time.time() - format_start
-        logging.info(f"14. HTML 포맷팅: 길이={len(final_answer)}자, 포맷팅 시간={format_time:.3f}s")
+    #     format_time = time.time() - format_start
+    #     logging.info(f"14. HTML 포맷팅: 길이={len(final_answer)}자, 포맷팅 시간={format_time:.3f}s")
         
-        return final_answer
+    #     return final_answer
 
     def _evaluate_semantic_coherence(self, query: str, answer: str) -> float:
         """의미적 일관성 평가"""
