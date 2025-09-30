@@ -5,6 +5,9 @@ grep "2025-09-25" /home/ec2-user/python/logs/bible_app_ai.log
 - *특정 시간
 grep "2025-09-25 06:" /home/ec2-user/python/logs/bible_app_ai.log
 
+- # 2025년 9월 30일 로그 전체 보기
+cat /home/ec2-user/python/logs/log_seq_20250930.log
+
 - *전체
 vi /home/ec2-user/python/logs/bible_app_ai.log
 

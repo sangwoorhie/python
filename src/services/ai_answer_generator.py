@@ -143,7 +143,6 @@ class AIAnswerGenerator:
     - Corrected Question: {corrected_text}
     - Core Intent: {intent_analysis.get('core_intent', '일반 문의')}
     - Intent Category: {intent_analysis.get('intent_category', '일반')}
-    - Key Keywords: {', '.join(intent_analysis.get('semantic_keywords', [])[:5])}
 
     REFERENCE ANSWERS (use these as your primary guidance):
     {context}
