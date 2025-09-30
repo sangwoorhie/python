@@ -272,6 +272,8 @@ class OptimizedAIAnswerGenerator:
                 corrected_text, intent_analysis = self.unified_analyzer.analyze_and_correct(processed_question)
                 core_intent = intent_analysis.get('core_intent', 'general_inquiry')
                 processed_question = corrected_text # corrected_text를 쿼리로 사용
+                semantic_keywords = intent_analysis.get('semantic_keywords', [])
+                result = ', '.join(semantic_keywords)
 
                 analysis_time = time.time() - analysis_start 
                 logging.info(f"3. 통합 분석 완료: corrected='{corrected_text}', intent={{'core_intent': '{intent_analysis.get('core_intent', 'N/A')}'}}, 시간={analysis_time:.2f}s")
@@ -288,7 +290,7 @@ class OptimizedAIAnswerGenerator:
                     intent_analysis=intent_analysis,  # 전체 의도 분석 결과 전달
                     # original_query=corrected_text, # corrected_text를 쿼리로 사용 (원래 이거였음)
                     # original_query=core_intent, # corrected_text를 쿼리로 사용
-                    original_query= intent_analysis.get('semantic_keywords'), # corrected_text를 쿼리로 사용
+                    original_query= result, # corrected_text를 쿼리로 사용
                     lang=lang,
                     top_k=3  # 상위 3개 결과만 반환
                 )
