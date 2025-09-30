@@ -118,48 +118,7 @@ class OptimizedAIAnswerGenerator:
         # 배치 프로세서 시작
         self.batch_processor.start()
         
-        logging.info("최적화 시스템 초기화 완료")
-
-    # ================================
-    # 기존 인터페이스 호환성 메서드들 (최적화 적용)
-    # ================================
-
-    # def detect_language(self, text: str) -> str:
-    #     """언어 감지 (langdetect 기반 - 정확한 언어 패턴 분석)"""
-    #     try:
-    #         # ===== 1단계: langdetect 라이브러리를 사용한 자동 언어 감지 =====
-    #         detected = detect(text)
-            
-    #         # ===== 2단계: 지원 언어 검증 (한국어/영어만 지원) =====
-    #         if detected == 'ko':
-    #             return 'ko'                                   # 한국어로 감지됨
-    #         elif detected == 'en':
-    #             return 'en'                                   # 영어로 감지됨
-    #         else:
-    #             # 기타 언어는 기본값(한국어)으로 처리
-    #             return 'ko'
-                
-        # except LangDetectException as e:
-        #     logging.warning(f"langdetect 언어 감지 실패: {e}, 폴백 로직 사용")
-            
-        #     # ===== 3단계: 감지 실패시 개선된 문자 비율 기반 폴백 로직 =====
-        #     # 기본 문자 카운트
-        #     korean_chars = len(re.findall(r'[가-힣]', text))
-        #     english_chars = len(re.findall(r'[a-zA-Z]', text))
-            
-        #     # 한국어 문법 패턴 가중치 (조사, 어미 등)
-        #     korean_particles = len(re.findall(r'[을를이가에서로과와의도만까지부터께서에게한테]', text))
-        #     korean_endings = len(re.findall(r'습니다|세요|어요|겠어요|았어요|었어요|하게|주세요', text))
-            
-        #     # 가중치 적용한 점수 계산
-        #     korean_score = korean_chars + (korean_particles * 2) + (korean_endings * 3)
-        #     english_score = english_chars
-            
-        #     # 문자 수 비교로 언어 판단 (개선된 버전)
-        #     if korean_score > english_score:
-        #         return 'ko'                                   # 한국어로 판단
-        #     else:
-        #         return 'en'                                   # 영어로 판단
+        logging.info("최적화 시스템 초기화 완료")                               # 영어로 판단
 
     def preprocess_text(self, text: str) -> str:
         """텍스트 전처리 (기존 호환)"""
