@@ -342,6 +342,7 @@ class OptimizedAIAnswerGenerator:
                 }
 
                 logging.info(f"처리 완료 - SEQ: {seq}, 총 시간: {total_time:.2f}s")
+                logging.info(f"답변: {ai_answer}")
                 return result
 
         except Exception as e:
