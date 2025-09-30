@@ -87,38 +87,38 @@ class OptimizedAIAnswerGenerator:
         
         # logging.info("최적화된 AI 답변 생성기 초기화 완료")
 
-    def _initialize_optimization_system(self, redis_config: Optional[Dict]):
-        """최적화 시스템 초기화"""
-        # Redis 설정
-        if redis_config:
-            self.cache_manager = CacheManager(
-                redis_host=redis_config.get('host', 'localhost'),
-                redis_port=redis_config.get('port', 6379),
-                redis_db=redis_config.get('db', 0),
-                redis_password=redis_config.get('password')
-            )
-        else:
-            # 기본 설정 (로컬 Redis 또는 메모리 캐시)
-            self.cache_manager = CacheManager()
+    # def _initialize_optimization_system(self, redis_config: Optional[Dict]):
+    #     """최적화 시스템 초기화"""
+    #     # Redis 설정
+    #     if redis_config:
+    #         self.cache_manager = CacheManager(
+    #             redis_host=redis_config.get('host', 'localhost'),
+    #             redis_port=redis_config.get('port', 6379),
+    #             redis_db=redis_config.get('db', 0),
+    #             redis_password=redis_config.get('password')
+    #         )
+    #     else:
+    #         # 기본 설정 (로컬 Redis 또는 메모리 캐시)
+    #         self.cache_manager = CacheManager()
         
-        # 배치 프로세서 초기화
-        self.batch_processor = BatchProcessor(
-            max_workers=5,
-            batch_size=10,
-            batch_timeout=2.0
-        )
+    #     # 배치 프로세서 초기화
+    #     self.batch_processor = BatchProcessor(
+    #         max_workers=5,
+    #         batch_size=10,
+    #         batch_timeout=2.0
+    #     )
         
-        # 지능형 API 관리자 초기화
-        self.api_manager = IntelligentAPIManager(
-            cache_manager=self.cache_manager,
-            batch_processor=self.batch_processor,
-            openai_client=self.openai_client
-        )
+    #     # 지능형 API 관리자 초기화
+    #     self.api_manager = IntelligentAPIManager(
+    #         cache_manager=self.cache_manager,
+    #         batch_processor=self.batch_processor,
+    #         openai_client=self.openai_client
+    #     )
         
-        # 배치 프로세서 시작
-        self.batch_processor.start()
+    #     # 배치 프로세서 시작
+    #     self.batch_processor.start()
         
-        logging.info("최적화 시스템 초기화 완료")                               # 영어로 판단
+    #     logging.info("최적화 시스템 초기화 완료")                               # 영어로 판단
 
     def preprocess_text(self, text: str) -> str:
         """텍스트 전처리 (기존 호환)"""
@@ -261,13 +261,13 @@ class OptimizedAIAnswerGenerator:
                 # 1단계: POST 요청 수신 로그
                 logging.info(f"1. POST /generate_answer: seq={seq}, question='{question}', lang='{lang}'")
                 
-                # 2단계: 전처리
+                # 2단계: 전처리 (HTML 태그 제거, 앱 이름 통일, 공백 정규화)
                 preprocess_start = time.time()
                 processed_question = self.preprocess_text(question)
                 preprocess_time = time.time() - preprocess_start
                 logging.info(f"2. HTML 태그 제거, 앱 이름 통일, 공백 정규화 전처리: '{question}' → '{processed_question}', 시간={preprocess_time:.3f}s")
 
-                # 3단계: 통합 분석 (오타 수정 + 의도 분석)
+                # 3단계: 통합 분석 (오타 수정 + 의도 분석) API 호출
                 analysis_start = time.time()    
                 corrected_text, intent_analysis = self.unified_analyzer.analyze_and_correct(processed_question)
                 core_intent = intent_analysis.get('core_intent', 'general_inquiry')
@@ -279,15 +279,14 @@ class OptimizedAIAnswerGenerator:
                 if not processed_question:
                     return {"success": False, "error": "질문이 비어있습니다."}
 
-                # 4단계: 언어 자동 감지 (한국어로 고정)
+                # 4단계: 언어 한국어로 고정
                 lang = 'ko'
                 search_start = time.time()
                 
-
-                # 5단계: 의도 기반 검색 (Pinecone 검색)
+                # 5단계: 의도 기반 검색 (Pinecone 검색) API 호출
                 similar_answers = self.search_service.search_by_enhanced_intent(
                     intent_analysis=intent_analysis,  # 전체 의도 분석 결과 전달
-                    original_query=corrected_text,
+                    original_query=corrected_text, # corrected_text를 쿼리로 사용
                     lang=lang,
                     top_k=3  # 상위 3개 결과만 반환
                 )
@@ -305,7 +304,7 @@ class OptimizedAIAnswerGenerator:
                         f"answer_length={len(result.get('answer', ''))}자"
                     )
 
-                # 6단계: AI 답변 생성 (SimpleAnswerGenerator 사용)
+                # 6단계: AI 답변 생성 (AIAnswerGenerator 사용)
                 generation_start = time.time()
                 logging.info("6. AI 답변 생성 시작")
                 

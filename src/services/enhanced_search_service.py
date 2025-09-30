@@ -50,9 +50,6 @@ class EnhancedPineconeSearchService:
         """
         try:
             with memory_cleanup():
-                logging.info(f"==================== Original Query Only Search 시작 ====================")
-                logging.info(f"검색 쿼리: '{original_query}'")
-                logging.info(f"언어: {lang}, 상위 결과 수: {top_k}")
                 
                 # 빈 쿼리 체크
                 if not original_query or not original_query.strip():
@@ -137,7 +134,8 @@ class EnhancedPineconeSearchService:
                     if i <= 3:
                         logging.info(f"검색결과 #{i}: score={result['score']:.4f}, "
                                    f"category='{result['category']}', "
-                                   f"answer='{result['answer']}'")
+                                   f"answer='{result['answer']}',"
+                                   f"id='{result['id']}'"),
             
             logging.info(f"검색 완료 통계: "
                         f"결과 수={len(results)}, "
