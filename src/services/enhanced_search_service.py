@@ -134,8 +134,8 @@ class EnhancedPineconeSearchService:
                     if i <= 3:
                         logging.info(f"검색결과 #{i}: score={result['score']:.4f}, "
                                    f"category='{result['category']}', "
-                                   f"answer='{result['answer']}',"
-                                   f"id='{result['id']}'"),
+                                   f"answer='{result['answer']}', "
+                                   f"id='{result['id']}'")
             
             logging.info(f"검색 완료 통계: "
                         f"결과 수={len(results)}, "
