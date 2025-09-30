@@ -15,3 +15,4 @@ memory-profiler==0.61.0
 accelerate==1.10.1
 langdetect==1.0.9
 redis==5.0.1
+pytz>=2024.1

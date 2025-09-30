@@ -289,8 +289,8 @@ class OptimizedAIAnswerGenerator:
                 similar_answers = self.search_service.search_by_enhanced_intent(
                     intent_analysis=intent_analysis,  # 전체 의도 분석 결과 전달
                     original_query=corrected_text, # corrected_text를 쿼리로 사용 (원래 이거였음)
-                    # original_query=core_intent, # corrected_text를 쿼리로 사용
-                    # original_query= result, # corrected_text를 쿼리로 사용
+                    # original_query=core_intent,
+                    # original_query= result,
                     lang=lang,
                     top_k=3  # 상위 3개 결과만 반환
                 )
@@ -308,19 +308,30 @@ class OptimizedAIAnswerGenerator:
                         f"answer_length={len(result.get('answer', ''))}자"
                     )
 
-                # 6단계: AI 답변 생성 (AIAnswerGenerator 사용)
-                generation_start = time.time()
-                logging.info("6. AI 답변 생성 시작")
-                
-                ai_answer = self.ai_answer_generator.generate_answer(
-                    corrected_text=corrected_text,
-                    intent_analysis=intent_analysis,
-                    similar_answers=similar_answers,
-                    lang=lang
-                )
-                
-                generation_time = time.time() - generation_start
-                logging.info(f"AI 답변 생성 완료: 길이={len(ai_answer)}자, 시간={generation_time:.2f}s")
+                # 검색 결과 확인 - 결과가 없으면 폴백 답변 사용
+                if not similar_answers:
+                    logging.warning(f"⚠️ 검색 결과 없음 - 폴백 답변 사용")
+                    
+                    # 폴백 답변 사용
+                    generation_start = time.time()
+                    ai_answer = self.ai_answer_generator._get_fallback_answer()
+                    generation_time = time.time() - generation_start
+                    logging.info(f"폴백 답변 생성 완료: 길이={len(ai_answer)}자, 시간={generation_time:.2f}s")
+                else:
+                    
+                    # 6단계: AI 답변 생성 (AIAnswerGenerator 사용)
+                    generation_start = time.time()
+                    logging.info("6. AI 답변 생성 시작")
+                    
+                    ai_answer = self.ai_answer_generator.generate_answer(
+                        corrected_text=corrected_text,
+                        intent_analysis=intent_analysis,
+                        similar_answers=similar_answers,
+                        lang=lang
+                    )
+                    
+                    generation_time = time.time() - generation_start
+                    logging.info(f"AI 답변 생성 완료: 길이={len(ai_answer)}자, 시간={generation_time:.2f}s")
 
                 # 특수문자 정리
                 ai_answer = ai_answer.replace('"', '"').replace('"', '"')

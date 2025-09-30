@@ -321,7 +321,8 @@ class AIAnswerGenerator:
             if i < len(paragraphs) - 1:
                 body += "<p><br></p>"
         
-        # 4. 인사말
+        # 4. AI 답변 안내 및 인사말
+        ai_notice = "<p>(AI가 작성한 답변입니다. 답변완료 시, 이 문구를 꼭 삭제해주세요.)</p><p><br></p>"
         greeting = (
             "<p>안녕하세요, 바이블 애플입니다. "
             "바이블 애플을 이용해 주셔서 감사합니다.</p>"
@@ -337,12 +338,13 @@ class AIAnswerGenerator:
             "<p>감사합니다. 주님 안에서 평안하세요.</p>"
         )
         
-        return greeting + body + closing
+        return ai_notice + greeting + body + closing
     
     def _get_fallback_answer(self) -> str:
         """오류 시 기본 답변 (인사말/끝맺음말 포함)"""
         logging.warning("폴백 답변 생성")
         
+        ai_notice = "<p>(AI가 작성한 답변입니다. 답변완료 시, 이 문구를 꼭 삭제해주세요.)</p><p><br></p>"
         greeting = (
             "<p>안녕하세요, 바이블 애플입니다. "
             "바이블 애플을 이용해 주셔서 감사합니다.</p>"
@@ -366,4 +368,4 @@ class AIAnswerGenerator:
             "<p>감사합니다. 주님 안에서 평안하세요.</p>"
         )
         
-        return greeting + body + closing
+        return ai_notice + greeting + body + closing

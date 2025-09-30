@@ -29,12 +29,15 @@
 # ==================================================
 
 # 시스템 기본 라이브러리
-import atexit      # 프로그램 종료시 정리 함수 등록
-import gc          # 가비지 컬렉션 (메모리 관리)
-import logging     # 로깅 시스템
-import os          # 환경변수, 파일 시스템 작업
-import sys         # 시스템 관련 기능
-import tracemalloc # 메모리 사용량 추적 (프로덕션 모니터링용)
+import atexit                # 프로그램 종료시 정리 함수 등록
+import gc                    # 가비지 컬렉션 (메모리 관리)
+import logging               # 로깅 시스템
+import logging.handlers      # 로깅 핸들러
+import os                    # 환경변수, 파일 시스템 작업
+import sys                   # 시스템 관련 기능
+import tracemalloc           # 메모리 사용량 추적 (프로덕션 모니터링용)
+from datetime import datetime # 날짜 시간 처리
+import pytz                 # 시간대 처리
 from typing import Optional, Dict, Any  # 타입 힌팅
 
 # 웹 프레임워크 관련
@@ -79,7 +82,15 @@ app = Flask(__name__)
 # - 로그 중복 방지: 파일 또는 콘솔 중 하나만 선택
 
 def setup_logging():
-    """로깅 시스템 초기화 함수"""
+    """
+    로깅 시스템 초기화 함수 (날짜별 파일 분리)
+    
+    개선 사항:
+    - 한국시간(KST) 기준 자정마다 새 로그 파일 자동 생성
+    - 파일명 형식: log_seq_YYYYMMDD.log (예: log_seq_20250930.log)
+    - 이전 날짜 로그 파일들 자동 보관 (삭제하지 않음)
+    - 시스템 타임존과 무관하게 정확한 KST 기준 동작
+    """
     # 모든 기존 핸들러 제거 (중복 방지)
     root_logger = logging.getLogger()
     root_logger.handlers.clear()
@@ -87,28 +98,127 @@ def setup_logging():
     # 루트 로거 레벨 설정
     root_logger.setLevel(logging.INFO)
     
-    # 로그 포맷 정의: 시간, 레벨, 모듈명, 메시지 순서로 출력
+    # 로그 포맷 정의
     formatter = logging.Formatter(
         '%(asctime)s - %(levelname)s - %(name)s - %(message)s',
         datefmt='%Y-%m-%d %H:%M:%S'
     )
     
-    # 더 상세한 포맷터 (디버깅용)
+    # 상세 포맷터 (파일용 - 파일명, 라인번호 포함)
     detailed_formatter = logging.Formatter(
         '%(asctime)s - %(levelname)s - %(name)s - %(filename)s:%(lineno)d - %(message)s',
         datefmt='%Y-%m-%d %H:%M:%S'
     )
     
     try:
-        # AWS EC2 환경의 로그 디렉토리 생성 (없으면 자동 생성)
-        os.makedirs('/home/ec2-user/python/logs', exist_ok=True)
+        # 로그 디렉토리 생성 (없으면 자동 생성)
+        log_dir = '/home/ec2-user/python/logs'
+        os.makedirs(log_dir, exist_ok=True)
         
-        # 파일 핸들러 생성: UTF-8 인코딩으로 한글 지원
-        file_handler = logging.FileHandler('/home/ec2-user/python/logs/bible_app_ai.log', encoding='utf-8')
+        # 한국시간(KST) 타임존 객체 생성
+        kst = pytz.timezone('Asia/Seoul')
+        
+        # 현재 한국시간 기준 날짜로 초기 파일명 생성
+        now_kst = datetime.now(kst)
+        initial_date = now_kst.strftime('%Y%m%d')
+        initial_filename = f'{log_dir}/log_seq_{initial_date}.log'
+        
+        # TimedRotatingFileHandler 생성
+        # when='midnight': 자정마다 로그 파일 교체
+        # interval=1: 1일 간격
+        # backupCount=0: 모든 로그 파일 보관 (제한 없음)
+        # encoding='utf-8': 한글 지원
+        file_handler = logging.handlers.TimedRotatingFileHandler(
+            filename=initial_filename,
+            when='midnight',      # 자정마다 교체
+            interval=1,           # 1일 간격
+            backupCount=0,        # 모든 백업 파일 보관 (삭제하지 않음)
+            encoding='utf-8',
+            delay=False,          # 즉시 파일 생성
+            utc=False             # 로컬 시간 사용 (나중에 KST로 오버라이드)
+        )
+        
+        # ===================================================
+        # 핵심 커스터마이징: 한국시간(KST) 기준으로 롤오버 계산
+        # ===================================================
+        def computeRollover_KST(current_time):
+            """
+            한국시간 기준으로 다음 롤오버(파일 교체) 시간 계산
+            
+            Args:
+                current_time: 현재 Unix 타임스탬프
+            
+            Returns:
+                다음 자정(KST)의 Unix 타임스탬프
+            """
+            # 현재 시간을 KST로 변환
+            current_dt_kst = datetime.fromtimestamp(current_time, tz=kst)
+            
+            # 다음 날 자정 계산
+            from datetime import timedelta
+            next_midnight = current_dt_kst.replace(
+                hour=0, minute=0, second=0, microsecond=0
+            ) + timedelta(days=1)
+            
+            return next_midnight.timestamp()
+        
+        # 원래 메서드를 KST 버전으로 교체
+        original_compute = file_handler.computeRollover
+        file_handler.computeRollover = lambda ct: computeRollover_KST(ct)
+        
+        # ===================================================
+        # 롤오버 시 파일명 형식 커스터마이징
+        # ===================================================
+        def namer(default_name):
+            """
+            롤오버 시 생성되는 백업 파일명 형식 변경
+            
+            Args:
+                default_name: 기본 백업 파일명 
+                             (예: /home/ec2-user/python/logs/log_seq_20250930.log.2025-10-01)
+            
+            Returns:
+                커스터마이징된 파일명 
+                (예: /home/ec2-user/python/logs/log_seq_20251001.log)
+            """
+            # 파일 경로 분리
+            dirname = os.path.dirname(default_name)
+            basename = os.path.basename(default_name)
+            
+            # 날짜 suffix 추출 (예: '2025-10-01')
+            # basename 형식: log_seq_20250930.log.2025-10-01
+            parts = basename.split('.')
+            if len(parts) >= 2:
+                # 마지막 부분이 날짜 (YYYY-MM-DD 형식)
+                date_str = parts[-1].replace('-', '')  # '20251001'
+                return os.path.join(dirname, f'log_seq_{date_str}.log')
+            
+            return default_name
+        
+        file_handler.namer = namer
+        
+        # ===================================================
+        # 롤오버 시 파일 이름 변경만 수행 (압축 비활성화)
+        # ===================================================
+        def rotator(source, dest):
+            """
+            롤오버 시 파일 처리 로직
+            
+            Args:
+                source: 현재 로그 파일 경로
+                dest: 백업 파일 경로
+            """
+            # 파일명만 변경 (이동)
+            if os.path.exists(source):
+                os.rename(source, dest)
+        
+        file_handler.rotator = rotator
+        
+        # 핸들러 설정 완료
         file_handler.setLevel(logging.INFO)
-        file_handler.setFormatter(detailed_formatter)  # 상세한 포맷터 사용
+        file_handler.setFormatter(detailed_formatter)
         
-        # 콘솔 핸들러 생성 (디버깅용)
+        # 콘솔 핸들러 생성 (실시간 모니터링용)
         console_handler = logging.StreamHandler()
         console_handler.setLevel(logging.DEBUG)
         console_handler.setFormatter(formatter)
@@ -117,8 +227,9 @@ def setup_logging():
         root_logger.addHandler(file_handler)
         root_logger.addHandler(console_handler)
         
-        # 모든 하위 로거들이 루트 로거를 사용하도록 설정
-        # 이렇게 하면 모든 모듈의 로그가 동일한 파일에 기록됩니다
+        # ===================================================
+        # 하위 로거 설정 (모든 모듈의 로그가 루트 로거로 전파되도록)
+        # ===================================================
         src_loggers = [
             'src', 'src.main_optimized_ai_generator', 'src.models', 
             'src.services', 'src.utils', 'src.api'
@@ -127,34 +238,33 @@ def setup_logging():
         for logger_name in src_loggers:
             logger = logging.getLogger(logger_name)
             logger.setLevel(logging.DEBUG)
-            # 하위 로거의 핸들러를 제거하고 propagate=True로 설정
-            logger.handlers.clear()
-            logger.propagate = True
+            logger.handlers.clear()  # 하위 로거의 핸들러 제거
+            logger.propagate = True  # 루트 로거로 전파
             logger.disabled = False
-        
-        # 추가 디버깅: 로거 설정 확인
-        print(f"🔍 루트 로거 레벨: {root_logger.level}")
-        print(f"🔍 루트 로거 핸들러 수: {len(root_logger.handlers)}")
-        for i, handler in enumerate(root_logger.handlers):
-            print(f"   핸들러 {i+1}: {type(handler).__name__}, 레벨: {handler.level}")
-        
-        # 각 모듈별 로거 설정 확인
-        for module_name in src_loggers:
-            module_logger = logging.getLogger(module_name)
-            print(f"🔍 {module_name} 로거 레벨: {module_logger.level}, 핸들러 수: {len(module_logger.handlers)}, propagate: {module_logger.propagate}")
         
         # Werkzeug 로거 레벨 조정 (Flask 관련 로그 억제)
         logging.getLogger('werkzeug').setLevel(logging.WARNING)
         
-        # 추가 로깅 테스트 (설정 완료 후)
-        logging.info("============================= 로그 시스템 초기화 완료 =================================")        
-        print(f"✅ 로그 파일 설정 완료: /home/ec2-user/python/logs/bible_app_ai.log")
+        # 시스템 정보 로깅
+        logging.info("=" * 80)
+        logging.info("날짜별 로그 파일 시스템 초기화 완료")
+        logging.info(f"초기 로그 파일: {initial_filename}")
+        logging.info(f"파일명 형식: log_seq_YYYYMMDD.log (예: log_seq_{initial_date}.log)")
+        logging.info(f"자동 롤오버: 매일 자정(KST)")
+        logging.info(f"파일 보관 정책: 모든 날짜별 로그 파일 영구 보관")
+        logging.info("=" * 80)
+        
+        print(f"✅ 날짜별 로그 파일 시스템 설정 완료")
+        print(f"   📁 현재 로그 파일: log_seq_{initial_date}.log")
+        print(f"   📅 자정(KST)마다 자동으로 새 파일 생성")
+        print(f"   💾 모든 이전 로그 파일 보관")
         
         return True
         
     except Exception as e:
         # 파일 로깅 실패시 콘솔 로깅으로 대체
-        print(f"❌ 로그 파일 핸들러 생성 실패: {e}")
+        print(f"❌ 날짜별 로그 파일 핸들러 생성 실패: {e}")
+        print(f"   상세 오류: {type(e).__name__}: {str(e)}")
         print("📝 콘솔 로깅으로 대체합니다.")
         
         # 콘솔 핸들러만 추가
