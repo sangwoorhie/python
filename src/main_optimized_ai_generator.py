@@ -288,9 +288,9 @@ class OptimizedAIAnswerGenerator:
                 # 5단계: 의도 기반 검색 (Pinecone 검색) API 호출
                 similar_answers = self.search_service.search_by_enhanced_intent(
                     intent_analysis=intent_analysis,  # 전체 의도 분석 결과 전달
-                    # original_query=corrected_text, # corrected_text를 쿼리로 사용 (원래 이거였음)
+                    original_query=corrected_text, # corrected_text를 쿼리로 사용 (원래 이거였음)
                     # original_query=core_intent, # corrected_text를 쿼리로 사용
-                    original_query= result, # corrected_text를 쿼리로 사용
+                    # original_query= result, # corrected_text를 쿼리로 사용
                     lang=lang,
                     top_k=3  # 상위 3개 결과만 반환
                 )
