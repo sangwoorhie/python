@@ -13,6 +13,7 @@ from flask_cors import CORS
 from src.utils.memory_manager import memory_cleanup
 import json
 import os
+import pytz
 
 # API 엔드포인트 생성
 def create_endpoints(app: Flask, generator, sync_manager, index):
@@ -35,6 +36,23 @@ def create_endpoints(app: Flask, generator, sync_manager, index):
                 seq = data.get('seq', 0)                    # 시퀀스 ID (기본값: 0)
                 question = data.get('question', '')         # 사용자 질문
                 lang = data.get('lang', 'auto')             # 언어 설정 (자동 감지) 프론트엔드에서 받을 수 있음, 기본값 'auto'
+                
+                # seq별 로그 핸들러 추가
+                kst = pytz.timezone('Asia/Seoul')
+                current_date = datetime.now(kst).strftime('%Y%m%d')
+                log_dir = '/home/ec2-user/python/logs'
+                seq_log_file = f'{log_dir}/log_{seq}_{current_date}.log'
+
+                seq_handler = logging.FileHandler(seq_log_file, encoding='utf-8')
+                seq_handler.setLevel(logging.INFO)
+                seq_formatter = logging.Formatter(
+                    '%(asctime)s - %(levelname)s - %(name)s - %(filename)s:%(lineno)d - %(message)s',
+                    datefmt='%Y-%m-%d %H:%M:%S'
+                )
+                seq_handler.setFormatter(seq_formatter)
+
+                root_logger = logging.getLogger()
+                root_logger.addHandler(seq_handler)
                 
                 # 🔍 추가 로그
                 logging.info(f"================================= API 요청 수신 (POST /generate_answer) ====================================")
@@ -66,6 +84,11 @@ def create_endpoints(app: Flask, generator, sync_manager, index):
                 top_stats = snapshot.statistics('lineno')
                 memory_usage = sum(stat.size for stat in top_stats) / 1024 / 1024  # MB 단위 변환
                 logging.info(f"현재 메모리 사용량: {memory_usage:.2f}MB")
+
+                # seq별 핸들러 제거 (응답 반환 직전)
+                if seq_handler:
+                    root_logger.removeHandler(seq_handler)
+                    seq_handler.close()
 
                 return response
             
