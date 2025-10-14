@@ -7,10 +7,12 @@ API 엔드포인트 모듈
 import gc
 import logging
 import tracemalloc
+import threading
 from datetime import datetime
 from flask import Flask, request, jsonify
 from flask_cors import CORS
 from src.utils.memory_manager import memory_cleanup
+from src.utils.mssql_updater import MSSQLUpdater
 import json
 import os
 import pytz
@@ -21,13 +23,71 @@ def create_endpoints(app: Flask, generator, sync_manager, index):
     
     # CORS 설정 - 웹 브라우저의 교차 출처 요청 허용
     CORS(app)
+
+    # MSSQL 업데이터 초기화 (전역으로 한 번만 생성)
+    mssql_updater = MSSQLUpdater()
+
+    # 연결 테스트
+    if not mssql_updater.test_connection():
+        logging.warning("⚠️ MSSQL 연결 테스트 실패 - DB 업데이트 기능 비활성화")
+    else:
+        logging.info("✅ MSSQL 연결 테스트 성공 - DB 업데이트 기능 활성화")
+
+    # ============================== 백그라운드 작업 함수 ==============================
+    def _process_answer_in_background(seq: int, question: str, lang: str):
+        """
+        백그라운드에서 AI 답변 생성 및 DB 업데이트
+        - 기존의 모든 로깅 및 메모리 관리 기능 포함
+        
+        Args:
+            seq: 문의 시퀀스 번호
+            question: 사용자 질문
+            lang: 언어 코드
+        """
+        try:
+            logging.info(f"🔄 백그라운드 처리 시작 - SEQ: {seq}")
+            
+            # 1단계: AI 답변 생성
+            result = generator.process(seq, question, lang)
+            
+            if not result.get('success'):
+                logging.error(f"❌ AI 답변 생성 실패 - SEQ: {seq}, 오류: {result.get('error')}")
+                return
+            
+            ai_answer = result.get('answer', '')
+            
+            if not ai_answer:
+                logging.error(f"❌ 생성된 답변이 비어있음 - SEQ: {seq}")
+                return
+            
+            # 2단계: DB 업데이트 (answer_YN = 'N'으로 저장)
+            update_success = mssql_updater.update_inquiry_answer(
+                seq=seq,
+                answer=ai_answer,
+                answer_yn='N'  # AI 답변 (관리자 승인 전)
+            )
+            
+            if update_success:
+                logging.info(f"✅ 백그라운드 처리 완료 - SEQ: {seq}, 답변 길이: {len(ai_answer)}자")
+            else:
+                logging.error(f"❌ DB 업데이트 실패 - SEQ: {seq}")
+            
+        except Exception as e:
+            logging.error(f"❌ 백그라운드 처리 중 오류 - SEQ: {seq}, 오류: {str(e)}")
     
     # ===== 1. AI 답변 생성 API 엔드포인트 =====
     # ☆ 1. 사용자 질문 입력 (/generate_answer 엔드포인트)
     # POST요청 수신, JSON 데이터에서 seq, question, lang 파싱
     @app.route('/generate_answer', methods=['POST'])
     def generate_answer():
-        """AI 답변 생성 API 엔드포인트 - 메인 기능"""
+        """
+        AI 답변 생성 API 엔드포인트 - 비동기 처리 버전
+        
+        변경사항:
+        1. 요청을 받으면 즉시 202 Accepted 응답 반환
+        2. 백그라운드 스레드에서 AI 답변 생성 및 DB 업데이트 수행
+        3. 프론트엔드는 응답을 기다리지 않고 즉시 다음 작업 진행 가능
+        """
         try:
             # 메모리 자동 정리 컨텍스트 시작
             with memory_cleanup():
@@ -62,35 +122,39 @@ def create_endpoints(app: Flask, generator, sync_manager, index):
                 logging.info(f"사용된 generator 타입: {type(generator).__name__}")
 
                 # 2단계: 필수 데이터 검증
-                if not question:
-                    return jsonify({"success": False, "error": "질문이 필요합니다."}), 400
-                
+                if not seq or not question:
+                    return jsonify({
+                        "success": False, 
+                        "error": "seq와 question이 필요합니다."
+                    }), 400
+
                 # 3단계: AI 답변 생성 처리 (핵심 로직)
                 # - Pinecone에서 유사 구절 검색
-                # - T5 모델로 최종 답변 생성
-                result = generator.process(seq, question, lang)
+                # - 백그라운드 스레드에서 실행
+                # daemon=True로 설정하여 메인 프로그램 종료시 자동으로 종료되도록 함
+                background_thread = threading.Thread(
+                    target=_process_answer_in_background,
+                    args=(seq, question, lang),
+                    daemon=True,
+                    name=f"AIAnswerThread-{seq}"  # 스레드 이름 설정 (디버깅용)
+                )
+                background_thread.start()
+
+                # 4단계: 즉시 응답 반환
+                logging.info(f"✅ 비동기 작업 시작 - SEQ: {seq}, 질문: '{question[:50]}...'")
+                logging.info(f"백그라운드 스레드 시작: {background_thread.name}")
+                logging.info(f"==================================== API 응답 반환 (202 Accepted) ====================================")
                 
-                # 🔍 결과 로그
-                logging.info(f"==================================== 처리 결과 ====================================")
-                logging.info(f"성공 여부: {result.get('success', False)}")
-                logging.info(f"답변 길이: {len(result.get('answer', ''))}")
-
-                # 4단계: 응답 준비 (UTF-8 인코딩 설정)
-                response = jsonify(result)
+                response = jsonify({
+                    "success": True,
+                    "message": "답변 생성 작업이 시작되었습니다. 백그라운드에서 처리 중입니다.",
+                    "seq": seq,
+                    "status": "processing",
+                    "thread_name": background_thread.name
+                })
                 response.headers['Content-Type'] = 'application/json; charset=utf-8'
-
-                # 5단계: 메모리 사용량 모니터링 및 최적화
-                snapshot = tracemalloc.take_snapshot()
-                top_stats = snapshot.statistics('lineno')
-                memory_usage = sum(stat.size for stat in top_stats) / 1024 / 1024  # MB 단위 변환
-                logging.info(f"현재 메모리 사용량: {memory_usage:.2f}MB")
-
-                # seq별 핸들러 제거 (응답 반환 직전)
-                if seq_handler:
-                    root_logger.removeHandler(seq_handler)
-                    seq_handler.close()
-
-                return response
+                
+                return response, 202  # HTTP 202 Accepted (비동기 처리 시작)
             
         except Exception as e:
             # 예외 발생시 로깅 및 에러 응답 반환
