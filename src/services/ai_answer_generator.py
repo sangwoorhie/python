@@ -350,7 +350,7 @@ class AIAnswerGenerator:
             "<p>감사합니다. 주님 안에서 평안하세요.</p>"
         )
         
-        return ai_notice + greeting + body + closing
+        return  greeting + body + closing + ai_notice
     
     def _get_fallback_answer(self) -> str:
         """오류 시 기본 답변 (인사말/끝맺음말 포함)"""
@@ -380,4 +380,4 @@ class AIAnswerGenerator:
             "<p>감사합니다. 주님 안에서 평안하세요.</p>"
         )
         
-        return ai_notice + greeting + body + closing
+        return  greeting + body + closing + ai_notice
