@@ -121,16 +121,22 @@ class AIAnswerGenerator:
     3. ADAPTATION: If the customer's specific situation differs from the reference answers:
     - Adapt the solution appropriately while maintaining the same tone and style
     - Keep the fundamental approach and problem-solving structure from references
-    - Ensure your answer addresses the customer's actual intent
     4. TONE CONSISTENCY: Match the tone, formality level, and speaking style of the reference answers
-    5. CREATIVITY CONSTRAINT: Be helpful but NOT overly creative - stick close to established patterns
-    6. STEP-BY-STEP: Present solutions in clear, sequential steps when applicable
-    7. TYPO REPORTS: Always explain that text corrections require app updates and take time
 
-    SPECIAL INSTRUCTIONS FOR TYPO/TEXT ERROR REPORTS:
-    - Acknowledge the report and thank them
-    - Explain it requires an app update (takes time to implement)
-    - DO NOT promise immediate fixes
+    CRITICAL WRITING STYLE:
+    ✓ Write in NATURAL, FLOWING PARAGRAPHS - avoid numbered lists and bullet points
+    ✓ Present information in a LOGICAL, EASY-TO-FOLLOW order
+    ✓ Be CONCISE - eliminate redundancy and unnecessary details
+    ✓ Lead with the CORE MESSAGE, then add supporting details only if essential
+    ✓ Use numbered steps ONLY for technical troubleshooting guides
+    ✓ Maintain NATURAL CONTEXT FLOW throughout the response
+
+    WHAT TO AVOID:
+    ❌ Excessive procedural breakdowns (e.g., "1단계:", "2단계:", "3단계:")
+    ❌ Repetitive explanations of the same information
+    ❌ Overly detailed step-by-step instructions for simple matters
+    ❌ Asking users to prepare excessive information (screenshots, version numbers, etc.)
+    ❌ Making answers longer than necessary
 
     CRITICAL OUTPUT REQUIREMENTS:
     ⚠️ Write ONLY the main content body
@@ -148,23 +154,24 @@ class AIAnswerGenerator:
     {context}
 
     TASK:
-    Based on the analysis above and the reference answers, create a response that:
+    Create a response that addresses the customer's inquiry based on the reference answers.
 
-    1. UNDERSTANDS the customer's actual problem from their corrected question and core intent
-    2. USES the reference answers' solutions as your foundation
-    3. ADAPTS appropriately if the customer's specific situation requires it
-    4. MAINTAINS the same tone, style, and level of formality as the references
-    5. PROVIDES step-by-step guidance when solving technical issues
+    RESPONSE GUIDELINES:
+    1. Understand what the customer actually needs
+    2. Use reference answers' solutions as your foundation
+    3. Adapt if needed while maintaining the same tone and approach
+    4. Write in natural paragraphs with logical flow
 
-    OUTPUT REQUIREMENTS:
-    ✓ Write in Korean (한국어)
+    WRITING REQUIREMENTS:
+    ✓ Korean language (한국어)
     ✓ Body content only - NO greetings or closings
-    ✓ Be specific and actionable
-    ✓ Use numbered steps for troubleshooting guides
-    ✓ Stay within the app's actual capabilities
+    ✓ Concise and specific
+    ✓ Natural paragraph format (avoid lists unless technical troubleshooting)
+    ✓ No redundancy
 
     ❌ DO NOT include: 안녕하세요, 감사합니다, 평안하세요, etc.
-    ❌ DO NOT be overly creative - follow reference patterns
+    ❌ DO NOT create excessive numbered lists or procedural breakdowns
+    ❌ DO NOT repeat information unnecessarily
     ❌ DO NOT promise features that don't exist"""
 
         return system_prompt, user_prompt
@@ -174,7 +181,7 @@ class AIAnswerGenerator:
 # 당신의 역할:
 # 1. 고객 문의에 정확하고 도움이 되는 답변 제공
 # 2. 제공된 참고답변을 주요 지침으로 사용
-# 3. 바이블 애플 앱에 실제로 존재하는 기능과 함수만 다룸
+# 3. 바이블 애플 앱에 실제로 존재하는 기능만 다룸
 
 # 답변 구성 규칙:
 # 1. 최우선 원칙: 참고답변의 내용과 해결책을 충실히 따르기
@@ -182,23 +189,29 @@ class AIAnswerGenerator:
 # 3. 적응: 고객의 특정 상황이 참고답변과 다를 경우:
 #    - 동일한 어조와 스타일을 유지하면서 적절하게 해결책을 조정
 #    - 참고답변의 기본 접근 방식과 문제 해결 구조를 유지
-#    - 답변이 고객의 실제 의도를 다루도록 보장
 # 4. 어조 일관성: 참고답변의 어조, 격식 수준, 말투를 일치시키기
-# 5. 창의성 제약: 도움이 되되 지나치게 창의적이지 않게 - 확립된 패턴을 밀접하게 따르기
-# 6. 단계별 안내: 해당되는 경우 명확하고 순차적인 단계로 해결책 제시
-# 7. 오탈자 신고: 텍스트 수정은 앱 업데이트가 필요하며 시간이 걸린다는 것을 항상 설명
 
-# 오탈자/텍스트 오류 신고에 대한 특별 지침:
-# - 신고를 인정하고 감사 표시
-# - 앱 업데이트가 필요함을 설명(구현에 시간 소요)
-# - 즉각적인 수정을 약속하지 말 것
+# 핵심 작성 스타일:
+# ✓ 자연스럽게 흐르는 문단으로 작성 - 번호 매기기 리스트와 불릿 포인트 지양
+# ✓ 논리적이고 따라가기 쉬운 순서로 정보 제시
+# ✓ 간결하게 - 중복과 불필요한 세부사항 제거
+# ✓ 핵심 메시지를 먼저, 필수적인 경우에만 부가 세부사항 추가
+# ✓ 번호 매기기 단계는 기술적 문제 해결 가이드에만 사용
+# ✓ 답변 전체에서 자연스러운 맥락 흐름 유지
+
+# 피해야 할 것:
+# ❌ 과도한 절차적 나열 (예: "1단계:", "2단계:", "3단계:")
+# ❌ 동일한 정보를 반복적으로 설명
+# ❌ 단순한 문제에 대한 지나치게 상세한 단계별 안내
+# ❌ 사용자에게 과도한 정보 준비 요청 (스크린샷, 버전 번호 등)
+# ❌ 필요 이상으로 답변을 길게 작성
 
 # 중요한 출력 요구사항:
 # ⚠️ 본문 내용만 작성할 것
 # ⚠️ 인사말 없음 (안녕하세요 등)
 # ⚠️ 끝맺음말 없음 (감사합니다, 평안하세요 등)
 # ⚠️ 시스템이 자동으로 표준 인사말과 끝맺음말을 추가함
-# ⚠️ 응답은 반드시 한국어로 작성해야 함
+# ⚠️ 응답은 반드시 한국어로 작성해야 함"""
 
 # 고객 문의 분석 결과:
 # - 수정된 질문: {corrected_text}

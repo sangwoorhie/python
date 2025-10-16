@@ -308,7 +308,7 @@ class OptimizedAIAnswerGenerator:
                         f"answer_length={len(result.get('answer', ''))}자"
                     )
 
-                # 검색 결과 확인 - 결과가 없으면 폴백 답변 사용
+                # 검색 결과 확인 - 결과가 없거나 유사도가 0.4 이하면 폴백 답변 사용
                 if not similar_answers:
                     logging.warning(f"⚠️ 검색 결과 없음 - 폴백 답변 사용")
                     
@@ -318,6 +318,33 @@ class OptimizedAIAnswerGenerator:
                     generation_time = time.time() - generation_start
                     logging.info(f"폴백 답변 생성 완료: 길이={len(ai_answer)}자, 시간={generation_time:.2f}s")
                 else:
+                    # 최고 유사도 점수 확인
+                    max_score = max(result.get('score', 0) for result in similar_answers)
+                    
+                    # 유사도 임계값 체크
+                    SIMILARITY_THRESHOLD = 0.4
+
+                    if max_score <= SIMILARITY_THRESHOLD:
+                        logging.warning(
+                            f"⚠️ 최고 유사도 {max_score:.4f} <= {SIMILARITY_THRESHOLD} - 폴백 답변 사용"
+                        )
+                        logging.info(
+                            f"검색 결과 요약: "
+                            f"총 {len(similar_answers)}개 결과, "
+                            f"최고 점수={max_score:.4f}, "
+                            f"최저 점수={min(r.get('score', 0) for r in similar_answers):.4f}"
+                        )
+                        
+                        # 폴백 답변 사용
+                        generation_start = time.time()
+                        ai_answer = self.ai_answer_generator._get_fallback_answer()
+                        generation_time = time.time() - generation_start
+                        logging.info(f"폴백 답변 생성 완료: 길이={len(ai_answer)}자, 시간={generation_time:.2f}s")
+                    else:
+                        # 유사도가 충분히 높은 경우 AI 답변 생성
+                        logging.info(
+                            f"✅ 유사도 조건 충족 (최고 점수={max_score:.4f} > {SIMILARITY_THRESHOLD}) - AI 답변 생성 진행"
+                        )
                     
                     # 6단계: AI 답변 생성 (AIAnswerGenerator 사용)
                     generation_start = time.time()
