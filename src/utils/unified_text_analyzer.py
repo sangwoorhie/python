@@ -123,33 +123,10 @@ class UnifiedTextAnalyzer:
                         'primary_action': intent_analysis_raw.get('primary_action', '정보 제공'),
                         'semantic_keywords': intent_analysis_raw.get('semantic_keywords', [])
                     }
-                    # intent_analysis.update({
-                    #     'intent_type': intent_analysis.get('intent_category', '일반문의'),
-                    #     'main_topic': intent_analysis.get('target_object', '기타'),
-                    #     'specific_request': intent_analysis.get('standardized_query', text[:100]),
-                    #     'keywords': intent_analysis.get('semantic_keywords', [text[:20]]),
-                    # })
-                    
+           
                     # 상세 결과 로그
                     logging.info(f"🔍 오타 수정된 텍스트: '{corrected_text}'")
                     logging.info(f"🔍 의도 분석 결과: {json.dumps(intent_analysis, ensure_ascii=False)}")
-                    
-                    # 로깅
-                    # if corrected_text != text:
-                    #     logging.info(f"통합 분석 - 오타 수정: '{text[:50]}...' → '{corrected_text[:50]}...'")
-                    
-                    # logging.info(f"통합 분석 - 의도: {intent_analysis.get('core_intent', 'N/A')}")
-                    
-                    # 🔍 디버그: 파싱된 결과 출력
-                    # logging.info("�� [사용자 질문 의도 분석 결과]")
-                    # logging.info(f"입력 텍스트: {text}")
-                    # logging.info(f"수정된 텍스트: {corrected_text}")
-                    # logging.info(f"핵심 의도: {intent_analysis.get('core_intent', 'N/A')}")
-                    # logging.info(f"주요 행동: {intent_analysis.get('primary_action', 'N/A')}")
-                    # logging.info(f"대상 객체: {intent_analysis.get('target_object', 'N/A')}")
-                    # logging.info(f"의미론적 키워드: {intent_analysis.get('semantic_keywords', [])}")
-                    # logging.info(f"전체 의도 분석: {json.dumps(intent_analysis, ensure_ascii=False, indent=2)}")
-                    # logging.info("="*60)
 
                     return corrected_text, intent_analysis
                     
